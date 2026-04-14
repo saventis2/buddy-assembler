@@ -225,3 +225,37 @@ GUI integration:
   - Placement now uses canonical anchor publication from `body` and `head` only.
   - Non-canonical equipment layers (including weapon) no longer publish new global anchors during solve.
   - Weapon hand-proxy alignment override is disabled in strict mode so weapon position is determined by the frame's own map/origin metadata.
+
+## 6) Weapon Action Compatibility (Source-Driven)
+
+New script: `weapon_action_compatibility_report.py`
+
+Purpose:
+
+- Read weapon source metadata directly from `Character/Character.wz/Weapon`.
+- Report which actions each weapon actually supports (based on source action folders/frames).
+- Build type-level action matrices (common actions vs union actions).
+
+Run:
+
+```powershell
+python weapon_action_compatibility_report.py `
+  --base-wz "C:\Users\GGPC\OneDrive\Desktop\83 complete\Base.wz" `
+  --output-dir ".\dataset_audit" `
+  --weapon-id 1452011 `
+  --weapon-id 1492037 `
+  --weapon-id 1432008
+```
+
+Outputs:
+
+- `dataset_audit/weapon_action_profiles.json`
+- `dataset_audit/weapon_action_profiles_selected.json` (when `--weapon-id` is provided)
+- `dataset_audit/weapon_type_action_matrix.json`
+- `dataset_audit/weapon_type_action_matrix.csv`
+
+Batch export mode update:
+
+- `All-actions source` now includes `loadout-intersection-with-weapon` (strict compatibility mode).
+- In strict mode, all-actions export uses the intersection of body/core gear actions and weapon-supported actions.
+- Batch summary now includes `weapon_profile` metadata for traceability.

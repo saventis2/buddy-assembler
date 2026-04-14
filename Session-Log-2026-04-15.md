@@ -58,6 +58,13 @@ session for MapleStory character rendering/export.
 - Action-timeline delay usage from source body metadata.
 - Optional per-action canvas normalization for stable GIF/sheet layout.
 
+9. Weapon compatibility reporting and strict action-source mode
+- Added `weapon_action_compatibility_report.py` to extract source-truth weapon
+  action support from `Weapon/*.img`.
+- Added strict batch action source mode:
+  `loadout-intersection-with-weapon`.
+- Batch export now logs and writes `weapon_profile` metadata in summary JSON.
+
 ## Files Updated During Session
 
 - `render_character_frame.py`
@@ -83,4 +90,3 @@ session for MapleStory character rendering/export.
   weapon `info` metadata (`islot`, `vslot`, `afterImage`, `sfx`).
 - Next step in progress: expose weapon compatibility reporting/strict action
   gating more explicitly in the GUI workflow.
-
