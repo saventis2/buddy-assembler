@@ -1,0 +1,260 @@
+# MapleStory v83 Character Reverse-Engineering Spec
+
+**Build analyzed:** extracted `Base.wz` under  
+`C:\Users\GGPC\OneDrive\Desktop\83 complete\Base.wz`
+
+**Evidence outputs:**  
+`C:\Users\GGPC\OneDrive\Desktop\83 complete\analysis\character_reverse_engineering_summary.json` and companion CSVs.
+
+## 1. System Overview
+
+Character rendering is a compositing pipeline across multiple asset domains:
+
+1. **Base pose skeleton** from `Character\Character.wz\000020xx.img.xml` (body/arm/hands + action states + timing).
+2. **Head layer** from `000120xx.img.xml` (head front/back + ear/brow/neck anchors).
+3. **Appearance parts** from categories like `Hair`, `Face`, `Cap`, `Coat`, `Pants`, `Shoes`, `Glove`, `Cape`, `Shield`, `Weapon`, `Accessory`.
+4. **Mount/special overlays** from `TamingMob`, `Afterimage`, `PetEquip`, `Dragon`.
+5. **Global z-order contract** from `zmap.img.xml`; slot-to-layer compatibility from `smap.img.xml`.
+
+Composition is anchor-driven (`map` vectors), layer-driven (`z` tags), and state-driven (action folder + frame index).
+
+## 2. Asset Model (Observed)
+
+## 2.1 Node Types
+
+- `imgdir`: hierarchical group (state/action/frame blocks).
+- `canvas`: renderable bitmap node with `origin`, optional `map` anchors, and `z`.
+- `uol`: reference node (pointer to another node path, used heavily for frame reuse).
+- `int` with `name="delay"`: frame timing (can be positive or negative values).
+- `string` in `info`: slot metadata such as `islot`, `vslot`.
+
+## 2.2 Canonical Types
+
+```text
+CharacterDefinition
+  - baseBodyId (e.g., 00002000)
+  - headId (e.g., 00012000)
+  - actionSet: ActionDefinition[]
+
+PartDefinition
+  - partId (e.g., 01000000, 00030000, 1302000...)
+  - category (Cap/Hair/Weapon/...)
+  - islot (inventory slot code)
+  - vslot (visual compatibility mask)
+  - states: map[actionName -> FrameSet]
+
+ActionDefinition
+  - actionName (walk1, stand1, swingO1...)
+  - frames: ordered frame records
+
+FrameRecord
+  - drawNodes: resolved canvas nodes (after uol resolution)
+  - delayMs (signed integer when present)
+```
+
+## 2.3 Corpus Scale (Full Character Domain)
+
+Extracted via automated pass over all `Character\Character.wz\*\*.img.xml`.
+
+- Base template XMLs: **18**
+- Character categories with XML: **17**
+- Largest categories:
+  - `Hair`: 1518 files
+  - `Weapon`: 1220 files
+  - `Cap`: 908 files
+  - `Face`: 536 files
+  - `Accessory`: 500 files
+
+## 3. Construction Rules
+
+## 3.1 Anchor Contract
+
+Primary anchor names observed in base templates:
+
+- `navel`, `neck`, `hand`, `handMove`, `brow`, `earOverHead`, `earBelowHead`
+
+High-frequency anchors by category:
+
+- `Hair`: almost entirely `brow` alignment.
+- `Weapon`: primarily `navel` and `hand`, plus `muzzle` for ranged effects.
+- `Cap`: mostly `brow`, with limited `hand` usage.
+
+Placement rule:
+
+1. Resolve target frame canvas.
+2. Read `origin` of the canvas.
+3. If `map/<anchor>` exists, align to the same logical anchor in the base frame.
+4. Apply final pixel offset from anchor delta + origin.
+
+## 3.2 Layering Contract (`z`)
+
+Global z-order is declared in `zmap.img.xml` in list order.
+
+Representative observed layers:
+
+- Core body stack: `body`, `arm`, `hand`, `head`, `face`, `hair`, `hairShade`
+- Equipment overlays: `weapon*`, `shield*`, `cap*`, `accessory*`, `glove*`, `mail*`, `pants*`, `shoes*`
+- Back layers: `backHair*`, `backCap*`, `backWeapon*`, `backBody`, `backHead`
+- Mount layers: `tamingMob*`, `saddle*`, `characterStart`, `characterEnd`
+
+`smap.img.xml` maps many z-layer names to compatible visual slot groups (e.g., `hairOverHead -> H1`, `face -> Fc`, `weapon -> Wp`), giving an explicit compatibility matrix.
+
+## 3.3 Slot Compatibility
+
+Per-part metadata (`info`):
+
+- `islot`: item/equip slot family (e.g., `Hr`, `Fc`, `Cp`, `Wp`, `Si`).
+- `vslot`: visual slot mask controlling coexistence and overrides.
+
+Examples:
+
+- Hair commonly `islot=Hr`, `vslot=H1H2H3H4H5H6HfHsHb`.
+- Face commonly `islot=Fc`, `vslot=Fc`.
+- Cap variants use many dense `vslot` combinations combining `Cp` with hair/face/accessory subsets.
+
+## 4. Animation Model
+
+## 4.1 Action State Machine (Data-Driven)
+
+Base templates expose action folders under top-level `imgdir` names.
+
+- `00002000.img` has **157** actions (including many job/skill-specific actions).
+- `00002009.img` has **106** actions.
+- `00002010.img` has **103** actions.
+- Most other `000020xx` templates have ~42-43 actions.
+- `000120xx` head templates have 35-36 actions and mostly reference front/back head nodes via `uol`.
+
+Common cross-template actions include:
+
+`walk1`, `walk2`, `stand1`, `stand2`, `alert`, `jump`, `fly`, `prone`, `swing*`, `stab*`, `shoot*`, `ladder`, `rope`, `sit`.
+
+## 4.2 Frame Timing
+
+- Delays are stored as `int name="delay"`.
+- Positive and negative values are both present in body templates.
+- Observed ranges:
+  - Base template delays: **-1800 .. 2670**
+  - Face animation delays: **60 .. 1640**
+  - TamingMob includes outliers up to **100000000**.
+
+Interpretation: signed delay values are part of the runtime animation directive and must be preserved verbatim when reimplementing playback logic.
+
+## 4.3 Reuse (`uol`)
+
+`uol` references are pervasive:
+
+- Base templates: 1044 references total across 18 files.
+- Head templates (`000120xx`) are almost fully `uol`-based action remaps.
+- Equipment parts often map each action frame to `../../default/...` assets to avoid duplicate sprites.
+
+Runtime requirement: a resolver must dereference `uol` paths before final draw list construction.
+
+## 5. Customization Model
+
+## 5.1 Starter Character Presets
+
+Source: `Etc\Etc.wz\MakeCharInfo.img.xml`.
+
+Profiles:
+
+- `CharMale`
+- `CharFemale`
+
+Groups `0..7` define selectable startup pools (face, hair, hair color, skin tone, starter equips).  
+Label mappings (for some groups) come from the sibling `Name` tree.
+
+Extracted preset rows: **53** (to CSV `customization_presets.csv`).
+
+## 5.2 Human-Readable Naming
+
+Source: `String\String.wz\Eqp.img.xml`.
+
+- Parsed named equipment entries: **7105**
+- Category counts include:
+  - Hair: 1504
+  - Weapon: 1184
+  - Cap: 915
+  - Face: 540
+  - Accessory: 497
+
+Use this file to map raw numeric IDs to display names/descriptions.
+
+## 6. Update Semantics
+
+## 6.1 Runtime Character Updates
+
+Operation type: `RuntimeSwap`.
+
+Inputs:
+
+- selected part IDs per slot (hair, face, equips, etc.),
+- current action name and frame index.
+
+Algorithm:
+
+1. Resolve base template frame (`000020xx` + `000120xx`).
+2. For each equipped/customized part, select matching action/frame subtree.
+3. Resolve `uol` to concrete canvases.
+4. Align by anchors (`map`) + `origin`.
+5. Sort by global `zmap` order.
+6. Composite to final frame.
+
+Effects:
+
+- Equip/unequip changes only impacted slots/layers.
+- Action changes switch all state-dependent subtrees while preserving equipped parts.
+
+## 6.2 Asset Modding Updates
+
+Operation type: `AssetEdit`.
+
+Safe-edit invariants:
+
+- Keep anchor names consistent (`brow`, `navel`, etc.) unless deliberately remapped.
+- Preserve `z` values or update `zmap/smap` coherently.
+- Preserve `islot/vslot` semantics to avoid incompatibility and clipping.
+- Keep `uol` target paths valid after edits.
+
+Risky edits:
+
+- Removing anchor vectors used by other layers.
+- Renaming z-layer keys without global mapping updates.
+- Changing `vslot` masks without slot-compatibility validation.
+
+## 6.3 Version/Patch Diffs
+
+Operation type: `VersionDiff`.
+
+Diff procedure for two extracted trees:
+
+1. Compare `Character\Character.wz` file sets (`*.img.xml`, PNG descendants).
+2. Classify changes by domain:
+  - structural (added/removed actions/frames),
+  - timing (`delay` changes),
+  - composition (`z`, anchors, origin),
+  - compatibility (`islot/vslot`),
+  - art-only (PNG content changes with stable metadata).
+3. Tag impact:
+  - **breaking visual alignment** (anchor/z/slot mismatch),
+  - **behavioral animation change** (state/frame/timing edits),
+  - **cosmetic** (sprite pixels only).
+
+## 7. Verification Scenarios
+
+1. Compose one avatar through `stand1`, `walk1`, and one attack action; verify alignment on all frames.
+2. Swap one item per major slot and confirm only expected layer groups change.
+3. Validate hair/face/skin preset options from `MakeCharInfo` against available part assets.
+4. Validate `uol` resolution produces no dangling references.
+5. Run a synthetic version diff (old/new extract) and verify change classification buckets.
+
+## 8. Generated Evidence Files
+
+- `character_reverse_engineering_summary.json`
+- `character_categories.csv`
+- `base_templates.csv`
+- `action_frequency.csv`
+- `z_layer_frequency.csv`
+- `anchor_frequency.csv`
+- `customization_presets.csv`
+- extractor script: `analyze_character_assets.py`
+

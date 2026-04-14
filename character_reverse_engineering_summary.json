@@ -1,0 +1,1901 @@
+{
+  "generated_at_utc": "2026-04-13T11:51:42.683494+00:00",
+  "source_base_wz": "C:\\Users\\GGPC\\OneDrive\\Desktop\\83 complete\\Base.wz",
+  "character_root": "C:\\Users\\GGPC\\OneDrive\\Desktop\\83 complete\\Base.wz\\Character\\Character.wz",
+  "counts": {
+    "base_templates": 18,
+    "character_categories_with_xml": 17,
+    "total_actions_seen_in_templates": 170,
+    "total_anchors_seen_in_templates": 7,
+    "total_z_layers_seen_in_templates": 11,
+    "total_group_tags_seen_in_templates": 1,
+    "total_delay_entries_in_templates": 2528,
+    "total_uol_refs_in_templates": 1044
+  },
+  "base_template_summary": [
+    {
+      "template": "00002000.img",
+      "action_count": 157,
+      "delay_entries": 749,
+      "min_delay": -1800,
+      "max_delay": 2670,
+      "uol_refs": 21
+    },
+    {
+      "template": "00002001.img",
+      "action_count": 42,
+      "delay_entries": 158,
+      "min_delay": 100,
+      "max_delay": 1000,
+      "uol_refs": 21
+    },
+    {
+      "template": "00002002.img",
+      "action_count": 42,
+      "delay_entries": 158,
+      "min_delay": 100,
+      "max_delay": 1000,
+      "uol_refs": 21
+    },
+    {
+      "template": "00002003.img",
+      "action_count": 42,
+      "delay_entries": 158,
+      "min_delay": 100,
+      "max_delay": 1000,
+      "uol_refs": 21
+    },
+    {
+      "template": "00002004.img",
+      "action_count": 42,
+      "delay_entries": 158,
+      "min_delay": 100,
+      "max_delay": 1000,
+      "uol_refs": 21
+    },
+    {
+      "template": "00002005.img",
+      "action_count": 43,
+      "delay_entries": 124,
+      "min_delay": 100,
+      "max_delay": 1000,
+      "uol_refs": 21
+    },
+    {
+      "template": "00002009.img",
+      "action_count": 106,
+      "delay_entries": 436,
+      "min_delay": -1800,
+      "max_delay": 1320,
+      "uol_refs": 21
+    },
+    {
+      "template": "00002010.img",
+      "action_count": 103,
+      "delay_entries": 429,
+      "min_delay": -1800,
+      "max_delay": 1320,
+      "uol_refs": 21
+    },
+    {
+      "template": "00002011.img",
+      "action_count": 42,
+      "delay_entries": 158,
+      "min_delay": 100,
+      "max_delay": 1000,
+      "uol_refs": 21
+    },
+    {
+      "template": "00012000.img",
+      "action_count": 35,
+      "delay_entries": 0,
+      "min_delay": null,
+      "max_delay": null,
+      "uol_refs": 95
+    },
+    {
+      "template": "00012001.img",
+      "action_count": 35,
+      "delay_entries": 0,
+      "min_delay": null,
+      "max_delay": null,
+      "uol_refs": 95
+    },
+    {
+      "template": "00012002.img",
+      "action_count": 35,
+      "delay_entries": 0,
+      "min_delay": null,
+      "max_delay": null,
+      "uol_refs": 95
+    },
+    {
+      "template": "00012003.img",
+      "action_count": 35,
+      "delay_entries": 0,
+      "min_delay": null,
+      "max_delay": null,
+      "uol_refs": 95
+    },
+    {
+      "template": "00012004.img",
+      "action_count": 35,
+      "delay_entries": 0,
+      "min_delay": null,
+      "max_delay": null,
+      "uol_refs": 95
+    },
+    {
+      "template": "00012005.img",
+      "action_count": 36,
+      "delay_entries": 0,
+      "min_delay": null,
+      "max_delay": null,
+      "uol_refs": 95
+    },
+    {
+      "template": "00012009.img",
+      "action_count": 35,
+      "delay_entries": 0,
+      "min_delay": null,
+      "max_delay": null,
+      "uol_refs": 95
+    },
+    {
+      "template": "00012010.img",
+      "action_count": 35,
+      "delay_entries": 0,
+      "min_delay": null,
+      "max_delay": null,
+      "uol_refs": 95
+    },
+    {
+      "template": "00012011.img",
+      "action_count": 35,
+      "delay_entries": 0,
+      "min_delay": null,
+      "max_delay": null,
+      "uol_refs": 95
+    }
+  ],
+  "template_action_frequency": {
+    "alert": 18,
+    "fly": 18,
+    "heal": 18,
+    "jump": 18,
+    "ladder": 18,
+    "prone": 18,
+    "proneStab": 18,
+    "rope": 18,
+    "shoot1": 18,
+    "shoot2": 18,
+    "shootF": 18,
+    "sit": 18,
+    "stabO1": 18,
+    "stabO2": 18,
+    "stabOF": 18,
+    "stabT1": 18,
+    "stabT2": 18,
+    "stabTF": 18,
+    "stand1": 18,
+    "stand2": 18,
+    "swingO1": 18,
+    "swingO2": 18,
+    "swingO3": 18,
+    "swingOF": 18,
+    "swingP1": 18,
+    "swingP2": 18,
+    "swingPF": 18,
+    "swingT1": 18,
+    "swingT2": 18,
+    "swingT3": 18,
+    "swingTF": 18,
+    "walk1": 18,
+    "walk2": 18,
+    "dead": 9,
+    "ghostfly": 9,
+    "ghostjump": 9,
+    "ghostladder": 9,
+    "ghostproneStab": 9,
+    "ghostrope": 9,
+    "ghostsit": 9,
+    "ghoststand": 9,
+    "ghostwalk": 9,
+    "back": 9,
+    "front": 9,
+    "alert2": 3,
+    "alert3": 3,
+    "alert4": 3,
+    "alert5": 3,
+    "alert6": 3,
+    "assassination": 3,
+    "assassinationS": 3,
+    "assaulter": 3,
+    "avenger": 3,
+    "backstep": 3,
+    "blast": 3,
+    "blizzard": 3,
+    "brandish1": 3,
+    "brandish2": 3,
+    "burster1": 3,
+    "burster2": 3,
+    "chainlightning": 3,
+    "coolingeffect": 3,
+    "dash": 3,
+    "doublefire": 3,
+    "fake": 3,
+    "fireburner": 3,
+    "fist": 3,
+    "genesis": 3,
+    "handgun": 3,
+    "holyshield": 3,
+    "homing": 3,
+    "ladder2": 3,
+    "magic1": 3,
+    "magic2": 3,
+    "magic3": 3,
+    "magic4": 3,
+    "meteor": 3,
+    "ninjastorm": 3,
+    "octopus": 3,
+    "paralyze": 3,
+    "prone2": 3,
+    "rapidfire": 3,
+    "recovery": 3,
+    "resurrection": 3,
+    "rope2": 3,
+    "rush": 3,
+    "rush2": 3,
+    "sanctuary": 3,
+    "savage": 3,
+    "screw": 3,
+    "shoot6": 3,
+    "shot": 3,
+    "showdown": 3,
+    "smokeshell": 3,
+    "somersault": 3,
+    "straight": 3,
+    "triplefire": 3,
+    "airstrike": 2,
+    "backspin": 2,
+    "demolition": 2,
+    "doubleupper": 2,
+    "dragonstrike": 2,
+    "eburster": 2,
+    "edrain": 2,
+    "eorb": 2,
+    "timeleap": 2,
+    "mesoranger": 2,
+    "bamboo": 1,
+    "blade": 1,
+    "breathe_prepare": 1,
+    "cannon": 1,
+    "combatStep": 1,
+    "comboFenrir": 1,
+    "comboSmash": 1,
+    "comboTempest": 1,
+    "darksight": 1,
+    "doubleSwing": 1,
+    "dragonAura": 1,
+    "dragonBreathe": 1,
+    "dragonFly": 1,
+    "dragonFury": 1,
+    "dragonIceBreathe": 1,
+    "dragonShield": 1,
+    "dragonSkin": 1,
+    "dragonSpark": 1,
+    "elementalRegistance": 1,
+    "elementalReset": 1,
+    "finalBlow": 1,
+    "finalCharge": 1,
+    "finalToss": 1,
+    "firestrike": 1,
+    "flamegear": 1,
+    "float": 1,
+    "fullSwingDouble": 1,
+    "fullSwingTriple": 1,
+    "icebreathe_prepare": 1,
+    "illusion": 1,
+    "infinityExplosion": 1,
+    "magic5": 1,
+    "magicBooster": 1,
+    "magicFlare": 1,
+    "magicmissile": 1,
+    "overSwingDouble": 1,
+    "overSwingTriple": 1,
+    "pyramid": 1,
+    "rollingSpin": 1,
+    "shockwave": 1,
+    "snatch": 1,
+    "souldriver": 1,
+    "stormbreak": 1,
+    "superMagicmissile": 1,
+    "swingP1PoleArm": 1,
+    "swingP2PoleArm": 1,
+    "swingT2PoleArm": 1,
+    "torpedo": 1,
+    "tripleSwing": 1,
+    "vampire": 1,
+    "wave": 1,
+    "windshot": 1,
+    "windspear": 1,
+    "bombing": 1,
+    "dragonrising": 1,
+    "eblast": 1,
+    "elbowattack": 1,
+    "energyorb": 1,
+    "energysteal": 1,
+    "filling": 1,
+    "flickerjab": 1,
+    "hashing": 1,
+    "uppercut": 1
+  },
+  "template_anchor_frequency": {
+    "navel": 2078,
+    "neck": 1115,
+    "hand": 847,
+    "handMove": 27,
+    "brow": 19,
+    "earOverHead": 10,
+    "earBelowHead": 10
+  },
+  "template_z_frequency": {
+    "body": 1002,
+    "armOverHair": 306,
+    "arm": 280,
+    "handOverHair": 198,
+    "armBelowHead": 117,
+    "backBody": 94,
+    "handBelowWeapon": 54,
+    "armBelowHeadOverMailChest": 36,
+    "armOverHairBelowWeapon": 27,
+    "head": 10,
+    "backHead": 9
+  },
+  "template_group_frequency": {
+    "skin": 2124
+  },
+  "category_summary": {
+    "Accessory": {
+      "xml_files": 500,
+      "unique_islot": [
+        "Ae",
+        "Af",
+        "Ay",
+        "Be",
+        "Me",
+        "Pe"
+      ],
+      "unique_vslot": [
+        "Ae",
+        "Af",
+        "Ay",
+        "Be",
+        "Me",
+        "Pe"
+      ],
+      "top_islot": {
+        "Me": 150,
+        "Af": 139,
+        "Ay": 90,
+        "Ae": 67,
+        "Pe": 37,
+        "Be": 17
+      },
+      "top_vslot": {
+        "Me": 150,
+        "Af": 139,
+        "Ay": 90,
+        "Ae": 67,
+        "Pe": 37,
+        "Be": 17
+      },
+      "top_vslot_tokens": {
+        "Me": 150,
+        "Af": 139,
+        "Ay": 90,
+        "Ae": 67,
+        "Pe": 37,
+        "Be": 17
+      },
+      "top_anchors": {
+        "brow": 1375
+      },
+      "top_z_layers": {
+        "accessoryFace": 925,
+        "accessoryEye": 164,
+        "accessoryFaceBelowFace": 123,
+        "accessoryEar": 72,
+        "backAccessoryEar": 59,
+        "accessoryFaceOverFaceBelowCap": 11,
+        "accessoryFaceOverCap": 11,
+        "accessoryEyeOverCap": 9
+      },
+      "top_groups": {},
+      "top_actions": {
+        "default": 294,
+        "alert": 155,
+        "fly": 155,
+        "heal": 155,
+        "jump": 155,
+        "prone": 155,
+        "proneStab": 155,
+        "shoot1": 155,
+        "shoot2": 155,
+        "shootF": 155,
+        "sit": 155,
+        "stabO1": 155,
+        "stabO2": 155,
+        "stabOF": 155,
+        "stabT1": 155,
+        "stabT2": 155,
+        "stabTF": 155,
+        "stand1": 155,
+        "stand2": 155,
+        "swingO1": 155,
+        "swingO2": 155,
+        "swingO3": 155,
+        "swingOF": 155,
+        "swingP1": 155,
+        "swingP2": 155,
+        "swingPF": 155,
+        "swingT1": 155,
+        "swingT2": 155,
+        "swingT3": 155,
+        "swingTF": 155
+      },
+      "delay_stats": {
+        "count": 3,
+        "min": 1200,
+        "max": 1200,
+        "unique_values": [
+          1200
+        ]
+      },
+      "uol_refs": 17954
+    },
+    "Afterimage": {
+      "xml_files": 15,
+      "unique_islot": [],
+      "unique_vslot": [],
+      "top_islot": {},
+      "top_vslot": {},
+      "top_vslot_tokens": {},
+      "top_anchors": {},
+      "top_z_layers": {},
+      "top_groups": {},
+      "top_actions": {
+        "0": 13,
+        "1": 13,
+        "10": 13,
+        "2": 13,
+        "3": 13,
+        "4": 13,
+        "5": 13,
+        "6": 13,
+        "7": 13,
+        "8": 13,
+        "9": 13,
+        "charge": 8,
+        "11": 5,
+        "12": 5,
+        "13": 5,
+        "14": 5,
+        "15": 4,
+        "16": 4,
+        "axe": 1,
+        "crossBow": 1,
+        "mace": 1,
+        "poleArm": 1,
+        "spear": 1,
+        "swordOL": 1,
+        "swordOS": 1,
+        "swordTL": 1,
+        "swordTS": 1,
+        "anniversary": 1,
+        "anniversary1": 1,
+        "anniversary2": 1
+      },
+      "delay_stats": {
+        "count": 2143,
+        "min": 20,
+        "max": 300,
+        "unique_values": [
+          20,
+          30,
+          50,
+          60,
+          70,
+          90,
+          100,
+          110,
+          120,
+          130,
+          140,
+          150,
+          180,
+          200,
+          300
+        ]
+      },
+      "uol_refs": 0
+    },
+    "Cap": {
+      "xml_files": 908,
+      "unique_islot": [
+        "Cp",
+        "HrCp"
+      ],
+      "unique_vslot": [
+        "Cp",
+        "CpH1H2H3H4H5H6HfHbHxHs",
+        "CpH1H2H3H4H5H6HfHsHb",
+        "CpH1H2H3H4H5H6HfHsHbAe",
+        "CpH1H2H3H4H5H6HfHsHbHc",
+        "CpH1H2H3H4H5H6HfHsHbHcAe",
+        "CpH1H2H3H4H5H6HfHsHbHcAfAyAsAfAe",
+        "CpH1H2H3H4H5H6HfHsHbHx",
+        "CpH1H2H3H4H5HfHsAeAs",
+        "CpH1H2H3H4H5HfHsHbAe",
+        "CpH1H2H3H5HfHsAfAyAsAeHbH4H6",
+        "CpH1H2H5Hs",
+        "CpH1H3H4H5H6HfHbAe",
+        "CpH1H3H4H5H6HfHsHbAe",
+        "CpH1H4",
+        "CpH1H5",
+        "CpH1H5AfAyAsAe",
+        "CpH1H5AyAs",
+        "CpH1H5FcAfAyAsAfAe",
+        "CpH1H5Hb",
+        "CpH5",
+        "CpH5Ae",
+        "CpHdH1H2H3H4",
+        "CpHdH1H2H3H4H5H6HsHfHbAfAyAsAe",
+        "CpHdH1H2H3H4H5HfHsFcAfAyAsAfAe",
+        "CpHdH1H2H3H5HfHsFcAfAyAsAfAe"
+      ],
+      "top_islot": {
+        "Cp": 894,
+        "HrCp": 14
+      },
+      "top_vslot": {
+        "CpH1H5": 659,
+        "CpH5": 102,
+        "CpHdH1H2H3H4H5H6HsHfHbAfAyAsAe": 27,
+        "CpH1H2H3H4H5H6HfHsHbAe": 19,
+        "CpH1H2H3H5HfHsAfAyAsAeHbH4H6": 17,
+        "CpH1H2H3H4H5H6HfHbHxHs": 15,
+        "CpH1H4": 12,
+        "CpH1H2H3H4H5H6HfHsHbHc": 11,
+        "CpH1H3H4H5H6HfHbAe": 11,
+        "Cp": 6
+      },
+      "top_vslot_tokens": {
+        "Cp": 908,
+        "H5": 889,
+        "H1": 799,
+        "H4": 128,
+        "H3": 120,
+        "Hf": 119,
+        "Hb": 114,
+        "H2": 109,
+        "Hs": 109,
+        "H6": 107,
+        "Ae": 93,
+        "Af": 61,
+        "As": 57,
+        "Ay": 56,
+        "Hd": 33,
+        "Hx": 16,
+        "Hc": 13,
+        "Fc": 7
+      },
+      "top_anchors": {
+        "brow": 4522,
+        "hand": 178
+      },
+      "top_z_layers": {
+        "capOverHair": 1904,
+        "cap": 1430,
+        "backCap": 974,
+        "backCapOverHair": 171,
+        "capBelowAccessory": 98,
+        "capAccessoryBelowBody": 54,
+        "backCapAccessory": 32,
+        "capBelowBody": 21,
+        "backHair": 5,
+        "capAccessoryBelowAccFace": 2,
+        "capeOverHead": 1,
+        "backHairBelowCap": 1,
+        "backHairOverCape": 1
+      },
+      "top_groups": {},
+      "top_actions": {
+        "alert": 907,
+        "fly": 907,
+        "heal": 907,
+        "jump": 907,
+        "ladder": 907,
+        "prone": 907,
+        "proneStab": 907,
+        "rope": 907,
+        "shoot1": 907,
+        "shoot2": 907,
+        "shootF": 907,
+        "sit": 907,
+        "stabO1": 907,
+        "stabO2": 907,
+        "stabOF": 907,
+        "stabT1": 907,
+        "stabT2": 907,
+        "stabTF": 907,
+        "stand1": 907,
+        "stand2": 907,
+        "swingO1": 907,
+        "swingO2": 907,
+        "swingO3": 907,
+        "swingOF": 907,
+        "swingP1": 907,
+        "swingP2": 907,
+        "swingPF": 907,
+        "swingT1": 907,
+        "swingT2": 907,
+        "swingT3": 907
+      },
+      "delay_stats": {
+        "count": 33,
+        "min": 90,
+        "max": 1500,
+        "unique_values": [
+          90,
+          120,
+          150,
+          180,
+          210,
+          240,
+          1500
+        ]
+      },
+      "uol_refs": 94972
+    },
+    "Cape": {
+      "xml_files": 178,
+      "unique_islot": [
+        "Cp",
+        "Sr"
+      ],
+      "unique_vslot": [
+        "Cp",
+        "Sr"
+      ],
+      "top_islot": {
+        "Sr": 177,
+        "Cp": 1
+      },
+      "top_vslot": {
+        "Sr": 177,
+        "Cp": 1
+      },
+      "top_vslot_tokens": {
+        "Sr": 177,
+        "Cp": 1
+      },
+      "top_anchors": {
+        "navel": 14960
+      },
+      "top_z_layers": {
+        "capeBelowBody": 7561,
+        "backWing": 2920,
+        "capeOverHead": 2416,
+        "backCape": 844,
+        "cape": 709,
+        "mailChestTop": 192,
+        "gloveWristBelowMailArm": 132,
+        "weaponOverGlove": 84,
+        "mailArmBelowHead": 71,
+        "backHairOverCape": 28,
+        "backShield": 4,
+        "mailArmBelowHeadOverMailChest": 1
+      },
+      "top_groups": {},
+      "top_actions": {
+        "alert": 177,
+        "fly": 177,
+        "jump": 177,
+        "ladder": 177,
+        "prone": 177,
+        "proneStab": 177,
+        "rope": 177,
+        "shoot1": 177,
+        "shoot2": 177,
+        "shootF": 177,
+        "sit": 177,
+        "stabO1": 177,
+        "stabO2": 177,
+        "stabOF": 177,
+        "stabT1": 177,
+        "stabT2": 177,
+        "stabTF": 177,
+        "stand1": 177,
+        "stand2": 177,
+        "swingO1": 177,
+        "swingO2": 177,
+        "swingO3": 177,
+        "swingOF": 177,
+        "swingP1": 177,
+        "swingP2": 177,
+        "swingPF": 177,
+        "swingT1": 177,
+        "swingT2": 177,
+        "swingT3": 177,
+        "swingTF": 177
+      },
+      "delay_stats": {
+        "count": 1,
+        "min": 1200,
+        "max": 1200,
+        "unique_values": [
+          1200
+        ]
+      },
+      "uol_refs": 3023
+    },
+    "Coat": {
+      "xml_files": 462,
+      "unique_islot": [
+        "Ma",
+        "MaPn"
+      ],
+      "unique_vslot": [
+        "Ma",
+        "MaGw",
+        "MaPn"
+      ],
+      "top_islot": {
+        "Ma": 436,
+        "MaPn": 26
+      },
+      "top_vslot": {
+        "Ma": 432,
+        "MaPn": 26,
+        "MaGw": 4
+      },
+      "top_vslot_tokens": {
+        "Ma": 462,
+        "Pn": 26,
+        "Gw": 4
+      },
+      "top_anchors": {
+        "navel": 71788
+      },
+      "top_z_layers": {
+        "mailChest": 25945,
+        "mailArmOverHair": 15034,
+        "mailArm": 11470,
+        "mailChestOverHighest": 7250,
+        "mailArmBelowHead": 3968,
+        "mailChestBelowPants": 1990,
+        "mailArmBelowHeadOverMailChest": 1860,
+        "backMailChest": 1741,
+        "mailArmOverHairBelowWeapon": 1267,
+        "backMailChestOverPants": 981,
+        "mailChestOverPants": 231,
+        "backMailChestBelowPants": 48,
+        "backMailChestAccessory": 2,
+        "armOverHair": 1
+      },
+      "top_groups": {},
+      "top_actions": {
+        "alert": 462,
+        "fly": 462,
+        "heal": 462,
+        "jump": 462,
+        "ladder": 462,
+        "rope": 462,
+        "shoot1": 462,
+        "shoot2": 462,
+        "shootF": 462,
+        "sit": 462,
+        "stabO1": 462,
+        "stabO2": 462,
+        "stabOF": 462,
+        "stabT1": 462,
+        "stabT2": 462,
+        "stabTF": 462,
+        "stand1": 462,
+        "stand2": 462,
+        "swingO1": 462,
+        "swingO2": 462,
+        "swingO3": 462,
+        "swingOF": 462,
+        "swingP1": 462,
+        "swingP2": 462,
+        "swingPF": 462,
+        "swingT1": 462,
+        "swingT2": 462,
+        "swingT3": 462,
+        "swingTF": 462,
+        "walk1": 462
+      },
+      "delay_stats": {
+        "count": 1,
+        "min": 2000,
+        "max": 2000,
+        "unique_values": [
+          2000
+        ]
+      },
+      "uol_refs": 10697
+    },
+    "Dragon": {
+      "xml_files": 12,
+      "unique_islot": [
+        "Tm"
+      ],
+      "unique_vslot": [
+        "Tm"
+      ],
+      "top_islot": {
+        "Tm": 12
+      },
+      "top_vslot": {
+        "Tm": 12
+      },
+      "top_vslot_tokens": {
+        "Tm": 12
+      },
+      "top_anchors": {},
+      "top_z_layers": {},
+      "top_groups": {},
+      "top_actions": {},
+      "delay_stats": {
+        "count": 0,
+        "min": null,
+        "max": null,
+        "unique_values": []
+      },
+      "uol_refs": 0
+    },
+    "Face": {
+      "xml_files": 536,
+      "unique_islot": [
+        "Fc"
+      ],
+      "unique_vslot": [
+        "Fc"
+      ],
+      "top_islot": {
+        "Fc": 536
+      },
+      "top_vslot": {
+        "Fc": 536
+      },
+      "top_vslot_tokens": {
+        "Fc": 536
+      },
+      "top_anchors": {
+        "brow": 18877
+      },
+      "top_z_layers": {
+        "face": 18868
+      },
+      "top_groups": {},
+      "top_actions": {
+        "angry": 536,
+        "bewildered": 536,
+        "blaze": 536,
+        "blink": 536,
+        "bowing": 536,
+        "cheers": 536,
+        "chu": 536,
+        "cry": 536,
+        "dam": 536,
+        "default": 536,
+        "despair": 536,
+        "glitter": 536,
+        "hit": 536,
+        "hot": 536,
+        "hum": 536,
+        "love": 536,
+        "oops": 536,
+        "pain": 536,
+        "shine": 536,
+        "smile": 536,
+        "stunned": 536,
+        "troubled": 536,
+        "vomit": 536,
+        "wink": 536
+      },
+      "delay_stats": {
+        "count": 11855,
+        "min": 60,
+        "max": 1640,
+        "unique_values": [
+          60,
+          110,
+          120,
+          150,
+          240,
+          1640
+        ]
+      },
+      "uol_refs": 0
+    },
+    "Glove": {
+      "xml_files": 236,
+      "unique_islot": [
+        "Cp",
+        "Gv"
+      ],
+      "unique_vslot": [
+        "Cp",
+        "GlGw"
+      ],
+      "top_islot": {
+        "Gv": 235,
+        "Cp": 1
+      },
+      "top_vslot": {
+        "GlGw": 235,
+        "Cp": 1
+      },
+      "top_vslot_tokens": {
+        "Gl": 235,
+        "Gw": 235,
+        "Cp": 1
+      },
+      "top_anchors": {
+        "navel": 33068,
+        "handMove": 597,
+        "hand": 462
+      },
+      "top_z_layers": {
+        "gloveOverHair": 12373,
+        "gloveOverBody": 6799,
+        "glove": 6135,
+        "gloveWristOverHair": 2747,
+        "gloveBelowHead": 1476,
+        "gloveWrist": 1083,
+        "gloveWristOverBody": 921,
+        "backGlove": 743,
+        "gloveBelowMailArm": 634,
+        "gloveBelowWeapon": 603,
+        "gloveWristBelowHead": 378,
+        "backGloveWrist": 141,
+        "gloveWristBelowMailArm": 88,
+        "gloveWristBelowWeapon": 6
+      },
+      "top_groups": {},
+      "top_actions": {
+        "alert": 235,
+        "fly": 235,
+        "heal": 235,
+        "jump": 235,
+        "ladder": 235,
+        "prone": 235,
+        "proneStab": 235,
+        "shoot1": 235,
+        "shoot2": 235,
+        "shootF": 235,
+        "sit": 235,
+        "stabO1": 235,
+        "stabO2": 235,
+        "stabOF": 235,
+        "stabT1": 235,
+        "stabT2": 235,
+        "stabTF": 235,
+        "stand1": 235,
+        "stand2": 235,
+        "swingO1": 235,
+        "swingO2": 235,
+        "swingO3": 235,
+        "swingOF": 235,
+        "swingP1": 235,
+        "swingP2": 235,
+        "swingPF": 235,
+        "swingT1": 235,
+        "swingT2": 235,
+        "swingT3": 235,
+        "swingTF": 235
+      },
+      "delay_stats": {
+        "count": 1,
+        "min": 1200,
+        "max": 1200,
+        "unique_values": [
+          1200
+        ]
+      },
+      "uol_refs": 7006
+    },
+    "Hair": {
+      "xml_files": 1518,
+      "unique_islot": [
+        "Hr"
+      ],
+      "unique_vslot": [
+        "H1H2H3H4H5H6HfHsHb"
+      ],
+      "top_islot": {
+        "Hr": 1518
+      },
+      "top_vslot": {
+        "H1H2H3H4H5H6HfHsHb": 1518
+      },
+      "top_vslot_tokens": {
+        "H1": 1518,
+        "H2": 1518,
+        "H3": 1518,
+        "H4": 1518,
+        "H5": 1518,
+        "H6": 1518,
+        "Hf": 1518,
+        "Hs": 1518,
+        "Hb": 1518
+      },
+      "top_anchors": {
+        "brow": 10513
+      },
+      "top_z_layers": {
+        "hair": 2081,
+        "hairOverHead": 2049,
+        "hairShade": 1900,
+        "backHair": 1518,
+        "backHairBelowCap": 1357,
+        "hairBelowBody": 1223,
+        "backHairBelowCapWide": 192,
+        "backHairBelowCapNarrow": 192,
+        "backHairOverCape": 16
+      },
+      "top_groups": {
+        "skin": 1740
+      },
+      "top_actions": {
+        "alert": 1518,
+        "backDefault": 1518,
+        "default": 1518,
+        "fly": 1518,
+        "heal": 1518,
+        "jump": 1518,
+        "ladder": 1518,
+        "prone": 1518,
+        "proneStab": 1518,
+        "rope": 1518,
+        "shoot1": 1518,
+        "shoot2": 1518,
+        "shootF": 1518,
+        "sit": 1518,
+        "stabO1": 1518,
+        "stabO2": 1518,
+        "stabOF": 1518,
+        "stabT1": 1518,
+        "stabT2": 1518,
+        "stabTF": 1518,
+        "stand1": 1518,
+        "stand2": 1518,
+        "swingO1": 1518,
+        "swingO2": 1518,
+        "swingO3": 1518,
+        "swingOF": 1518,
+        "swingP1": 1518,
+        "swingP2": 1518,
+        "swingPF": 1518,
+        "swingT1": 1518
+      },
+      "delay_stats": {
+        "count": 0,
+        "min": null,
+        "max": null,
+        "unique_values": []
+      },
+      "uol_refs": 474846
+    },
+    "Longcoat": {
+      "xml_files": 491,
+      "unique_islot": [
+        "MaPn"
+      ],
+      "unique_vslot": [
+        "MaPn"
+      ],
+      "top_islot": {
+        "MaPn": 491
+      },
+      "top_vslot": {
+        "MaPn": 491
+      },
+      "top_vslot_tokens": {
+        "Ma": 491,
+        "Pn": 491
+      },
+      "top_anchors": {
+        "navel": 76200
+      },
+      "top_z_layers": {
+        "mailChest": 16964,
+        "mailArmOverHair": 14999,
+        "mailArm": 12251,
+        "mailChestOverPants": 10398,
+        "mailChestOverHighest": 7044,
+        "mailArmBelowHead": 4266,
+        "mailChestBelowPants": 2458,
+        "backMailChest": 2091,
+        "pantsOverShoesBelowMailChest": 1846,
+        "mailArmBelowHeadOverMailChest": 1544,
+        "mailArmOverHairBelowWeapon": 1263,
+        "backPants": 321,
+        "backMailChestOverPants": 288,
+        "mailChestTop": 237,
+        "backMailChestBelowPants": 207,
+        "backShoesBelowPants": 18,
+        "backPantsOverShoesBelowMailChest": 4,
+        "armOverHair": 1
+      },
+      "top_groups": {},
+      "top_actions": {
+        "alert": 491,
+        "fly": 491,
+        "heal": 491,
+        "jump": 491,
+        "ladder": 491,
+        "prone": 491,
+        "proneStab": 491,
+        "rope": 491,
+        "shoot1": 491,
+        "shoot2": 491,
+        "shootF": 491,
+        "sit": 491,
+        "stabO1": 491,
+        "stabO2": 491,
+        "stabT1": 491,
+        "stabT2": 491,
+        "stabTF": 491,
+        "stand1": 491,
+        "stand2": 491,
+        "swingO1": 491,
+        "swingO2": 491,
+        "swingO3": 491,
+        "swingOF": 491,
+        "swingP1": 491,
+        "swingP2": 491,
+        "swingPF": 491,
+        "swingT1": 491,
+        "swingT2": 491,
+        "swingT3": 491,
+        "swingTF": 491
+      },
+      "delay_stats": {
+        "count": 2,
+        "min": 1500,
+        "max": 2000,
+        "unique_values": [
+          1500,
+          2000
+        ]
+      },
+      "uol_refs": 9682
+    },
+    "Pants": {
+      "xml_files": 404,
+      "unique_islot": [
+        "Pn"
+      ],
+      "unique_vslot": [
+        "Pn"
+      ],
+      "top_islot": {
+        "Pn": 404
+      },
+      "top_vslot": {
+        "Pn": 404
+      },
+      "top_vslot_tokens": {
+        "Pn": 404
+      },
+      "top_anchors": {
+        "navel": 29534
+      },
+      "top_z_layers": {
+        "pants": 10414,
+        "pantsOverShoesBelowMailChest": 9923,
+        "pantsBelowShoes": 4850,
+        "pantsOverMailChest": 1925,
+        "backPants": 978,
+        "backPantsOverShoesBelowMailChest": 788,
+        "backPantsBelowShoes": 434,
+        "backPantsOverMailChest": 222
+      },
+      "top_groups": {},
+      "top_actions": {
+        "alert": 404,
+        "fly": 404,
+        "heal": 404,
+        "jump": 404,
+        "ladder": 404,
+        "prone": 404,
+        "proneStab": 404,
+        "rope": 404,
+        "shoot1": 404,
+        "shoot2": 404,
+        "shootF": 404,
+        "sit": 404,
+        "stabO1": 404,
+        "stabO2": 404,
+        "stabOF": 404,
+        "stabT1": 404,
+        "stabT2": 404,
+        "stabTF": 404,
+        "stand1": 404,
+        "stand2": 404,
+        "swingO1": 404,
+        "swingO2": 404,
+        "swingO3": 404,
+        "swingOF": 404,
+        "swingP1": 404,
+        "swingP2": 404,
+        "swingPF": 404,
+        "swingT1": 404,
+        "swingT2": 404,
+        "swingT3": 404
+      },
+      "delay_stats": {
+        "count": 3,
+        "min": 1200,
+        "max": 1200,
+        "unique_values": [
+          1200
+        ]
+      },
+      "uol_refs": 8846
+    },
+    "PetEquip": {
+      "xml_files": 69,
+      "unique_islot": [],
+      "unique_vslot": [],
+      "top_islot": {},
+      "top_vslot": {},
+      "top_vslot_tokens": {},
+      "top_anchors": {},
+      "top_z_layers": {},
+      "top_groups": {},
+      "top_actions": {
+        "5000006": 16,
+        "5000011": 15,
+        "5000036": 15,
+        "5000008": 13,
+        "5000003": 12,
+        "5000012": 12,
+        "5000020": 12,
+        "5000030": 12,
+        "5000031": 12,
+        "5000032": 12,
+        "5000033": 12,
+        "5000002": 11,
+        "5000007": 11,
+        "5000009": 11,
+        "5000015": 11,
+        "5000022": 11,
+        "5000023": 11,
+        "5000024": 11,
+        "5000025": 11,
+        "5000026": 11,
+        "5000029": 11,
+        "5000039": 11,
+        "5000040": 11,
+        "5000041": 11,
+        "5000043": 11,
+        "5000045": 11,
+        "5000048": 11,
+        "5000049": 11,
+        "5000050": 11,
+        "5000051": 11
+      },
+      "delay_stats": {
+        "count": 4095,
+        "min": 60,
+        "max": 4000,
+        "unique_values": [
+          60,
+          75,
+          80,
+          85,
+          90,
+          95,
+          100,
+          120,
+          150,
+          170,
+          180,
+          190,
+          200,
+          220,
+          230,
+          240,
+          250,
+          300,
+          360,
+          375,
+          400,
+          550,
+          600,
+          840,
+          1000,
+          1200,
+          1500,
+          2000,
+          3000,
+          4000
+        ]
+      },
+      "uol_refs": 29116
+    },
+    "Ring": {
+      "xml_files": 112,
+      "unique_islot": [
+        "Ri"
+      ],
+      "unique_vslot": [
+        "Ri"
+      ],
+      "top_islot": {
+        "Ri": 112
+      },
+      "top_vslot": {
+        "Ri": 112
+      },
+      "top_vslot_tokens": {
+        "Ri": 112
+      },
+      "top_anchors": {},
+      "top_z_layers": {},
+      "top_groups": {},
+      "top_actions": {},
+      "delay_stats": {
+        "count": 9,
+        "min": 140,
+        "max": 3000,
+        "unique_values": [
+          140,
+          800,
+          900,
+          1700,
+          3000
+        ]
+      },
+      "uol_refs": 0
+    },
+    "Shield": {
+      "xml_files": 58,
+      "unique_islot": [
+        "Si"
+      ],
+      "unique_vslot": [
+        "Si"
+      ],
+      "top_islot": {
+        "Si": 58
+      },
+      "top_vslot": {
+        "Si": 58
+      },
+      "top_vslot_tokens": {
+        "Si": 58
+      },
+      "top_anchors": {
+        "navel": 1936
+      },
+      "top_z_layers": {
+        "shieldBelowBody": 1295,
+        "shield": 237,
+        "shieldOverHair": 214,
+        "backShield": 181,
+        "backShieldBelowBody": 8,
+        "shieldBelowArm": 1
+      },
+      "top_groups": {},
+      "top_actions": {
+        "alert": 56,
+        "fly": 56,
+        "heal": 56,
+        "jump": 56,
+        "prone": 56,
+        "proneStab": 56,
+        "stabO1": 56,
+        "stabO2": 56,
+        "stabOF": 56,
+        "stand1": 56,
+        "swingO1": 56,
+        "swingO2": 56,
+        "swingO3": 56,
+        "swingOF": 56,
+        "walk1": 56,
+        "ladder": 35,
+        "rope": 35
+      },
+      "delay_stats": {
+        "count": 0,
+        "min": null,
+        "max": null,
+        "unique_values": []
+      },
+      "uol_refs": 388
+    },
+    "Shoes": {
+      "xml_files": 417,
+      "unique_islot": [
+        "Cp",
+        "So"
+      ],
+      "unique_vslot": [
+        "Cp",
+        "So"
+      ],
+      "top_islot": {
+        "So": 416,
+        "Cp": 1
+      },
+      "top_vslot": {
+        "So": 416,
+        "Cp": 1
+      },
+      "top_vslot_tokens": {
+        "So": 416,
+        "Cp": 1
+      },
+      "top_anchors": {
+        "navel": 30474
+      },
+      "top_z_layers": {
+        "shoes": 16168,
+        "shoesOverPants": 9894,
+        "backShoes": 2348,
+        "shoesTop": 2016,
+        "backShoesBelowPants": 48
+      },
+      "top_groups": {},
+      "top_actions": {
+        "alert": 416,
+        "fly": 416,
+        "heal": 416,
+        "jump": 416,
+        "ladder": 416,
+        "prone": 416,
+        "proneStab": 416,
+        "rope": 416,
+        "shoot1": 416,
+        "shoot2": 416,
+        "shootF": 416,
+        "sit": 416,
+        "stabO1": 416,
+        "stabO2": 416,
+        "stabOF": 416,
+        "stabT1": 416,
+        "stabT2": 416,
+        "stabTF": 416,
+        "stand1": 416,
+        "stand2": 416,
+        "swingO1": 416,
+        "swingO2": 416,
+        "swingO3": 416,
+        "swingOF": 416,
+        "swingP1": 416,
+        "swingP2": 416,
+        "swingPF": 416,
+        "swingT1": 416,
+        "swingT2": 416,
+        "swingT3": 416
+      },
+      "delay_stats": {
+        "count": 2,
+        "min": 1200,
+        "max": 1200,
+        "unique_values": [
+          1200
+        ]
+      },
+      "uol_refs": 9081
+    },
+    "TamingMob": {
+      "xml_files": 47,
+      "unique_islot": [
+        "Sd",
+        "Tm"
+      ],
+      "unique_vslot": [
+        "Sd",
+        "Tm"
+      ],
+      "top_islot": {
+        "Tm": 31,
+        "Sd": 16
+      },
+      "top_vslot": {
+        "Tm": 31,
+        "Sd": 16
+      },
+      "top_vslot_tokens": {
+        "Tm": 31,
+        "Sd": 16
+      },
+      "top_anchors": {
+        "navel": 2593
+      },
+      "top_z_layers": {
+        "tamingMobFront": 617,
+        "tamingMobMid": 542,
+        "saddleFront": 504,
+        "saddleRear": 485,
+        "tamingMobRear": 158,
+        "backTamingMobMid": 90,
+        "backSaddle": 78,
+        "characterEnd": 53,
+        "backTamingMobFront": 30,
+        "saddleMid": 23,
+        "backMobEquipUnderSaddle": 8,
+        "backSaddleFront": 4,
+        "mobEquipMid": 2
+      },
+      "top_groups": {},
+      "top_actions": {
+        "fly": 31,
+        "jump": 31,
+        "prone": 31,
+        "stand1": 31,
+        "stand2": 31,
+        "tired": 31,
+        "walk1": 31,
+        "walk2": 31,
+        "ladder": 30,
+        "rope": 30,
+        "float": 2,
+        "1902000": 1,
+        "1902001": 1,
+        "1902002": 1,
+        "1902008": 1,
+        "1902009": 1,
+        "1902005": 1,
+        "1902006": 1,
+        "1902007": 1,
+        "1902010": 1,
+        "1902011": 1,
+        "1902012": 1,
+        "1902015": 1,
+        "1902016": 1,
+        "1902017": 1,
+        "1902018": 1,
+        "1902020": 1,
+        "1902021": 1,
+        "1902036": 1,
+        "1902038": 1
+      },
+      "delay_stats": {
+        "count": 1053,
+        "min": 50,
+        "max": 100000000,
+        "unique_values": [
+          50,
+          60,
+          80,
+          90,
+          100,
+          110,
+          120,
+          130,
+          140,
+          144,
+          150,
+          160,
+          170,
+          180,
+          190,
+          192,
+          200,
+          210,
+          216,
+          230,
+          240,
+          250,
+          300,
+          330,
+          360,
+          300000,
+          100000000
+        ]
+      },
+      "uol_refs": 1490
+    },
+    "Weapon": {
+      "xml_files": 1220,
+      "unique_islot": [
+        "Ri",
+        "Wp",
+        "WpSi"
+      ],
+      "unique_vslot": [
+        "Ri",
+        "Wp",
+        "WpSi"
+      ],
+      "top_islot": {
+        "Wp": 859,
+        "WpSi": 353,
+        "Ri": 8
+      },
+      "top_vslot": {
+        "Wp": 859,
+        "WpSi": 353,
+        "Ri": 8
+      },
+      "top_vslot_tokens": {
+        "Wp": 1212,
+        "Si": 353,
+        "Ri": 8
+      },
+      "top_anchors": {
+        "navel": 28647,
+        "hand": 23335,
+        "muzzle": 2304,
+        "handMove": 168
+      },
+      "top_z_layers": {
+        "weapon": 12228,
+        "weaponBelowArm": 8241,
+        "weaponOverArm": 7585,
+        "weaponBelowBody": 7036,
+        "weaponOverGlove": 5324,
+        "weaponOverBody": 5319,
+        "weaponOverHand": 3272,
+        "backWeapon": 1231,
+        "weaponWristOverGlove": 895,
+        "backWeaponOverShield": 379,
+        "backWeaponOverGlove": 284,
+        "emotionOverBody": 58,
+        "weaponOverArmBelowHead": 47,
+        "backWeaponOverHead": 28,
+        "armBelowHeadOverMailChest": 14,
+        "mailArmOverHairBelowWeapon": 10,
+        "weaponWrist": 9,
+        "gloveWristBelowWeapon": 8,
+        "armOverHairBelowWeapon": 3,
+        "weaponBelowHand": 3,
+        "gloveWristOverBody": 2,
+        "weaponOveArm": 2,
+        "face": 1,
+        "hairBelowBody": 1,
+        "mailArmOverHair": 1,
+        "Weapon": 1
+      },
+      "top_groups": {},
+      "top_actions": {
+        "alert": 1001,
+        "fly": 1001,
+        "jump": 1001,
+        "prone": 1001,
+        "proneStab": 1001,
+        "walk1": 745,
+        "stabO1": 731,
+        "stabO2": 714,
+        "stand1": 679,
+        "stabOF": 605,
+        "heal": 593,
+        "swingO3": 572,
+        "swingO2": 568,
+        "swingO1": 530,
+        "swingOF": 460,
+        "swingT1": 361,
+        "swingT2": 360,
+        "stand2": 327,
+        "swingT3": 285,
+        "walk2": 264,
+        "stabT1": 252,
+        "shoot1": 250,
+        "shootF": 244,
+        "stabT2": 211,
+        "swingP2": 211,
+        "swingPF": 210,
+        "swingP1": 202,
+        "stabTF": 200,
+        "swingTF": 183,
+        "shoot2": 137
+      },
+      "delay_stats": {
+        "count": 0,
+        "min": null,
+        "max": null,
+        "unique_values": []
+      },
+      "uol_refs": 25844
+    }
+  },
+  "make_char_info": {
+    "info_profiles": {
+      "CharMale": {
+        "0": {
+          "0": "20000",
+          "1": "20001",
+          "2": "20002"
+        },
+        "1": {
+          "0": "30030",
+          "1": "30020",
+          "2": "30000"
+        },
+        "2": {
+          "0": "0",
+          "1": "7",
+          "2": "3",
+          "3": "2"
+        },
+        "3": {
+          "0": "0",
+          "1": "1",
+          "2": "2",
+          "3": "3"
+        },
+        "4": {
+          "0": "1040002",
+          "1": "1040006",
+          "2": "1040010"
+        },
+        "5": {
+          "0": "1060002",
+          "1": "1060006"
+        },
+        "6": {
+          "0": "1072001",
+          "1": "1072005",
+          "2": "1072037",
+          "3": "1072038"
+        },
+        "7": {
+          "0": "1302000",
+          "1": "1322005",
+          "2": "1312004"
+        }
+      },
+      "CharFemale": {
+        "0": {
+          "0": "21000",
+          "1": "21001",
+          "2": "21002"
+        },
+        "1": {
+          "0": "31000",
+          "1": "31040",
+          "2": "31050"
+        },
+        "2": {
+          "0": "0",
+          "1": "7",
+          "2": "3",
+          "3": "2"
+        },
+        "3": {
+          "0": "0",
+          "1": "1",
+          "2": "2",
+          "3": "3"
+        },
+        "4": {
+          "0": "1041002",
+          "1": "1041006",
+          "2": "1041010",
+          "3": "1041011"
+        },
+        "5": {
+          "0": "1061002",
+          "1": "1061008"
+        },
+        "6": {
+          "0": "1072001",
+          "1": "1072005",
+          "2": "1072037",
+          "3": "1072038"
+        },
+        "7": {
+          "0": "1302000",
+          "1": "1322005",
+          "2": "1312004"
+        }
+      }
+    },
+    "name_profiles": {
+      "CharMale": {
+        "1": {
+          "30030": "Buzz Hair",
+          "30020": "Rebel Hair",
+          "30000": "Toben Hair"
+        },
+        "2": {
+          "0": "Black",
+          "7": "Brown",
+          "3": "Blond",
+          "2": "Orange"
+        },
+        "3": {
+          "0": "Light",
+          "1": "Tanned",
+          "2": "Dark",
+          "3": "Pale"
+        }
+      },
+      "CharFemale": {
+        "1": {
+          "31000": "Sammy Hair",
+          "31040": "Edgy Hair",
+          "31050": "Connie Hair"
+        },
+        "2": {
+          "0": "Black",
+          "7": "Brown",
+          "3": "Blond",
+          "2": "Orange"
+        },
+        "3": {
+          "0": "Light",
+          "1": "Tanned",
+          "2": "Dark",
+          "3": "Pale"
+        }
+      },
+      "PremiumCharMale": {
+        "1": {
+          "30030": "Buzz Hair",
+          "30020": "Rebel Hair",
+          "30000": "Toben Hair"
+        },
+        "2": {
+          "0": "Black",
+          "7": "Brown",
+          "3": "Blond",
+          "2": "Orange"
+        },
+        "3": {
+          "0": "Light",
+          "1": "Tanned",
+          "2": "Dark",
+          "3": "Pale"
+        }
+      },
+      "PremiumCharFemale": {
+        "1": {
+          "31000": "Sammy Hair",
+          "31040": "Edgy Hair",
+          "31050": "Connie Hair"
+        },
+        "2": {
+          "0": "Black",
+          "7": "Brown",
+          "3": "Blond",
+          "2": "Orange"
+        },
+        "3": {
+          "0": "Light",
+          "1": "Tanned",
+          "2": "Dark",
+          "3": "Pale"
+        }
+      }
+    }
+  },
+  "eqp_name_summary": {
+    "categories": {
+      "Accessory": 497,
+      "Cap": 915,
+      "Cape": 178,
+      "Coat": 463,
+      "Face": 540,
+      "Glove": 239,
+      "Hair": 1504,
+      "Longcoat": 485,
+      "Pants": 410,
+      "PetEquip": 67,
+      "Ring": 112,
+      "Shield": 57,
+      "Shoes": 421,
+      "Taming": 33,
+      "Weapon": 1184
+    },
+    "total_named_entries": 7105
+  }
+}

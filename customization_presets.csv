@@ -1,0 +1,54 @@
+profile,group,index,value,label
+CharFemale,0,0,21000,
+CharFemale,0,1,21001,
+CharFemale,0,2,21002,
+CharFemale,1,0,31000,Sammy Hair
+CharFemale,1,1,31040,Edgy Hair
+CharFemale,1,2,31050,Connie Hair
+CharFemale,2,0,0,Black
+CharFemale,2,1,7,Brown
+CharFemale,2,2,3,Blond
+CharFemale,2,3,2,Orange
+CharFemale,3,0,0,Light
+CharFemale,3,1,1,Tanned
+CharFemale,3,2,2,Dark
+CharFemale,3,3,3,Pale
+CharFemale,4,0,1041002,
+CharFemale,4,1,1041006,
+CharFemale,4,2,1041010,
+CharFemale,4,3,1041011,
+CharFemale,5,0,1061002,
+CharFemale,5,1,1061008,
+CharFemale,6,0,1072001,
+CharFemale,6,1,1072005,
+CharFemale,6,2,1072037,
+CharFemale,6,3,1072038,
+CharFemale,7,0,1302000,
+CharFemale,7,1,1322005,
+CharFemale,7,2,1312004,
+CharMale,0,0,20000,
+CharMale,0,1,20001,
+CharMale,0,2,20002,
+CharMale,1,0,30030,Buzz Hair
+CharMale,1,1,30020,Rebel Hair
+CharMale,1,2,30000,Toben Hair
+CharMale,2,0,0,Black
+CharMale,2,1,7,Brown
+CharMale,2,2,3,Blond
+CharMale,2,3,2,Orange
+CharMale,3,0,0,Light
+CharMale,3,1,1,Tanned
+CharMale,3,2,2,Dark
+CharMale,3,3,3,Pale
+CharMale,4,0,1040002,
+CharMale,4,1,1040006,
+CharMale,4,2,1040010,
+CharMale,5,0,1060002,
+CharMale,5,1,1060006,
+CharMale,6,0,1072001,
+CharMale,6,1,1072005,
+CharMale,6,2,1072037,
+CharMale,6,3,1072038,
+CharMale,7,0,1302000,
+CharMale,7,1,1322005,
+CharMale,7,2,1312004,

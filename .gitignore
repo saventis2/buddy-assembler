@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Generated export artifacts
+batch_exports/
+batch_exports_test_fix/
+batch_exports_test_flaky/
+renders/
+build_preview/
+tmp_diag*/
+diff_gui/
+diff_self/
+diff_self_fast/
+diff_self_fast2/
+diff_self_fast3/
+alignment_audit/
+alignment_audit_secondbrain_check/
+dataset_audit/
+catalogue/
+
+# Local runtime noise
+.DS_Store
+Thumbs.db

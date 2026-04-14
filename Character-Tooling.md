@@ -1,0 +1,227 @@
+# Character Tooling
+
+Session records:
+
+- `Session-Log-2026-04-15.md` (detailed implementation/investigation log)
+
+## 0) Desktop GUI (Render + Diff)
+
+Script: `character_tooling_gui.py`
+
+Run:
+
+```powershell
+python character_tooling_gui.py
+```
+
+What it provides:
+
+- `Render` tab for composing a character frame and previewing output PNG.
+- `Diff` tab for old/new extracted tree comparisons with classification summary.
+- `Catalogue` tab for part-separated item browsing/search and one-click ID apply into Render slots.
+- `Batch Export` tab for action frame-range export (PNG sequence + optional GIF).
+- `Batch Export` supports complete exports:
+  - auto-detect full frame range for an action,
+  - export all actions,
+  - generate per-action GIFs and sprite sheets.
+- Input validation for Base.wz paths, numeric IDs/frame values, and slow-mode warnings.
+- Read-only command previews for both operations.
+- Adjustable z-draw mode (`front-last` default, `front-first` optional) for layer ordering.
+- Item ID name resolution in Render tab from `String\String.wz\Eqp.img.xml`:
+  - shows `Name [ID]`,
+  - warns when ID category does not match expected slot.
+
+Council-style decisions applied:
+
+- Default to fast-safe modes (`size` compares, `include_unchanged` off).
+- Warn for risky/slow settings (`hash`, identical old/new paths, coat+longcoat overlap).
+- Keep outputs inspectable via JSON/CSV and image preview instead of opaque execution.
+
+Desktop shortcut created:
+
+- `C:\Users\GGPC\OneDrive\Desktop\docs  fo ai (so i know where to look\MapleStory Character Tooling GUI.lnk`
+
+## 0.1) Item Catalogue Generator
+
+Script: `build_item_catalogue.py`
+
+Run:
+
+```powershell
+python build_item_catalogue.py `
+  --base-wz "C:\Users\GGPC\OneDrive\Desktop\83 complete\Base.wz" `
+  --output-dir "C:\Users\GGPC\OneDrive\Desktop\83 complete\analysis\catalogue"
+```
+
+Outputs:
+
+- `catalogue_all.csv`
+- `catalogue_summary.json`
+- `catalogue_index.md`
+- `catalogue_<PartCategory>.csv` files for easy part-by-part reference
+
+The GUI `Catalogue` tab can generate/load these files, filter by category, search by name/ID, and apply selected IDs to Render fields.
+
+## 1) Prototype Frame Renderer
+
+Script: `render_character_frame.py`
+
+Example (starter male, stand frame):
+
+```powershell
+python render_character_frame.py `
+  --starter-male `
+  --action stand1 `
+  --frame 0 `
+  --output-png .\renders\starter_male_stand1_0.png `
+  --output-json .\renders\starter_male_stand1_0.json
+```
+
+Key options:
+
+- `--base-wz` extracted `Base.wz` root.
+- `--action`, `--frame` select state/frame.
+- `--z-draw-order front-last|front-first` controls final compositing order (`front-last` recommended).
+- `--base-id`, `--head-id`, `--face-id`, `--hair-id` for base appearance.
+- Optional equip IDs: `--cap-id`, `--coat-id`, `--longcoat-id`, `--pants-id`, `--shoes-id`, `--glove-id`, `--cape-id`, `--shield-id`, `--weapon-id`, `--accessory-id`.
+
+Output:
+
+- Composited PNG.
+- Metadata JSON with draw order, z-layers, anchor used, and unresolved nodes.
+
+## 2) Character Asset Diff Tool
+
+Script: `diff_character_assets.py`
+
+Example (compare two extracts):
+
+```powershell
+python diff_character_assets.py `
+  --old-base-wz "D:\extract_old\Base.wz" `
+  --new-base-wz "D:\extract_new\Base.wz" `
+  --output-dir ".\diff_out" `
+  --xml-compare size `
+  --png-compare size
+```
+
+Key options:
+
+- `--xml-compare size|hash`
+  - `size`: fast pre-check.
+  - `hash`: accurate, slower.
+- `--png-compare size|hash`
+  - `size`: fast.
+  - `hash`: accurate, slower.
+- `--skip-png` for XML-only diff.
+- `--include-unchanged` to emit full CSVs (can be large).
+
+Output:
+
+- `character_diff_summary.json`
+- `character_xml_diff.csv`
+- `character_png_diff.csv`
+
+Classification buckets:
+
+- `structural`
+- `timing`
+- `composition`
+- `compatibility`
+- plus art changes via PNG diff.
+
+## 3) Batch Animation Export (GUI tab)
+
+Use the GUI `Batch Export` tab to export a frame range or complete action/action-set.
+
+Inputs:
+
+- Base.wz path, action, start/end frame.
+- Optional automatic full-frame detection for the chosen action.
+- Optional all-actions mode (exports every action detected in base template).
+- Output directory + filename prefix.
+- Optional GIF path/duration.
+- Optional sprite sheet path/columns.
+- Character IDs come from Render tab values (or starter preset).
+
+Outputs:
+
+- `prefix_action_###.png` frame sequence.
+- Optional `prefix_action_###.json` metadata per frame.
+- Optional GIF (`prefix_action.gif` in all-actions mode).
+- Optional sprite sheet (`prefix_action_sheet.png` in all-actions mode).
+- Batch summary JSON (`prefix_action_batch_summary.json` or `prefix_all_actions_batch_summary.json`).
+
+GIF/sprite-sheet location behavior:
+
+- Single-action mode:
+  - uses the exact `GIF Path` and `Sprite Sheet Path` fields.
+- All-actions mode:
+  - writes per-action outputs inside `Output Dir\<action>\`:
+    - `prefix_<action>.gif`
+    - `prefix_<action>_sheet.png`
+  - Batch log prints each created path.
+
+Quality controls (recommended):
+
+- `Skip frames with unresolved assets`: drops frames that reference missing PNG/XML pieces.
+- `Minimum drawn layers per frame`: drops frames that render too few layers (likely broken output).
+- Dropped frames are logged with reasons and excluded from final GIF/sprite sheet.
+
+## 4) Alignment Audit
+
+Script: `alignment_audit.py`
+
+Purpose:
+
+- Analyze existing batch-render metadata to detect alignment risk and animation compatibility issues.
+- Quantify fallback usage, unresolved taxonomy, anchor behavior, and frame-to-frame positional drift.
+
+Run:
+
+```powershell
+python alignment_audit.py `
+  --batch-summary ".\batch_exports\anim_all_actions_batch_summary.json" `
+  --base-wz "C:\Users\GGPC\OneDrive\Desktop\83 complete\Base.wz" `
+  --out-dir ".\alignment_audit"
+```
+
+Outputs:
+
+- `alignment_audit_report.json` (full diagnostics + metrics)
+- `alignment_findings.csv` (flat findings table)
+- `alignment_summary.md` (human-readable summary)
+
+Key options:
+
+- `--max-jitter-px` (default `6.0`)
+- `--max-fallback-rate` (default `0.35`)
+- `--allow-origin-fallback-kinds` (default `body`)
+
+GUI integration:
+
+- Batch tab now includes `Run Alignment Audit` to run the same pipeline against the expected batch summary file.
+
+## 5) Recent Fixes (2026-04-15)
+
+- Weapon action compatibility fallback:
+  - Missing weapon nodes on actions like `swingO*`, `swingT3/TF`, `stabO*`, `stand1` now map to compatible weapon families (for example `swingP*`, `stabT*`, `stand2`) instead of dropping weapon rendering.
+- `alert` weapon outlier guard:
+  - Some weapon `alert` nodes include extreme hand-anchor offsets that render detached/off-body.
+  - Renderer now detects this case and falls back to a compatible idle weapon node (`stand2`/`stand1`/`walk2`/`walk1`/`prone`) with selection mode `fallback_weapon_alert_outlier_alias_closest_frame`.
+- Batch quality filtering update:
+  - When a weapon has no render node for an action (`selection_mode=no_render_node`, `entry_count=0`), effective minimum-layer threshold is reduced by 1 for that frame.
+  - This preserves valid low-layer actions like `rope`/`ladder` that were previously dropped by strict global min-layer filtering.
+- Ranged weapon alias tightening:
+  - For ranged weapon classes (`145/146/147/149`), alias fallback is now intentionally minimal (`stand2->stand1`, `walk2->walk1`, plus conservative `alert` fallback).
+  - This avoids cross-family remaps (for example forcing `swingTF`/`stabOF` onto unrelated weapon nodes) that can produce detached or static-looking gun placement.
+- Ranged `alert/heal` hand-face layering:
+  - For ranged loadouts, `lHand` on `alert`/`heal` is forced behind face (`z_index > face`) when it uses `handBelowWeapon`, preventing visible hand-over-face overlap artifacts.
+- Off-hand visibility policy (`alert/heal`):
+  - `lHand` is now suppressed when it is effectively orphaned (`used_anchor=asset_origin_inherit`) in `alert/heal`.
+  - For ranged weapon classes (`145/146/147/149`), `lHand` is also suppressed in `alert/heal` to avoid stray face-adjacent off-hand artifacts.
+  - Policy output is recorded in frame metadata under `offhand_policy.removed_node_paths`.
+- Strict metadata alignment (positioning rewrite):
+  - Placement now uses canonical anchor publication from `body` and `head` only.
+  - Non-canonical equipment layers (including weapon) no longer publish new global anchors during solve.
+  - Weapon hand-proxy alignment override is disabled in strict mode so weapon position is determined by the frame's own map/origin metadata.
