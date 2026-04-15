@@ -65,6 +65,22 @@ session for MapleStory character rendering/export.
   `loadout-intersection-with-weapon`.
 - Batch export now logs and writes `weapon_profile` metadata in summary JSON.
 
+10. Skill animation overlay support
+- Added optional skill overlay rendering from `Skill/Skill.wz` in
+  `render_character_frame.py`.
+- New renderer parameters:
+  - `skill_id` / `--skill-id`
+  - `skill_anim` / `--skill-anim` with branch selection
+    (`auto|effect|effect0|effect1|hit|ball|prepare|summon|affected`)
+- Added batch UI fields for skill overlay (`Skill ID`, `Skill Anim`) and pass
+  through to frame rendering.
+- Batch summary now records `skill_overlay`; per-frame metadata records
+  `skill_selection`.
+
+11. Versioning workflow hardening
+- Added a rollback section to `Character-Tooling.md` documenting commit/tag
+  checkpoint workflow and restore commands.
+
 ## Files Updated During Session
 
 - `render_character_frame.py`

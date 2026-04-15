@@ -56,6 +56,7 @@ RANGED_WEAPON_TYPE_CODES = {
 }
 STRICT_METADATA_ALIGNMENT = True
 ANCHOR_PROVIDER_KINDS = {"body", "head"}
+SKILL_BRANCH_PRIORITY = ("effect", "effect0", "effect1", "hit", "ball", "prepare", "summon", "affected")
 
 HAIR_MASK_SLOTS = {"H1", "H2", "H3", "H4", "H5", "H6", "Hf", "Hs", "Hb"}
 FRONT_HAIR_Z_TAGS = {"hair", "hairOverHead", "hairShade", "hairBelowBody"}
@@ -460,6 +461,14 @@ class Asset:
         self._collect_canvases(start, start_path, out, visited=set())
         return out, dict(self.last_selection)
 
+    def build_draw_entries_from_start_path(self, start_path: Tuple[str, ...]) -> List[DrawEntry]:
+        node = self.index.get(start_path)
+        if node is None:
+            return []
+        out: List[DrawEntry] = []
+        self._collect_canvases(node, start_path, out, visited=set())
+        return out
+
 
 def id_to_xml(category_dir: Path, part_id: int) -> Path:
     return category_dir / f"{part_id:08d}.img.xml"
@@ -478,6 +487,212 @@ def parse_zmap(base_wz: Path) -> Dict[str, int]:
             order[name] = idx
             idx += 1
     return order
+
+
+def _skill_xml_candidates(skill_id: int) -> list[str]:
+    job = int(skill_id) // 10000
+    cands = [f"{job}.img.xml"]
+    if job < 1000:
+        cands.append(f"{job:03d}.img.xml")
+    # Deduplicate while preserving order.
+    out: list[str] = []
+    seen = set()
+    for name in cands:
+        if name in seen:
+            continue
+        seen.add(name)
+        out.append(name)
+    return out
+
+
+def _load_skill_asset(base_wz: Path, skill_id: int) -> tuple[Optional[Asset], dict]:
+    skill_root = base_wz / "Skill" / "Skill.wz"
+    candidates = _skill_xml_candidates(skill_id)
+    for name in candidates:
+        xml_path = skill_root / name
+        if not xml_path.exists():
+            continue
+        try:
+            asset = Asset(kind="skill", part_id=int(skill_id), xml_path=xml_path)
+            return asset, {"xml": str(xml_path), "candidate_names": candidates}
+        except Exception as exc:  # noqa: BLE001
+            return None, {"xml": str(xml_path), "candidate_names": candidates, "error": str(exc)}
+    return None, {"candidate_names": candidates, "error": "skill_xml_not_found"}
+
+
+def _pick_skill_branch_node(
+    skill_asset: Asset,
+    skill_id: int,
+    skill_anim: str,
+) -> tuple[Optional[Tuple[str, ...]], dict]:
+    skill_id_s = str(int(skill_id))
+    root = skill_asset.root_name
+    entry_candidates = [
+        (root, "skill", skill_id_s),
+        (root, skill_id_s),
+    ]
+    entry_path: Optional[Tuple[str, ...]] = None
+    for p in entry_candidates:
+        if p in skill_asset.index:
+            entry_path = p
+            break
+    if entry_path is None:
+        return None, {"selection_mode": "skill_entry_not_found"}
+
+    requested = (skill_anim or "auto").strip()
+    branch_names: list[str] = []
+    if requested and requested != "auto":
+        branch_names.append(requested)
+    for name in SKILL_BRANCH_PRIORITY:
+        if name not in branch_names:
+            branch_names.append(name)
+
+    branch_path: Optional[Tuple[str, ...]] = None
+    selected_branch = None
+    if requested == "auto":
+        # Allow direct frame nodes under skill entry when branch is omitted.
+        has_numeric_direct = False
+        entry_node = skill_asset.index[entry_path]
+        for child in entry_node:
+            if child.attrib.get("name", "").isdigit():
+                has_numeric_direct = True
+                break
+        if has_numeric_direct:
+            branch_path = entry_path
+            selected_branch = "direct"
+
+    if branch_path is None:
+        for name in branch_names:
+            p = entry_path + (name,)
+            if p in skill_asset.index:
+                branch_path = p
+                selected_branch = name
+                break
+
+    if branch_path is None:
+        return None, {
+            "selection_mode": "skill_branch_not_found",
+            "entry_path": "/".join(entry_path),
+            "requested_branch": requested,
+        }
+
+    return branch_path, {
+        "selection_mode": "skill_branch_selected",
+        "entry_path": "/".join(entry_path),
+        "selected_branch": selected_branch,
+        "requested_branch": requested,
+    }
+
+
+def _pick_skill_frame_path(
+    skill_asset: Asset,
+    branch_path: Tuple[str, ...],
+    requested_frame: int,
+) -> tuple[Optional[Tuple[str, ...]], dict]:
+    branch_node = skill_asset.index.get(branch_path)
+    if branch_node is None:
+        return None, {"selection_mode": "skill_branch_node_missing"}
+
+    numeric_children: list[tuple[int, Tuple[str, ...], str]] = []
+    for child in branch_node:
+        name = child.attrib.get("name", "")
+        if not name.isdigit():
+            continue
+        if child.tag not in ("imgdir", "canvas"):
+            continue
+        numeric_children.append((int(name), branch_path + (name,), child.tag))
+
+    if numeric_children:
+        numeric_children.sort(key=lambda x: (abs(x[0] - requested_frame), x[0]))
+        chosen = numeric_children[0]
+        return chosen[1], {
+            "selection_mode": "skill_frame_closest",
+            "selected_frame": chosen[0],
+            "node_tag": chosen[2],
+        }
+
+    if branch_node.tag == "canvas":
+        return branch_path, {
+            "selection_mode": "skill_canvas_single",
+            "selected_frame": requested_frame,
+            "node_tag": "canvas",
+        }
+
+    if branch_node.tag == "imgdir":
+        # Some branches hold a single composite node without numeric frames.
+        has_canvas_desc = any(c.tag == "canvas" for c in branch_node)
+        if has_canvas_desc:
+            return branch_path, {
+                "selection_mode": "skill_branch_direct",
+                "selected_frame": requested_frame,
+                "node_tag": "imgdir",
+            }
+
+    return None, {"selection_mode": "skill_frame_not_found"}
+
+
+def build_skill_entries(
+    base_wz: Path,
+    skill_id: int,
+    skill_anim: str,
+    frame: int,
+) -> tuple[List[DrawEntry], dict]:
+    skill_asset, load_meta = _load_skill_asset(base_wz=base_wz, skill_id=skill_id)
+    if skill_asset is None:
+        return [], {
+            "requested_skill_id": int(skill_id),
+            "requested_branch": skill_anim,
+            "requested_frame": int(frame),
+            "selection_mode": "skill_asset_not_found",
+            **load_meta,
+        }
+
+    branch_path, branch_meta = _pick_skill_branch_node(
+        skill_asset=skill_asset,
+        skill_id=skill_id,
+        skill_anim=skill_anim,
+    )
+    if branch_path is None:
+        return [], {
+            "requested_skill_id": int(skill_id),
+            "requested_branch": skill_anim,
+            "requested_frame": int(frame),
+            "selection_mode": "skill_branch_not_found",
+            **load_meta,
+            **branch_meta,
+        }
+
+    frame_path, frame_meta = _pick_skill_frame_path(
+        skill_asset=skill_asset,
+        branch_path=branch_path,
+        requested_frame=frame,
+    )
+    if frame_path is None:
+        return [], {
+            "requested_skill_id": int(skill_id),
+            "requested_branch": skill_anim,
+            "requested_frame": int(frame),
+            "selection_mode": "skill_frame_not_found",
+            **load_meta,
+            **branch_meta,
+            **frame_meta,
+        }
+
+    entries = skill_asset.build_draw_entries_from_start_path(frame_path)
+    for e in entries:
+        # Keep skill layer ordering deterministic and isolated from equipment z.
+        e.z = "skillOverlay"
+    return entries, {
+        "requested_skill_id": int(skill_id),
+        "requested_branch": skill_anim,
+        "requested_frame": int(frame),
+        "selection_mode": "skill_ok" if entries else "skill_empty_entries",
+        "selected_path": "/".join(frame_path),
+        "entry_count": len(entries),
+        **load_meta,
+        **branch_meta,
+        **frame_meta,
+    }
 
 
 def _is_weapon_hand_proxy_action(node_path: Tuple[str, ...]) -> bool:
@@ -567,6 +782,12 @@ def place_entries(
     entry_list = list(entries)
     placed_by_index: Dict[int, PlacedEntry] = {}
     pending: list[tuple[int, DrawEntry]] = list(enumerate(entry_list))
+
+    def _entry_z_index(entry: DrawEntry) -> int:
+        if entry.asset_kind == "skill":
+            # Force skill overlays to render on top in front-last mode.
+            return -10
+        return z_order.get(entry.z, 1_000_000)
 
     def _maybe_publish_anchor(
         entry: DrawEntry,
@@ -683,7 +904,7 @@ def place_entries(
                     top_left[1] + entry.origin[1],
                 )
 
-            z_idx = z_order.get(entry.z, 1_000_000)
+            z_idx = _entry_z_index(entry)
             placed_by_index[idx] = PlacedEntry(
                 draw=entry,
                 top_left=top_left,
@@ -727,7 +948,7 @@ def place_entries(
                 top_left[1] + entry.origin[1],
             )
 
-        z_idx = z_order.get(entry.z, 1_000_000)
+        z_idx = _entry_z_index(entry)
         placed_by_index[idx] = PlacedEntry(
             draw=entry,
             top_left=top_left,
@@ -1000,7 +1221,9 @@ def render(
     cape_id: Optional[int],
     shield_id: Optional[int],
     weapon_id: Optional[int],
-    output_json: Optional[Path],
+    skill_id: Optional[int] = None,
+    skill_anim: str = "auto",
+    output_json: Optional[Path] = None,
     z_draw_order: str = "front-last",
     hair_mode: str = "auto",
 ) -> dict:
@@ -1127,6 +1350,37 @@ def render(
                 )
             continue
         all_entries.extend(entries)
+
+    skill_selection = None
+    if skill_id is not None:
+        skill_entries, skill_selection = build_skill_entries(
+            base_wz=base_wz,
+            skill_id=int(skill_id),
+            skill_anim=skill_anim,
+            frame=frame,
+        )
+        skill_row = {
+            "asset_kind": "skill",
+            "part_id": int(skill_id),
+            "requested_action": action,
+            "requested_frame": frame,
+            "selected_action": skill_selection.get("selected_branch"),
+            "selected_frame": skill_selection.get("selected_frame"),
+            "selection_mode": skill_selection.get("selection_mode"),
+            "entry_count": len(skill_entries),
+        }
+        action_resolution.append(skill_row)
+        if skill_entries:
+            all_entries.extend(skill_entries)
+        else:
+            missing_xml.append(
+                {
+                    "kind": "skill",
+                    "part_id": int(skill_id),
+                    "missing_action_node": True,
+                    "selection": skill_selection,
+                }
+            )
     all_entries, hair_policy = apply_hair_mode(
         entries=all_entries,
         cap_asset=cap_asset,
@@ -1199,6 +1453,7 @@ def render(
         "z_draw_order": z_draw_order,
         "hair_policy": hair_policy,
         "offhand_policy": offhand_policy,
+        "skill_selection": skill_selection,
         "equipment_normalization": equipment_normalization,
         "action_resolution": action_resolution,
         "action_fallback_count": len(action_fallbacks),
@@ -1282,6 +1537,12 @@ def main() -> None:
     parser.add_argument("--cape-id", type=int)
     parser.add_argument("--shield-id", type=int)
     parser.add_argument("--weapon-id", type=int)
+    parser.add_argument("--skill-id", type=int, help="Optional skill ID to overlay (from Skill.wz)")
+    parser.add_argument(
+        "--skill-anim",
+        default="auto",
+        help="Skill animation branch (auto|effect|effect0|effect1|hit|ball|prepare|summon|affected)",
+    )
 
     args = parser.parse_args()
 
@@ -1319,6 +1580,8 @@ def main() -> None:
         cape_id=args.cape_id,
         shield_id=args.shield_id,
         weapon_id=args.weapon_id,
+        skill_id=args.skill_id,
+        skill_anim=args.skill_anim,
         output_json=Path(args.output_json) if args.output_json else None,
         z_draw_order=args.z_draw_order,
         hair_mode=args.hair_mode,

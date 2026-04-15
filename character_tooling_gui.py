@@ -1975,6 +1975,8 @@ class App(tk.Tk):
         self.batch_sheet_cols = tk.StringVar(value="8")
         self.batch_skip_unresolved = tk.BooleanVar(value=True)
         self.batch_min_layers = tk.StringVar(value="8")
+        self.batch_skill_id = tk.StringVar(value="")
+        self.batch_skill_anim = tk.StringVar(value="auto")
         self.batch_cmd_preview = tk.StringVar(value="")
 
         self._build_labeled_entry(top, 0, "Base.wz path", self.batch_base_wz, width=90)
@@ -2064,18 +2066,29 @@ class App(tk.Tk):
             row=12, column=2, sticky="w", padx=4, pady=2
         )
         self._build_labeled_entry(top, 13, "Minimum drawn layers per frame", self.batch_min_layers, width=12)
+        self._build_labeled_entry(top, 14, "Skill ID (optional overlay)", self.batch_skill_id, width=16)
+        skill_opts = ttk.Frame(top)
+        skill_opts.grid(row=14, column=2, sticky="e", padx=4, pady=4)
+        ttk.Label(skill_opts, text="Skill Anim").pack(side="left")
+        ttk.Combobox(
+            skill_opts,
+            textvariable=self.batch_skill_anim,
+            values=["auto", "effect", "effect0", "effect1", "hit", "ball", "prepare", "summon", "affected"],
+            width=12,
+            state="readonly",
+        ).pack(side="left", padx=(6, 0))
 
         btn_row = ttk.Frame(top)
-        btn_row.grid(row=14, column=0, columnspan=3, sticky="w", padx=4, pady=8)
+        btn_row.grid(row=15, column=0, columnspan=3, sticky="w", padx=4, pady=8)
         self.batch_btn = ttk.Button(btn_row, text="Export Batch", command=self.on_batch_export)
         self.batch_btn.pack(side="left", padx=(0, 8))
         ttk.Button(btn_row, text="Open Output Folder", command=self.on_open_batch_folder).pack(side="left", padx=(0, 8))
         self.batch_audit_btn = ttk.Button(btn_row, text="Run Alignment Audit", command=self.on_run_alignment_audit)
         self.batch_audit_btn.pack(side="left")
 
-        ttk.Label(top, text="Command Preview").grid(row=15, column=0, sticky="w", padx=4, pady=(8, 2))
+        ttk.Label(top, text="Command Preview").grid(row=16, column=0, sticky="w", padx=4, pady=(8, 2))
         ttk.Entry(top, textvariable=self.batch_cmd_preview, state="readonly", width=120).grid(
-            row=16, column=0, columnspan=3, sticky="ew", padx=4, pady=(0, 6)
+            row=17, column=0, columnspan=3, sticky="ew", padx=4, pady=(0, 6)
         )
 
         ttk.Label(self.batch_tab, text="Batch Log").pack(anchor="w", padx=8)
@@ -2108,6 +2121,8 @@ class App(tk.Tk):
             self.batch_sheet_cols,
             self.batch_skip_unresolved,
             self.batch_min_layers,
+            self.batch_skill_id,
+            self.batch_skill_anim,
         ):
             v.trace_add("write", lambda *_: self._update_batch_cmd_preview())
         self._update_batch_cmd_preview()
@@ -2171,6 +2186,10 @@ class App(tk.Tk):
         if self.batch_skip_unresolved.get():
             cmd.append("--skip-unresolved")
         cmd.extend(["--min-layers", self.batch_min_layers.get().strip() or "8"])
+        skill_id_raw = self.batch_skill_id.get().strip()
+        if skill_id_raw:
+            cmd.extend(["--skill-id", skill_id_raw])
+            cmd.extend(["--skill-anim", self.batch_skill_anim.get().strip() or "auto"])
         self.batch_cmd_preview.set(" ".join(cmd))
 
     def _append_batch_log(self, text: str) -> None:
@@ -2286,6 +2305,11 @@ class App(tk.Tk):
             min_layers = int(self.batch_min_layers.get().strip() or "8")
             if min_layers <= 0:
                 raise ValueError("Minimum layers must be > 0")
+            skill_id_raw = self.batch_skill_id.get().strip()
+            if skill_id_raw:
+                skill_id_int = int(skill_id_raw)
+                if skill_id_int <= 0:
+                    raise ValueError("Skill ID must be > 0")
             char_id_raw = self.batch_character_id.get().strip()
             if char_id_raw and not char_id_raw.isdigit():
                 raise ValueError("Character ID must be numeric when set.")
@@ -2337,6 +2361,9 @@ class App(tk.Tk):
             base_out_dir.mkdir(parents=True, exist_ok=True)
             prefix = self.batch_prefix.get().strip()
             id_kwargs = self._render_id_kwargs(self.batch_starter_male.get())
+            skill_id_raw = self.batch_skill_id.get().strip()
+            skill_id = int(skill_id_raw) if skill_id_raw else None
+            skill_anim = self.batch_skill_anim.get().strip() or "auto"
             base_id = int(id_kwargs["base_id"])
             weapon_profile = None
             weapon_id = id_kwargs.get("weapon_id")
@@ -2358,6 +2385,13 @@ class App(tk.Tk):
                         f"id={wp['weapon_id']} type={wp['weapon_type_code']} "
                         f"afterImage={wp.get('info', {}).get('afterImage', '')} "
                         f"supported_actions={len(wp.get('supported_actions', []))}"
+                    ),
+                )
+            if skill_id is not None:
+                self.after(
+                    0,
+                    lambda sid=skill_id, sa=skill_anim: self._append_batch_log(
+                        f"Skill overlay enabled: skill_id={sid} branch={sa}"
                     ),
                 )
 
@@ -2435,6 +2469,8 @@ class App(tk.Tk):
                             output_json=json_path,
                             z_draw_order=self.batch_z_draw_order.get(),
                             hair_mode=self.batch_hair_mode.get(),
+                            skill_id=skill_id,
+                            skill_anim=skill_anim,
                             **id_kwargs,
                         )
                     except Exception as exc:  # noqa: BLE001
@@ -2689,6 +2725,11 @@ class App(tk.Tk):
                 "mode": "all_actions" if self.batch_all_actions.get() else "single_action",
                 "all_actions_source": self.batch_action_source.get() if self.batch_all_actions.get() else None,
                 "weapon_profile": weapon_profile,
+                "skill_overlay": {
+                    "enabled": skill_id is not None,
+                    "skill_id": skill_id,
+                    "skill_anim": skill_anim if skill_id is not None else None,
+                },
                 "per_character_folder": bool(self.batch_use_character_folder.get()),
                 "per_action_folder": True,
                 "character_id": character_id,

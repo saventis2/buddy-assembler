@@ -259,3 +259,78 @@ Batch export mode update:
 - `All-actions source` now includes `loadout-intersection-with-weapon` (strict compatibility mode).
 - In strict mode, all-actions export uses the intersection of body/core gear actions and weapon-supported actions.
 - Batch summary now includes `weapon_profile` metadata for traceability.
+
+Weapon intent metadata notes:
+
+- Action support is inferred from weapon action folders in `Character/Character.wz/Weapon/<weapon>.img/<action>/...`.
+- Weapon archetype hints come from weapon `info` strings:
+  - `afterImage` (for example `bow`, `gun`, `spear`)
+  - `islot` / `vslot`
+- Use these together to avoid invalid action/weapon pairings.
+
+## 7) Skill Overlay Animation (Optional)
+
+Renderer support:
+
+- `render_character_frame.py` now supports optional skill overlays from `Skill/Skill.wz`.
+- New args:
+  - `--skill-id <int>`
+  - `--skill-anim auto|effect|effect0|effect1|hit|ball|prepare|summon|affected`
+
+Example:
+
+```powershell
+python render_character_frame.py `
+  --base-wz "C:\Users\GGPC\OneDrive\Desktop\83 complete\Base.wz" `
+  --action swingT1 `
+  --frame 0 `
+  --base-id 2000 --head-id 12000 --face-id 20425 --hair-id 31545 `
+  --coat-id 1041127 --pants-id 1060133 --shoes-id 1072318 --weapon-id 1452011 `
+  --skill-id 1001004 --skill-anim effect `
+  --output-png ".\tmp_diag_skill_overlay\skill_effect.png" `
+  --output-json ".\tmp_diag_skill_overlay\skill_effect.json"
+```
+
+Batch tab support:
+
+- New fields:
+  - `Skill ID (optional overlay)`
+  - `Skill Anim`
+- When set, skill overlay is rendered for every exported frame/action.
+- Batch summary includes `skill_overlay` settings; per-frame JSON includes `skill_selection`.
+
+## 8) Versioning & Rollback
+
+Repository status:
+
+- This project is git-versioned on branch `main`.
+
+Checkpoint workflow (recommended after each stable milestone):
+
+1. Commit current stable changes:
+
+```powershell
+git add -A
+git commit -m "chore: stable checkpoint <short note>"
+```
+
+2. Create an annotated rollback tag:
+
+```powershell
+git tag -a stable-YYYY-MM-DD-HHMM -m "Stable checkpoint"
+```
+
+3. List available rollback points:
+
+```powershell
+git tag --list "stable-*"
+```
+
+4. Restore a previous stable state:
+
+```powershell
+git switch --detach <tag-name>
+# or to move main back explicitly:
+# git switch main
+# git reset --hard <tag-name>
+```
