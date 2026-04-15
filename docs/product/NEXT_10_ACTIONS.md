@@ -1,12 +1,15 @@
 # Next 10 Actions
 
-1. [done] Run headless Godot runtime parse check (`run_headless_checks.ps1`).
-2. [pending] Verify drag behavior across multi-monitor setups (interactive/manual).
-3. [done] Add companion state telemetry panel for tuning.
-4. [done] Add event frequency budget enforcement (per hour/day caps).
-5. [done] Add quiet-hours suppression in behavior loop.
-6. [done] Add first unlock table tied to bond level.
-7. [done] Add import/export for profile JSON.
-8. [done] Add a second companion content pack for variation tests.
-9. [done] Add CI checks for validator and manifest fixtures.
-10. [done] Write release checklist for Windows packaging and dogfood build.
+1. [pending] Run interactive vertical-slice verification in desktop mode:
+   movement, jump, emote command, facing flip, and floor lock behavior.
+2. [pending] Add a small automated runtime smoke scene test that asserts actor Y
+   stays above configured floor lock.
+3. [pending] Wire importer outputs (`.bif -> .tres`) into tracked imported
+   content promotion flow (developer-approved snapshot step).
+4. [pending] Add ladder/portal stub hooks to map runtime (no full traversal yet).
+5. [pending] Add simple speech-bubble timer tuning controls in debug overlay.
+6. [pending] Profile frame-time impact of multi-frame clip playback on 20 actors.
+7. [pending] Add resolved-frame cache invalidation policy for future skin swaps.
+8. [pending] Add provenance hash verification check in importer (warn on missing).
+9. [pending] Document branch/run commands for normal vs `--vertical-slice` mode.
+10. [pending] Prepare first PR summary with architecture constraints checklist.

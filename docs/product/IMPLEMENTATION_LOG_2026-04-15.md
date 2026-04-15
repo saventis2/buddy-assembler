@@ -25,6 +25,21 @@
 - Productivity utility tracker added (focus celebration + break suggestions)
 - Runtime visuals now support pack-driven character sprite maps (`visual.sprites`)
 - Added sprite exporter pipeline from `combinations/last_combo.json`
+- Added Maple-agnostic vertical slice module under `apps/runtime-godot/`:
+  - internal content resource types (`ActorDefinition`, `AnimationClip`, etc.)
+  - BIF converter stub and Godot importer plugin scaffold
+  - imported demo actor resources and test map scene
+  - launch router with `--vertical-slice` runtime flag
+- Added resolved-frame cache in runtime animation controller for clip playback.
+- Fixed runtime character orientation:
+  - actor now flips horizontally with corrected direction mapping
+    (move right -> face right, move left -> face left).
+- Fixed critical vertical-slice floor regression:
+  - explicit actor/floor collision layer setup
+  - foothold-derived floor lock fallback to prevent sink-through failures.
+- Restored jump + animation behavior in vertical slice:
+  - grounded fallback now feeds movement and state machine.
+  - prevents false permanent jump state that caused non-loop still-frame lock.
 
 ## Next
 

@@ -24,14 +24,18 @@ This slice proves the architecture rule:
 
 ## Run
 
-1. Open `apps/runtime-godot` in Godot 4.2+.
-2. Run with launch flag:
-   - `godot --path apps/runtime-godot -- --vertical-slice`
-   - or open and run `VerticalSliceMain.tscn` directly.
-3. Controls:
+1. Open PowerShell.
+2. Run:
+   `cd C:\Users\GGPC\buddy-assembler`
+3. Start vertical-slice mode:
+   `godot --path apps/runtime-godot -- --vertical-slice`
+4. Controls:
    - Arrow keys: walk
    - Space: jump
    - `E`: trigger `play_emote("happy")`
+
+If `godot` is not found, use:
+`& "C:\Users\GGPC\AppData\Local\Microsoft\WinGet\Links\godot.exe" --path apps/runtime-godot -- --vertical-slice`
 
 ## Notes
 

@@ -1,6 +1,6 @@
 # Milestone Status
 
-Updated: 2026-04-15
+Updated: 2026-04-16
 
 ## Phase 0 (Clarification/Stabilization)
 
@@ -27,6 +27,16 @@ Updated: 2026-04-15
 - [done] Manifest validator CLI
 - [done] Core pack + second pack
 - [done] CI workflow for pack validation
+- [done] BIF converter and importer scaffold for Maple-agnostic ingestion
+
+## Phase 3 (Vertical Slice Runtime)
+
+- [done] Internal imported actor resource path wired end-to-end
+- [done] Vertical-slice map + actor scene (`idle`, `walk`, `jump`, `happy_emote`)
+- [done] Buddy command bridge (`play_emote("happy")`)
+- [done] Launch router with `--vertical-slice` mode flag
+- [done] Direction-facing sprite flip during movement
+- [done] Floor lock fallback to prevent actor falling through map floor
 
 ## Phase 4 (Utility Layer)
 

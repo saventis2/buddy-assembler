@@ -12,6 +12,8 @@
 size = Vector2(22, 44)
 
 [node name="BuddyActor" type="CharacterBody2D"]
+collision_layer = 1
+collision_mask = 1
 script = ExtResource("1")
 actor_definition = ExtResource("7")
 

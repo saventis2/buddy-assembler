@@ -14,9 +14,15 @@ func configure(profile: Dictionary) -> void:
 	terminal_velocity = float(profile.get("terminal_velocity", terminal_velocity))
 
 
-func update(body: CharacterBody2D, delta: float, input_axis: float, jump_pressed: bool) -> void:
+func update(
+	body: CharacterBody2D,
+	delta: float,
+	input_axis: float,
+	jump_pressed: bool,
+	grounded_override: bool = false
+) -> void:
 	body.velocity.x = input_axis * walk_speed
 	body.velocity.y = minf(body.velocity.y + gravity * delta, terminal_velocity)
-	if jump_pressed and body.is_on_floor():
+	if jump_pressed and (body.is_on_floor() or grounded_override):
 		body.velocity.y = jump_velocity
 	body.move_and_slide()

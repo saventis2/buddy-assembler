@@ -7,8 +7,9 @@ extends Node2D
 
 
 func _ready() -> void:
-	var spawn: Marker2D = test_map.get_node("SpawnMarker")
-	actor.global_position = spawn.global_position
+	var spawn_pos: Vector2 = test_map.get_actor_spawn_position()
+	actor.global_position = spawn_pos
+	actor.set_floor_lock_y(test_map.get_actor_floor_lock_y())
 	command_bridge.play_emote("happy")
 	hint_label.text = "Arrow keys move, Space jumps, E triggers happy emote"
 

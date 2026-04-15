@@ -14,6 +14,7 @@ const CharacterAssemblerScript = preload("res://runtime/actor/character_assemble
 
 var _assembler = CharacterAssemblerScript.new()
 var _runtime_bundle: Dictionary = {}
+var _floor_lock_y: float = INF
 
 
 func _ready() -> void:
@@ -33,9 +34,12 @@ func _ready() -> void:
 func _physics_process(delta: float) -> void:
 	var input_axis := Input.get_axis("ui_left", "ui_right")
 	var jump_pressed := Input.is_action_just_pressed("ui_accept")
-	movement_controller.update(self, delta, input_axis, jump_pressed)
+	var floor_lock_grounded := _is_floor_lock_grounded()
+	movement_controller.update(self, delta, input_axis, jump_pressed, floor_lock_grounded)
+	_apply_floor_lock_fallback()
+	renderer.set_facing_from_axis(input_axis)
 
-	var next_state: String = state_machine.evaluate(input_axis, self)
+	var next_state: String = state_machine.evaluate(input_axis, self, _is_floor_lock_grounded())
 	var semantic_defaults: Dictionary = _runtime_bundle.get("semantic_defaults", {})
 	var clip_id := str(semantic_defaults.get(next_state, next_state))
 	animation_controller.play(clip_id)
@@ -45,6 +49,10 @@ func _physics_process(delta: float) -> void:
 
 func command_play_emote(emote_name: String) -> void:
 	buddy_brain.play_emote(emote_name)
+
+
+func set_floor_lock_y(world_y: float) -> void:
+	_floor_lock_y = world_y
 
 
 func _on_play_emote_requested(emote_id: String) -> void:
@@ -59,3 +67,17 @@ func _on_say_requested(text: String) -> void:
 	speech_bubble.visible = true
 	await get_tree().create_timer(1.6).timeout
 	speech_bubble.visible = false
+
+
+func _apply_floor_lock_fallback() -> void:
+	if is_inf(_floor_lock_y):
+		return
+	if global_position.y > _floor_lock_y:
+		global_position.y = _floor_lock_y
+		velocity.y = 0.0
+
+
+func _is_floor_lock_grounded() -> bool:
+	if is_inf(_floor_lock_y):
+		return false
+	return absf(global_position.y - _floor_lock_y) <= 1.5 and velocity.y >= 0.0

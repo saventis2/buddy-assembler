@@ -15,16 +15,18 @@ This folder is the Windows-first desktop buddy runtime track.
 - content pack loading with manifest validation contract
 - opt-in productivity signal hooks (focus celebration + break suggestion)
 
-## Open in Godot
+## Start From Terminal (Windows)
 
-1. Open Godot 4.
-2. Import this folder as a project.
-3. Run the default scene.
+1. Open PowerShell.
+2. Run:
+   `cd C:\Users\GGPC\buddy-assembler`
+3. Start normal buddy:
+   `godot --path apps/runtime-godot`
+4. Start vertical-slice mode:
+   `godot --path apps/runtime-godot -- --vertical-slice`
 
-Launch routing:
-
-- default run target: `BuddyOverlay`
-- vertical slice target: run with `-- --vertical-slice`
+If `godot` is not found, use:
+`& "C:\Users\GGPC\AppData\Local\Microsoft\WinGet\Links\godot.exe" --path apps/runtime-godot`
 
 The current implementation is intentionally minimal and is a vertical-slice
 scaffold, not final production content.
