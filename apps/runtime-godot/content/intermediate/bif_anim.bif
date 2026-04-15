@@ -1,0 +1,20 @@
+{
+  "kind": "anim",
+  "clip_id": "happy_emote",
+  "loop": false,
+  "frames": [
+    {
+      "texture_path": "res://content/core_pack/character/happy.png",
+      "delay_ms": 180,
+      "anchor_px": [
+        0,
+        0
+      ]
+    }
+  ],
+  "metadata": {
+    "source_hash": "testhash",
+    "converter_version": "0.1.0",
+    "source_action": "happy"
+  }
+}

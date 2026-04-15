@@ -1,0 +1,16 @@
+{
+  "kind": "actor",
+  "actor_id": "demo_actor_001",
+  "display_name": "Demo Buddy",
+  "semantic_defaults": {
+    "idle": "idle",
+    "walk": "walk",
+    "jump": "jump",
+    "happy_emote": "happy_emote"
+  },
+  "metadata": {
+    "source_hash": "testhash",
+    "converter_version": "0.1.0",
+    "source_path": "offline_source_bundle"
+  }
+}
