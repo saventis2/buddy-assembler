@@ -21,8 +21,20 @@ This folder is the Windows-first desktop buddy runtime track.
 2. Import this folder as a project.
 3. Run the default scene.
 
+Launch routing:
+
+- default run target: `BuddyOverlay`
+- vertical slice target: run with `-- --vertical-slice`
+
 The current implementation is intentionally minimal and is a vertical-slice
 scaffold, not final production content.
+
+## Maple-Agnostic Slice
+
+A separate architecture-first slice is available at:
+
+- `res://scenes/vertical_slice/VerticalSliceMain.tscn`
+- docs: `README_VERTICAL_SLICE.md`
 
 ## Runtime Controls
 
