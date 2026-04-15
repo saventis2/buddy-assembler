@@ -10,6 +10,7 @@ const SPRITE_VIEW_MARGIN := 4.0
 const DEFAULT_SPRITE_ANCHOR := Vector2(0.5, 1.0)
 const NO_PIVOT := Vector2(-1.0, -1.0)
 const SLEEP_PIVOT_OVERFLOW_BLEND := 0.5
+const SIT_PIVOT_OVERFLOW_BLEND := 1.0
 
 const BehaviorEngine = preload("res://scripts/behavior/behavior_engine.gd")
 const ContentLoader = preload("res://scripts/content/content_loader.gd")
@@ -769,12 +770,10 @@ func _sprite_rect_for_texture(center: Vector2, texture: Texture2D) -> Rect2:
     var top_left := Vector2.ZERO
     if use_pivot:
         var pivot_to_use := _current_frame_pivot_px
-        # Prone/sleep exports use world-floor pivots that can sit below the cropped frame.
-        # Keep part of that overflow so sleep lands between floating and over-sunk.
-        if _current_visual_action == "sleep":
-            if pivot_to_use.y > tex_size.y:
-                var overflow := pivot_to_use.y - tex_size.y
-                pivot_to_use.y = tex_size.y + (overflow * SLEEP_PIVOT_OVERFLOW_BLEND)
+        if pivot_to_use.y > tex_size.y:
+            var overflow := pivot_to_use.y - tex_size.y
+            var overflow_blend := _pivot_overflow_blend_for_action(_current_visual_action)
+            pivot_to_use.y = tex_size.y + (overflow * overflow_blend)
         top_left = center - (pivot_to_use * scale)
     else:
         var anchor := _current_frame_anchor
@@ -789,6 +788,16 @@ func _sprite_rect_for_texture(center: Vector2, texture: Texture2D) -> Rect2:
     if not use_pivot:
         top_left.y = clampf(top_left.y, min_y, maxf(min_y, max_y))
     return Rect2(top_left, draw_size)
+
+
+func _pivot_overflow_blend_for_action(action_id: String) -> float:
+    if action_id == "sleep":
+        # Keep prone between floating and over-sunk.
+        return SLEEP_PIVOT_OVERFLOW_BLEND
+    if action_id == "sit":
+        # Preserve full chair-height offset exported in sit metadata.
+        return SIT_PIVOT_OVERFLOW_BLEND
+    return 1.0
 
 
 func _fit_scale_for_viewport(tex_size: Vector2, viewport_size: Vector2) -> float:
