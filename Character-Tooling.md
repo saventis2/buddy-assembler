@@ -62,6 +62,48 @@ Outputs:
 
 The GUI `Catalogue` tab can generate/load these files, filter by category, search by name/ID, and apply selected IDs to Render fields.
 
+## 0.2) Item.wz Catalogue (Other WZ Item Roots)
+
+Script: `build_itemwz_catalogue.py`
+
+Run:
+
+```powershell
+python build_itemwz_catalogue.py `
+  --base-wz "C:\Users\GGPC\OneDrive\Desktop\83 complete\Base.wz" `
+  --output-dir ".\analysis\catalogue_itemwz"
+```
+
+Outputs:
+
+- `itemwz_catalogue_all.csv`
+- `itemwz_catalogue_summary.json`
+- `itemwz_catalogue_index.md`
+- `itemwz_catalogue_<root>.csv` per `Item\Item.wz` root:
+  - `Cash`, `Consume`, `Etc`, `Install`, `Pet`, `Special`
+
+This provides an index for non-Character items that live under other WZ roots.
+
+## 0.3) NPC Animation + Link Analyzer
+
+Script: `analyze_npc_animation_links.py`
+
+Run:
+
+```powershell
+python analyze_npc_animation_links.py `
+  --base-wz "C:\Users\GGPC\OneDrive\Desktop\83 complete\Base.wz" `
+  --npc-id 2004 `
+  --action stand
+```
+
+What it validates:
+
+- `info/link` chain resolution (for linked NPCs)
+- per-frame `delay` parsing from both `int` and `string` nodes
+- `uol` frame delay inheritance
+- aggregate dataset scan stats (link usage ratio, delay field type mix, top action names)
+
 ## 1) Prototype Frame Renderer
 
 Script: `render_character_frame.py`

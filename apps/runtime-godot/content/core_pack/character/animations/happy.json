@@ -1,0 +1,76 @@
+{
+  "schema": "buddy_animation_v1",
+  "state": "happy",
+  "source_action": "alert",
+  "loop": true,
+  "floor_world_ref": 52,
+  "sheet": "character/animations/happy_sheet.png",
+  "sheet_size": [
+    840,
+    94
+  ],
+  "cell_size": [
+    105,
+    94
+  ],
+  "frame_count": 3,
+  "frames": [
+    {
+      "index": 0,
+      "source_frame": 0,
+      "duration_ms": 500,
+      "rect": [
+        2,
+        2,
+        101,
+        90
+      ],
+      "pivot_px": [
+        57,
+        112
+      ],
+      "pivot_world": [
+        0,
+        52
+      ]
+    },
+    {
+      "index": 1,
+      "source_frame": 1,
+      "duration_ms": 500,
+      "rect": [
+        107,
+        2,
+        101,
+        90
+      ],
+      "pivot_px": [
+        57,
+        112
+      ],
+      "pivot_world": [
+        0,
+        52
+      ]
+    },
+    {
+      "index": 2,
+      "source_frame": 2,
+      "duration_ms": 500,
+      "rect": [
+        212,
+        2,
+        101,
+        90
+      ],
+      "pivot_px": [
+        57,
+        112
+      ],
+      "pivot_world": [
+        0,
+        52
+      ]
+    }
+  ]
+}

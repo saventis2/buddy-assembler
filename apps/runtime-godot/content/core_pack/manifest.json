@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 1,
+  "id": "core-pack",
+  "name": "Core Companion Pack",
+  "version": "0.1.1",
+  "companion": {
+    "id": "buddy-default",
+    "displayName": "Buddy",
+    "traits": [
+      "calm",
+      "playful"
+    ]
+  },
+  "visual": {
+    "scale": 2.35,
+    "anchor": [
+      0.5,
+      1.0
+    ],
+    "animations": {
+      "idle": "character/animations/idle.json",
+      "wander": "character/animations/wander.json",
+      "sit": "character/animations/sit.json",
+      "sleep": "character/animations/sleep.json",
+      "happy": "character/animations/happy.json",
+      "gift": "character/animations/gift.json",
+      "visitor": "character/animations/visitor.json"
+    },
+    "sprites": {
+      "idle": "character/idle.png",
+      "wander": "character/wander.png",
+      "sit": "character/sit.png",
+      "sleep": "character/sleep.png",
+      "happy": "character/happy.png",
+      "gift": "character/gift.png",
+      "visitor": "character/visitor.png"
+    },
+    "ground": {
+      "enabled": false,
+      "texture": "terrain/ground_citySG_bsc_0.png",
+      "tile_x": true,
+      "scale": 1.0,
+      "alpha": 1.0,
+      "align": "top",
+      "floor_padding": 72.0,
+      "surface_y_px": 0.0,
+      "floor_offset_y": 0.0,
+      "x_offset": 0.0
+    }
+  },
+  "idleActions": [
+    "idle",
+    "wander",
+    "sit",
+    "sleep"
+  ],
+  "reactionActions": [
+    "happy",
+    "gift"
+  ],
+  "encounterActions": [
+    "visitor"
+  ],
+  "eventRules": [
+    {
+      "id": "gift-small",
+      "action": "gift",
+      "weight": 1.0,
+      "cooldownSeconds": 120,
+      "perHour": 1,
+      "perDay": 4
+    },
+    {
+      "id": "visitor-hello",
+      "action": "visitor",
+      "weight": 0.6,
+      "cooldownSeconds": 180,
+      "perHour": 1,
+      "perDay": 3
+    }
+  ]
+}

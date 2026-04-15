@@ -1,0 +1,39 @@
+# Milestone Status
+
+Updated: 2026-04-15
+
+## Phase 0 (Clarification/Stabilization)
+
+- [done] Execution plan recorded
+- [done] Decision register recorded
+- [done] V1 PRD recorded
+- [done] Repo/runtime/content boundaries created
+
+## Phase 1 (Runtime Core)
+
+- [done] Transparent always-on-top runtime scaffold
+- [done] Drag/click/sleep interactions
+- [done] Deterministic weighted behavior core
+- [done] Save/settings/profile/world persistence
+- [done] Unlock table wiring
+- [done] Encounter scheduler + event budgets
+- [done] Multi-monitor clamp/restore logic
+- [done] Headless runtime parse check
+- [pending] Interactive multi-monitor drag verification in local desktop session
+
+## Phase 2 (Content Pipeline)
+
+- [done] Content schema contract file
+- [done] Manifest validator CLI
+- [done] Core pack + second pack
+- [done] CI workflow for pack validation
+
+## Phase 4 (Utility Layer)
+
+- [done] Opt-in productivity tracker module
+- [done] Focus celebration and break suggestion event hooks
+
+## Remaining Blocker
+
+- Interactive desktop verification still requires manual run (headless checks
+  are complete).
