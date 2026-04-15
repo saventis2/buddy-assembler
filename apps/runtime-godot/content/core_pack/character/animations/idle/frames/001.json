@@ -9,10 +9,10 @@
     112
   ],
   "frame_bounds_world": {
-    "left": -38,
+    "left": -39,
     "top": -61,
-    "right": 48,
-    "bottom": 51
+    "right": 49,
+    "bottom": 52
   },
   "world_anchors": {
     "brow": [
@@ -687,5 +687,13 @@
       "png": "C:\\Users\\GGPC\\OneDrive\\Desktop\\83 complete\\Base.wz\\Character\\Character.wz\\Hair\\00031042.img\\default\\hairOverHead.png",
       "node_path": "00031042.img/default/hairOverHead"
     }
+  ],
+  "normalized_canvas_offset": {
+    "x": 1,
+    "y": 0
+  },
+  "normalized_canvas_size": [
+    88,
+    113
   ]
 }

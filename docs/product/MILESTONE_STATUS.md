@@ -40,6 +40,8 @@ Updated: 2026-04-16
 - [done] Jump animation priority corrected (walk no longer overrides jump start)
 - [done] Emote command path visibly plays `happy_emote` in vertical slice
 - [done] Top-of-window control hint now wraps and remains readable
+- [done] Face-overlay emote architecture checkpoint recorded
+  (`CHECKPOINT_2026-04-16_FACE_OVERLAY_ALIGNMENT.md`)
 
 ## Phase 4 (Utility Layer)
 

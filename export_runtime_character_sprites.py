@@ -359,6 +359,28 @@ def _normalize_action_frame_canvases(per_frame_rows: list[dict[str, Any]]) -> di
                 "right": right,
                 "bottom": bottom,
             }
+            # Keep frame metadata in sync with normalized canvas so runtime
+            # face overlay placement (derived from frame_bounds_world + draw_order)
+            # remains pixel-accurate after re-centering.
+            json_raw = row.get("json")
+            if isinstance(json_raw, str) and json_raw:
+                json_path = Path(json_raw)
+                if json_path.exists():
+                    try:
+                        payload = json.loads(json_path.read_text(encoding="utf-8"))
+                        if isinstance(payload, dict):
+                            payload["frame_bounds_world"] = {
+                                "left": left,
+                                "top": top,
+                                "right": right,
+                                "bottom": bottom,
+                            }
+                            payload["normalized_canvas_offset"] = {"x": dx, "y": dy}
+                            payload["normalized_canvas_size"] = [width, height]
+                            json_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+                    except Exception:
+                        # Non-fatal; image normalization still succeeded.
+                        pass
             normalized += 1
         finally:
             src.close()
@@ -447,6 +469,7 @@ def _export_state_animation(
     max_frames: int,
     sheet_cols: int,
     floor_world_ref: int | None,
+    include_face: bool,
 ) -> tuple[Path | None, list[str]]:
     warnings: list[str] = []
     timeline = _detect_action_timeline(
@@ -476,6 +499,7 @@ def _export_state_animation(
                 action=action,
                 frame=src_frame,
                 output_json=json_path,
+                include_face=include_face,
                 **render_kwargs,
             )
             per_frame.append(
@@ -610,6 +634,11 @@ def main() -> int:
         help="Export animation metadata + sprite sheets (default: enabled)",
     )
     parser.add_argument(
+        "--bake-face",
+        action="store_true",
+        help="Composite face layer into output PNGs (default: off for runtime overlay emotes).",
+    )
+    parser.add_argument(
         "--no-export-animations",
         dest="export_animations",
         action="store_false",
@@ -659,6 +688,7 @@ def main() -> int:
                 action=action,
                 frame=key_frame,
                 output_json=output_json,
+                include_face=bool(args.bake_face),
                 **render_kwargs,
             )
             generated_static[state] = output_png
@@ -686,6 +716,7 @@ def main() -> int:
                 max_frames=max(1, int(args.max_frames)),
                 sheet_cols=max(1, int(args.sheet_cols)),
                 floor_world_ref=floor_world_ref,
+                include_face=bool(args.bake_face),
             )
             warnings.extend(state_warnings)
             if anim_json is not None:

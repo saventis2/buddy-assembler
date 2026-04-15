@@ -32,7 +32,10 @@ This slice proves the architecture rule:
 4. Controls:
    - Arrow keys: walk
    - Space: jump
-   - `E`: trigger `play_emote("happy")`
+   - `E`: `play_emote("happy")`
+   - `R`: `play_emote("sad")`
+   - `T`: `play_emote("angry")`
+   - `Y`: `play_emote("love")`
 
 If `godot` is not found, use:
 `& "C:\Users\GGPC\AppData\Local\Microsoft\WinGet\Links\godot.exe" --path apps/runtime-godot -- --vertical-slice`

@@ -1,0 +1,12 @@
+{
+  "default": "default",
+  "happy": "smile",
+  "sad": "cry",
+  "angry": "angry",
+  "surprised": "bewildered",
+  "love": "love",
+  "wink": "wink",
+  "sleepy": "blink",
+  "sick": "vomit",
+  "pain": "pain"
+}

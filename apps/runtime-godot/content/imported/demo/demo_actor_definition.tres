@@ -19,7 +19,11 @@ semantic_defaults = {
 "walk": "walk",
 "jump": "jump",
 "climb": "climb",
-"happy_emote": "happy_emote"
+"happy_emote": "happy_emote",
+"sad_emote": "happy_emote",
+"angry_emote": "happy_emote",
+"surprised_emote": "happy_emote",
+"love_emote": "happy_emote"
 }
 skeleton = ExtResource("2")
 skins = [ExtResource("3")]

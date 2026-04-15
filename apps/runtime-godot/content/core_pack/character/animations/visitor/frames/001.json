@@ -9,8 +9,8 @@
     108
   ],
   "frame_bounds_world": {
-    "left": -39,
-    "top": -60,
+    "left": -58,
+    "top": -62,
     "right": 47,
     "bottom": 48
   },
@@ -687,5 +687,13 @@
       "png": "C:\\Users\\GGPC\\OneDrive\\Desktop\\83 complete\\Base.wz\\Character\\Character.wz\\Hair\\00031042.img\\default\\hairOverHead.png",
       "node_path": "00031042.img/default/hairOverHead"
     }
+  ],
+  "normalized_canvas_offset": {
+    "x": 19,
+    "y": 2
+  },
+  "normalized_canvas_size": [
+    105,
+    110
   ]
 }

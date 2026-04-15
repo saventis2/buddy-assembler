@@ -9,6 +9,10 @@ class_name ActorDefinition
 	"jump": "jump",
 	"climb": "climb",
 	"happy_emote": "happy_emote",
+	"sad_emote": "happy_emote",
+	"angry_emote": "happy_emote",
+	"surprised_emote": "happy_emote",
+	"love_emote": "happy_emote",
 }
 @export var skeleton: Resource
 @export var skins: Array[Resource] = []

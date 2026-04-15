@@ -47,6 +47,17 @@
     being immediately replaced by idle/walk.
 - Fixed top instruction readability:
   - hint label now wraps within the window and uses multiline wording.
+- Added face-emote system for buddy overlay using Maple metadata:
+  - per-frame face placement loaded from `character/animations/<action>/frames/*.json`
+  - semantic emote manifest (`happy/sad/angry/surprised/love/...`) in
+    `apps/runtime-godot/content/core_pack/character/emotes/manifest.json`
+  - state-to-emote mapping added to `core_pack` manifest (`visual.emotes.state_map`)
+  - debug emote panel and live test hotkeys added (`F10`, then `1..0`).
+- Assembler/export pipeline updated for clean face overlay model:
+  - runtime exports now default to `face-not-baked` PNGs (body/head/hair/etc only)
+  - face layer metadata is preserved for per-frame runtime face placement
+  - core pack sprites + animation sheets regenerated with the new export mode
+  - runtime now draws neutral/default face via overlay, then swaps to emote variants.
 
 ## Next
 

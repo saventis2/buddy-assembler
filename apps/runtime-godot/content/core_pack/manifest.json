@@ -35,6 +35,18 @@
       "gift": "character/gift.png",
       "visitor": "character/visitor.png"
     },
+    "emotes": {
+      "manifest": "character/emotes/manifest.json",
+      "state_map": {
+        "idle": "default",
+        "wander": "default",
+        "sit": "default",
+        "sleep": "sleepy",
+        "happy": "happy",
+        "gift": "love",
+        "visitor": "wink"
+      }
+    },
     "ground": {
       "enabled": false,
       "texture": "terrain/ground_citySG_bsc_0.png",

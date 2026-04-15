@@ -12,7 +12,7 @@
     "left": -57,
     "top": -60,
     "right": 44,
-    "bottom": 29
+    "bottom": 30
   },
   "world_anchors": {
     "brow": [
@@ -734,5 +734,13 @@
       "png": "C:\\Users\\GGPC\\OneDrive\\Desktop\\83 complete\\Base.wz\\Character\\Character.wz\\00002004.img\\alert\\1\\rHand.png",
       "node_path": "00002004.img/alert/1/rHand"
     }
+  ],
+  "normalized_canvas_offset": {
+    "x": 0,
+    "y": 0
+  },
+  "normalized_canvas_size": [
+    101,
+    90
   ]
 }
