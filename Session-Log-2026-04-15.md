@@ -80,6 +80,10 @@ session for MapleStory character rendering/export.
 11. Versioning workflow hardening
 - Added a rollback section to `Character-Tooling.md` documenting commit/tag
   checkpoint workflow and restore commands.
+- Created baseline rollback points:
+  - commit: `b67d821`
+  - tag: `stable-2026-04-15-weapon-skill-baseline`
+  - branch: `stable/2026-04-15-weapon-skill-baseline`
 
 ## Files Updated During Session
 
