@@ -11,7 +11,7 @@ func _ready() -> void:
 	actor.global_position = spawn_pos
 	actor.set_floor_lock_y(test_map.get_actor_floor_lock_y())
 	command_bridge.play_emote("happy")
-	hint_label.text = "Arrow keys move, Space jumps, E triggers happy emote"
+	hint_label.text = "Arrow keys: move\nSpace: jump\nE: happy emote"
 
 
 func _unhandled_input(event: InputEvent) -> void:

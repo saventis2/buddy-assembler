@@ -40,6 +40,13 @@
 - Restored jump + animation behavior in vertical slice:
   - grounded fallback now feeds movement and state machine.
   - prevents false permanent jump state that caused non-loop still-frame lock.
+- Fixed jump-vs-walk priority:
+  - jump state now overrides walk immediately on jump start and upward motion.
+- Fixed emote command visibility:
+  - `E`-triggered `play_emote(\"happy\")` now holds emote state briefly instead of
+    being immediately replaced by idle/walk.
+- Fixed top instruction readability:
+  - hint label now wraps within the window and uses multiline wording.
 
 ## Next
 

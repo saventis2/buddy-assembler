@@ -39,7 +39,12 @@ func _physics_process(delta: float) -> void:
 	_apply_floor_lock_fallback()
 	renderer.set_facing_from_axis(input_axis)
 
-	var next_state: String = state_machine.evaluate(input_axis, self, _is_floor_lock_grounded())
+	var next_state: String = state_machine.evaluate(
+		input_axis,
+		self,
+		_is_floor_lock_grounded(),
+		jump_pressed
+	)
 	var semantic_defaults: Dictionary = _runtime_bundle.get("semantic_defaults", {})
 	var clip_id := str(semantic_defaults.get(next_state, next_state))
 	animation_controller.play(clip_id)
@@ -58,7 +63,7 @@ func set_floor_lock_y(world_y: float) -> void:
 func _on_play_emote_requested(emote_id: String) -> void:
 	var semantic_defaults: Dictionary = _runtime_bundle.get("semantic_defaults", {})
 	var clip_id := str(semantic_defaults.get(emote_id, emote_id))
-	state_machine.force_state("idle", 900)
+	state_machine.force_state(emote_id, 900)
 	animation_controller.play(clip_id, true)
 
 

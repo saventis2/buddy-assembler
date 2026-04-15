@@ -1,7 +1,7 @@
 # Next 10 Actions
 
 1. [pending] Run interactive vertical-slice verification in desktop mode:
-   movement, jump, emote command, facing flip, and floor lock behavior.
+   movement, jump, emote command (`E`), facing flip, floor lock, and text-wrap UX.
 2. [pending] Add a small automated runtime smoke scene test that asserts actor Y
    stays above configured floor lock.
 3. [pending] Wire importer outputs (`.bif -> .tres`) into tracked imported
