@@ -8,9 +8,9 @@ map_id = "test_map_001"
 spawn_point = Vector2(96, 60)
 footholds = [{
 "x0": 24.0,
-"y0": 180.0,
+"y0": 184.0,
 "x1": 316.0,
-"y1": 180.0
+"y1": 184.0
 }]
 ladders = []
 portals = []
