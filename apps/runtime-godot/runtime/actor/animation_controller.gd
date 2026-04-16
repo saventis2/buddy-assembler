@@ -79,6 +79,14 @@ func _current_frame_duration_ms() -> float:
 	return 120.0
 
 
+func invalidate_clip(clip_id: String) -> void:
+	_resolved_frame_cache.invalidate_clip(clip_id)
+
+
+func invalidate_all() -> void:
+	_resolved_frame_cache.invalidate_all()
+
+
 func _emit_current_frame() -> void:
 	if _current_clip == null or _current_clip.frames.is_empty():
 		return

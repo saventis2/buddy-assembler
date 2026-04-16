@@ -19,6 +19,10 @@ func get_actor_spawn_position() -> Vector2:
 	return spawn_marker.global_position
 
 
+func get_map_resource() -> Resource:
+	return collision_map_resource
+
+
 func get_actor_floor_lock_y() -> float:
 	if collision_map_resource == null:
 		return 174.0

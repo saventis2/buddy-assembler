@@ -68,6 +68,15 @@ func _import(
 	var source_data: Dictionary = parsed
 	var kind := str(source_data.get("kind", ""))
 
+	var _provenance_meta = source_data.get("metadata", {})
+	if typeof(_provenance_meta) == TYPE_DICTIONARY:
+		var _source_hash := str((_provenance_meta as Dictionary).get("source_hash", ""))
+		if _source_hash == "" or _source_hash == "unknown":
+			push_warning(
+				"BIF import: missing or unknown provenance hash in '%s'. " +
+				"Re-run the converter with --source-hash to include it." % source_file
+			)
+
 	if kind == "actor":
 		var actor := ActorDefinition.new()
 		actor.actor_id = str(source_data.get("actor_id", ""))

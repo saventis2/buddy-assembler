@@ -1,3 +1,7 @@
+param(
+    [switch]$Profile
+)
+
 $ErrorActionPreference = "Stop"
 
 $projectPath = Join-Path $PSScriptRoot ".."
@@ -11,7 +15,40 @@ if (-not $godotCmd) {
     exit 2
 }
 
-Write-Host "Running headless project parse check..."
-& godot --headless --path $projectPath --quit
+function Invoke-GodotHeadless {
+    param([string[]]$ExtraArgs, [string]$Label)
+    & godot --headless --path $projectPath @ExtraArgs
+    $code = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
+    return $code
+}
 
-Write-Host "Headless checks completed."
+# --- Parse check ---
+Write-Host ""
+Write-Host "=== Parse check ==="
+$parseCode = Invoke-GodotHeadless -ExtraArgs @("--quit") -Label "parse"
+if ($parseCode -ne 0) {
+    Write-Host "Parse check FAILED (exit $parseCode)"
+    exit $parseCode
+}
+Write-Host "Parse check PASSED."
+
+# --- Smoke floor-lock test ---
+Write-Host ""
+Write-Host "=== Smoke floor-lock test ==="
+$smokeCode = Invoke-GodotHeadless -ExtraArgs @("--scene", "res://tests/SmokeFloorLockTest.tscn") -Label "smoke"
+if ($smokeCode -ne 0) {
+    Write-Host "Smoke floor-lock test FAILED (exit $smokeCode)"
+    exit $smokeCode
+}
+Write-Host "Smoke floor-lock test PASSED."
+
+# --- Optional: frame-time profiling ---
+if ($Profile) {
+    Write-Host ""
+    Write-Host "=== Frame-time profiling (20 actors, 300 frames) ==="
+    Invoke-GodotHeadless -ExtraArgs @("--scene", "res://tests/ProfileScene.tscn") -Label "profile" | Out-Null
+    Write-Host "Profiling run complete (non-blocking)."
+}
+
+Write-Host ""
+Write-Host "All headless checks completed successfully."

@@ -1,4 +1,4 @@
-[gd_scene load_steps=8 format=3]
+[gd_scene load_steps=7 format=3]
 
 [ext_resource type="Script" path="res://runtime/actor/buddy_actor.gd" id="1"]
 [ext_resource type="Script" path="res://runtime/actor/state_machine.gd" id="2"]
@@ -31,10 +31,6 @@ script = ExtResource("4")
 
 [node name="CharacterRenderer2D" type="Node2D" parent="."]
 script = ExtResource("5")
-
-[node name="Sprite2D" type="Sprite2D" parent="CharacterRenderer2D"]
-centered = false
-offset = Vector2(-16, -32)
 
 [node name="BuddyBrain" type="Node" parent="."]
 script = ExtResource("6")

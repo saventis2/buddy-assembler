@@ -15,6 +15,7 @@ const CharacterAssemblerScript = preload("res://runtime/actor/character_assemble
 var _assembler = CharacterAssemblerScript.new()
 var _runtime_bundle: Dictionary = {}
 var _floor_lock_y: float = INF
+var speech_bubble_visible_seconds: float = 1.6
 
 
 func _ready() -> void:
@@ -60,17 +61,26 @@ func set_floor_lock_y(world_y: float) -> void:
 	_floor_lock_y = world_y
 
 
+func on_skin_swap() -> void:
+	animation_controller.invalidate_all()
+
+
 func _on_play_emote_requested(emote_id: String) -> void:
 	var semantic_defaults: Dictionary = _runtime_bundle.get("semantic_defaults", {})
 	var clip_id := str(semantic_defaults.get(emote_id, emote_id))
 	state_machine.force_state(emote_id, 900)
 	animation_controller.play(clip_id, true)
+	# Drive face overlay for emote duration (strip _emote suffix -> semantic name)
+	var face_semantic := emote_id.trim_suffix("_emote")
+	renderer.call("set_emote", face_semantic)
+	await get_tree().create_timer(1.1).timeout
+	renderer.call("reset_emote")
 
 
 func _on_say_requested(text: String) -> void:
 	speech_bubble.text = text
 	speech_bubble.visible = true
-	await get_tree().create_timer(1.6).timeout
+	await get_tree().create_timer(speech_bubble_visible_seconds).timeout
 	speech_bubble.visible = false
 
 
