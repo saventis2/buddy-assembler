@@ -44,6 +44,7 @@ func _load_map_interaction_data() -> void:
 func _process(delta: float) -> void:
 	_stub_cooldown = maxf(0.0, _stub_cooldown - delta)
 	_check_interaction_stubs(actor.global_position)
+	_update_hint_label()
 
 
 func _check_interaction_stubs(actor_pos: Vector2) -> void:
@@ -77,7 +78,7 @@ func _update_hint_label() -> void:
 	hint_label.text = (
 		"Arrow keys: move  Space: jump\n" +
 		"E: happy  R: sad  T: angry  Y: love\n" +
-		"[/]: speech bubble %.1fs" % actor.speech_bubble_visible_seconds
+		"[/]: speech bubble %.1fs  |  actor.y=%.0f" % [actor.speech_bubble_visible_seconds, actor.global_position.y]
 	)
 
 

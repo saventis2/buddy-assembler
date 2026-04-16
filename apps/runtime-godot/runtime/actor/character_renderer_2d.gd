@@ -105,7 +105,11 @@ func _draw() -> void:
 		pivot = Vector2(tex_size.x * 0.5, tex_size.y)
 
 	# Body rect: pivot pixel sits at local origin (actor's floor contact Y).
-	var body_rect := Rect2(-pivot, tex_size)
+	# Clamp pivot.y to tex_size.y: if the floor reference falls below the PNG
+	# (pivot.y > tex_size.y), use the PNG bottom as the floor contact so the
+	# character doesn't hover above it for animations with shorter frames.
+	var eff_pivot := Vector2(pivot.x, minf(pivot.y, tex_size.y))
+	var body_rect := Rect2(-eff_pivot, tex_size)
 
 	# Facing: mirror horizontally around X=0 (the floor contact column).
 	if _facing_right:
@@ -118,7 +122,7 @@ func _draw() -> void:
 		var face_tex := _resolve_face_texture()
 		if face_tex != null:
 			var face_size := face_tex.get_size()
-			var face_rect := Rect2(-pivot + _face_local, face_size)
+			var face_rect := Rect2(-eff_pivot + _face_local, face_size)
 			draw_texture_rect(face_tex, face_rect, false)
 
 	if _facing_right:
