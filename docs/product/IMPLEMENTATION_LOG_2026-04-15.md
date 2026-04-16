@@ -58,6 +58,13 @@
   - face layer metadata is preserved for per-frame runtime face placement
   - core pack sprites + animation sheets regenerated with the new export mode
   - runtime now draws neutral/default face via overlay, then swaps to emote variants.
+- Iterative desktop floor/emote tuning pass (one-change-at-a-time):
+  - raised `love` face overlay slightly for better expression alignment
+  - restored metadata-driven floor consistency across animations
+  - re-enabled bottom-of-screen roaming behavior in overlay mode
+  - lowered desktop contact point so feet sit closer to taskbar line
+  - tested torso-anchor experiment, then reverted to pure frame-pivot metadata
+    after it made top-half motion feel too constrained.
 
 ## Next
 

@@ -7,6 +7,8 @@ const IDLE_SWAY_DISTANCE_X := 0.0
 const IDLE_SWAY_DISTANCE_Y := 0.0
 const FLOOR_PADDING := 14.0
 const SPRITE_VIEW_MARGIN := 4.0
+const DESKTOP_FLOOR_CONTACT_OFFSET_Y := 40.0
+const DEFAULT_ROAM_SPEED_PX_PER_SEC := 96.0
 const DEFAULT_SPRITE_ANCHOR := Vector2(0.5, 1.0)
 const NO_PIVOT := Vector2(-1.0, -1.0)
 const SLEEP_PIVOT_OVERFLOW_BLEND := 0.5
@@ -32,6 +34,9 @@ const DEBUG_EMOTE_KEYS := {
     KEY_8: "sick",
     KEY_9: "pain",
     KEY_0: "default",
+}
+const EMOTE_DRAW_OFFSETS := {
+    "love": Vector2(0.0, -4.0),
 }
 
 const BehaviorEngine = preload("res://scripts/behavior/behavior_engine.gd")
@@ -94,6 +99,9 @@ var _active_face_variant := "default"
 var _debug_emote_panel_enabled := false
 var _manual_emote_until_unix := 0
 var _last_face_texture_path := ""
+var _roam_speed_px_per_sec := DEFAULT_ROAM_SPEED_PX_PER_SEC
+var _roam_direction := 1
+var _roam_subpixel_x := 0.0
 
 
 func _ready() -> void:
@@ -193,6 +201,7 @@ func _input(event: InputEvent) -> void:
 
 func _process(delta: float) -> void:
     _bob_time += delta
+    _update_window_roam(delta)
     var base_center := _floor_point()
     if not _dragging and _state != "sleep":
         _draw_center = base_center + Vector2(
@@ -237,7 +246,10 @@ func _center_point() -> Vector2:
 
 func _floor_point() -> Vector2:
     var viewport_size: Vector2 = get_viewport_rect().size
-    return Vector2(viewport_size.x * 0.5, viewport_size.y - SPRITE_VIEW_MARGIN)
+    return Vector2(
+        viewport_size.x * 0.5,
+        viewport_size.y - SPRITE_VIEW_MARGIN + DESKTOP_FLOOR_CONTACT_OFFSET_Y
+    )
 
 
 func _base_floor_reference_y(viewport_size: Vector2) -> float:
@@ -413,6 +425,50 @@ func _move_to_next_monitor() -> void:
     DisplayServer.window_set_position(clamped)
     AppState.set_window_state(next_screen, clamped)
     _refresh_telemetry()
+
+
+func _update_window_roam(delta: float) -> void:
+    if _dragging:
+        return
+
+    var roam_state := _state == "wander" or _state == "visitor"
+    var current_screen := _normalize_screen_index(DisplayServer.window_get_current_screen())
+    var screen_rect := _screen_rect(current_screen)
+    var window_size := DisplayServer.window_get_size()
+    var floor_y := screen_rect.position.y + maxi(0, screen_rect.size.y - window_size.y)
+
+    var current_pos := DisplayServer.window_get_position()
+    if current_pos.y != floor_y:
+        current_pos.y = floor_y
+
+    if not roam_state:
+        var floor_locked := _clamp_window_to_screen(current_pos, current_screen)
+        if floor_locked != DisplayServer.window_get_position():
+            DisplayServer.window_set_position(floor_locked)
+            AppState.set_window_state(current_screen, floor_locked)
+        return
+
+    var speed := maxf(12.0, _roam_speed_px_per_sec)
+    var move_px := (float(_roam_direction) * speed * delta) + _roam_subpixel_x
+    var step := int(round(move_px))
+    _roam_subpixel_x = move_px - float(step)
+    if step == 0:
+        step = _roam_direction
+
+    var min_x := screen_rect.position.x
+    var max_x := screen_rect.position.x + maxi(0, screen_rect.size.x - window_size.x)
+    var next_x := current_pos.x + step
+    if next_x <= min_x:
+        next_x = min_x
+        _roam_direction = 1
+    elif next_x >= max_x:
+        next_x = max_x
+        _roam_direction = -1
+
+    var next_pos := Vector2i(next_x, floor_y)
+    if next_pos != DisplayServer.window_get_position():
+        DisplayServer.window_set_position(next_pos)
+        AppState.set_window_state(current_screen, next_pos)
 
 
 func _cycle_pack() -> void:
@@ -819,6 +875,9 @@ func _draw_face_overlay() -> void:
         return
     var local_pos_arr: Array = local_pos_variant
     var local_top_left := Vector2(float(local_pos_arr[0]), float(local_pos_arr[1]))
+    var emote_offset = EMOTE_DRAW_OFFSETS.get(_active_emote_semantic, Vector2.ZERO)
+    if emote_offset is Vector2:
+        local_top_left += emote_offset
 
     var source_size: Vector2 = _current_texture.get_size()
     if source_size.x <= 0.0 or source_size.y <= 0.0:
@@ -1003,6 +1062,8 @@ func _pivot_overflow_blend_for_action(action_id: String) -> float:
     if action_id == "sit":
         # Preserve full chair-height offset exported in sit metadata.
         return SIT_PIVOT_OVERFLOW_BLEND
+    # Use exported per-frame pivot metadata to keep a consistent floor anchor
+    # across idle/walk/happy/etc animations.
     return 1.0
 
 
@@ -1129,6 +1190,7 @@ func _load_animation_spec(path_spec: String, pack_id: String) -> Dictionary:
             max_pivot_y = maxf(max_pivot_y, pivot_y)
             if rect_w > 0 and rect_h > 0:
                 frame_anchor = Vector2(pivot_x / float(rect_w), pivot_y / float(rect_h))
+
         anchors.append(frame_anchor)
         pivots.append(frame_pivot)
 
