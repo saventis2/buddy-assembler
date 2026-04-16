@@ -109,24 +109,32 @@ func _draw() -> void:
 	# (pivot.y > tex_size.y), use the PNG bottom as the floor contact so the
 	# character doesn't hover above it for animations with shorter frames.
 	var eff_pivot := Vector2(pivot.x, minf(pivot.y, tex_size.y))
-	var body_rect := Rect2(-eff_pivot, tex_size)
 
-	# Facing: mirror horizontally around X=0 (the floor contact column).
+	# Facing: mirror around X=0 (the floor contact column) using negative-width
+	# Rect2. draw_texture_rect mirrors the texture when size.x < 0.
+	var body_rect: Rect2
 	if _facing_right:
-		draw_set_transform(Vector2.ZERO, 0.0, Vector2(-1.0, 1.0))
+		# Pivot column stays at x=0; sprite extends rightward instead of leftward.
+		body_rect = Rect2(Vector2(eff_pivot.x, -eff_pivot.y), Vector2(-tex_size.x, tex_size.y))
+	else:
+		body_rect = Rect2(-eff_pivot, tex_size)
 
 	draw_texture_rect(_body_tex, body_rect, false)
 
-	# Face overlay drawn inside the same transform so it flips with the body.
 	if _has_face and _face_default_path != "":
 		var face_tex := _resolve_face_texture()
 		if face_tex != null:
 			var face_size := face_tex.get_size()
-			var face_rect := Rect2(-eff_pivot + _face_local, face_size)
+			var face_rect: Rect2
+			if _facing_right:
+				# Mirror face position around X=0 and flip the texture.
+				face_rect = Rect2(
+					Vector2(eff_pivot.x - _face_local.x, -eff_pivot.y + _face_local.y),
+					Vector2(-face_size.x, face_size.y)
+				)
+			else:
+				face_rect = Rect2(-eff_pivot + _face_local, face_size)
 			draw_texture_rect(face_tex, face_rect, false)
-
-	if _facing_right:
-		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 
 # --- Face resolution ---
