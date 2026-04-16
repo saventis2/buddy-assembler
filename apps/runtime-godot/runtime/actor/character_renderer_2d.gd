@@ -13,9 +13,10 @@ const EMOTE_MANIFEST_PATH := "res://content/core_pack/character/emotes/manifest.
 const NO_PIVOT := Vector2(-1.0, -1.0)
 
 # Caches
-var _texture_cache: Dictionary = {}      # path -> Texture2D or null
-var _anim_pivot_cache: Dictionary = {}   # anim_json_path -> Array of Vector2
-var _frame_meta_cache: Dictionary = {}   # texture_path -> Dictionary
+var _texture_cache: Dictionary = {}        # path -> Texture2D or null
+var _anim_pivot_cache: Dictionary = {}     # anim_json_path -> Array of Vector2
+var _frame_meta_cache: Dictionary = {}     # texture_path -> Dictionary
+var _visible_bottom_cache: Dictionary = {} # texture_path -> int (row of lowest opaque pixel; -1 if none)
 
 # Emote state
 var _emote_manifest: Dictionary = {}
@@ -26,6 +27,7 @@ var _active_face_variant: String = "default"
 var _facing_right: bool = false
 var _body_tex: Texture2D = null
 var _body_pivot: Vector2 = NO_PIVOT
+var _body_visible_bottom: int = -1
 var _has_face: bool = false
 var _face_local: Vector2 = Vector2.ZERO
 var _face_default_path: String = ""
@@ -48,10 +50,12 @@ func apply_frame(frame_data: Dictionary) -> void:
 	if texture_path == "":
 		_body_tex = null
 		_has_face = false
+		_body_visible_bottom = -1
 		queue_redraw()
 		return
 
 	_body_tex = _load_texture(texture_path)
+	_body_visible_bottom = _get_visible_bottom(texture_path, _body_tex)
 
 	var meta := _get_frame_meta(texture_path)
 	_body_pivot = meta.get("pivot_px", NO_PIVOT)
@@ -107,11 +111,14 @@ func _draw() -> void:
 	if pivot == NO_PIVOT:
 		pivot = Vector2(tex_size.x * 0.5, tex_size.y)
 
-	# Body rect: pivot pixel sits at local origin (actor's floor contact Y).
-	# Clamp pivot.y to tex_size.y: if the floor reference falls below the PNG
-	# (pivot.y > tex_size.y), use the PNG bottom as the floor contact so the
-	# character doesn't hover above it for animations with shorter frames.
+	# Base pivot Y is clamped to tex_size.y so animations whose floor reference
+	# falls past the PNG still ground. Then override with the lowest opaque pixel
+	# row if available — MapleStory composites have transparent padding below the
+	# shoes, so anchoring at pivot_px.y leaves the character hovering by that
+	# gap. Using visible_bottom + 1 puts the last visible row at local y=0.
 	var eff_pivot := Vector2(pivot.x, minf(pivot.y, tex_size.y))
+	if _body_visible_bottom >= 0:
+		eff_pivot.y = minf(float(_body_visible_bottom + 1), tex_size.y)
 
 	# Facing flip is applied via the node's scale.x (see set_facing_from_axis),
 	# which mirrors body, face, and any future overlay around x=0 uniformly.
@@ -253,6 +260,31 @@ func _get_anim_pivots(anim_json_path: String) -> Array:
 
 	_anim_pivot_cache[anim_json_path] = pivots
 	return pivots
+
+
+# --- Visible-pixel scanning (correct for transparent padding below feet) ---
+
+func _get_visible_bottom(texture_path: String, tex: Texture2D) -> int:
+	if _visible_bottom_cache.has(texture_path):
+		return _visible_bottom_cache[texture_path]
+	var result := _scan_visible_bottom(tex)
+	_visible_bottom_cache[texture_path] = result
+	return result
+
+
+func _scan_visible_bottom(tex: Texture2D) -> int:
+	if tex == null:
+		return -1
+	var img := tex.get_image()
+	if img == null:
+		return -1
+	var h := img.get_height()
+	var w := img.get_width()
+	for y in range(h - 1, -1, -1):
+		for x in range(w):
+			if img.get_pixel(x, y).a > 0.05:
+				return y
+	return -1
 
 
 # --- Texture and file loading ---
