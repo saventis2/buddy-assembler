@@ -82,7 +82,7 @@ func _on_play_emote_requested(emote_id: String) -> void:
 	# Gift body is visually identical to idle (WZ source_action=stand1); show
 	# a speech bubble so the player sees the behavior fired.
 	if clip_id == "gift":
-		_on_say_requested("For you! ♪")
+		_on_say_requested("For you!")
 	await get_tree().create_timer(float(force_ms) / 1000.0 + 0.1).timeout
 	renderer.call("reset_emote")
 
