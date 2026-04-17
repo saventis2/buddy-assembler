@@ -10,16 +10,24 @@ class_name CharacterRenderer2D
 #   - Face variant resolves WZ-source absolute paths for emote expressions.
 
 const EMOTE_MANIFEST_PATH := "res://content/core_pack/character/emotes/manifest.json"
+const FACE_VARIANTS_PATH := "res://content/core_pack/character/emotes/face_variants.json"
 const NO_PIVOT := Vector2(-1.0, -1.0)
+
+# MapleStory composites have ~15 px of empty space between the shoes and the
+# pivot_world floor reference (pivot_world.y = floor_world_ref). Without this
+# shift, every pose hovers by that amount. Lowering the render by this offset
+# preserves each animation's RELATIVE vertical intent (idle vs walk vs jumping
+# emotes) while landing the shoes on the floor in standing poses.
+const CHARACTER_FLOOR_OFFSET_PX := 15.0
 
 # Caches
 var _texture_cache: Dictionary = {}        # path -> Texture2D or null
 var _anim_pivot_cache: Dictionary = {}     # anim_json_path -> Array of Vector2
 var _frame_meta_cache: Dictionary = {}     # texture_path -> Dictionary
-var _visible_bottom_cache: Dictionary = {} # texture_path -> int (row of lowest opaque pixel; -1 if none)
 
 # Emote state
 var _emote_manifest: Dictionary = {}
+var _face_variant_brow_px: Dictionary = {}  # variant name -> Vector2 brow pixel within image (origin + map/brow)
 var _active_emote_semantic: String = "default"
 var _active_face_variant: String = "default"
 
@@ -27,14 +35,16 @@ var _active_face_variant: String = "default"
 var _facing_right: bool = false
 var _body_tex: Texture2D = null
 var _body_pivot: Vector2 = NO_PIVOT
-var _body_visible_bottom: int = -1
 var _has_face: bool = false
 var _face_local: Vector2 = Vector2.ZERO
 var _face_default_path: String = ""
+var _face_default_brow_px: Vector2 = Vector2.ZERO  # default face's brow pixel within image
+var _last_resolved_variant: String = "default"
 
 
 func _ready() -> void:
 	_load_emote_manifest()
+	_load_face_variants()
 
 
 func _load_emote_manifest() -> void:
@@ -45,17 +55,29 @@ func _load_emote_manifest() -> void:
 			_emote_manifest = parsed as Dictionary
 
 
+func _load_face_variants() -> void:
+	var raw := _read_text(FACE_VARIANTS_PATH)
+	if raw == "":
+		return
+	var parsed = JSON.parse_string(raw)
+	if typeof(parsed) != TYPE_DICTIONARY:
+		return
+	for key in (parsed as Dictionary).keys():
+		var v = (parsed as Dictionary)[key]
+		if typeof(v) == TYPE_ARRAY and (v as Array).size() >= 2:
+			var a := v as Array
+			_face_variant_brow_px[str(key)] = Vector2(float(a[0]), float(a[1]))
+
+
 func apply_frame(frame_data: Dictionary) -> void:
 	var texture_path := str(frame_data.get("texture_path", ""))
 	if texture_path == "":
 		_body_tex = null
 		_has_face = false
-		_body_visible_bottom = -1
 		queue_redraw()
 		return
 
 	_body_tex = _load_texture(texture_path)
-	_body_visible_bottom = _get_visible_bottom(texture_path, _body_tex)
 
 	var meta := _get_frame_meta(texture_path)
 	_body_pivot = meta.get("pivot_px", NO_PIVOT)
@@ -63,8 +85,10 @@ func apply_frame(frame_data: Dictionary) -> void:
 	if _has_face:
 		_face_local = meta["face_local"]
 		_face_default_path = str(meta.get("face_default_path", ""))
+		_face_default_brow_px = meta.get("face_default_brow_px", Vector2.ZERO)
 	else:
 		_face_default_path = ""
+		_face_default_brow_px = Vector2.ZERO
 
 	queue_redraw()
 
@@ -111,14 +135,12 @@ func _draw() -> void:
 	if pivot == NO_PIVOT:
 		pivot = Vector2(tex_size.x * 0.5, tex_size.y)
 
-	# Base pivot Y is clamped to tex_size.y so animations whose floor reference
-	# falls past the PNG still ground. Then override with the lowest opaque pixel
-	# row if available — MapleStory composites have transparent padding below the
-	# shoes, so anchoring at pivot_px.y leaves the character hovering by that
-	# gap. Using visible_bottom + 1 puts the last visible row at local y=0.
-	var eff_pivot := Vector2(pivot.x, minf(pivot.y, tex_size.y))
-	if _body_visible_bottom >= 0:
-		eff_pivot.y = minf(float(_body_visible_bottom + 1), tex_size.y)
+	# Apply the character-level floor offset uniformly so every animation keeps
+	# its intended relative vertical position (idle's weapon tail stays below
+	# the shoes, emotes stay raised). Per-frame visible-pixel scanning was
+	# rejected because it locks onto incidental artifacts like the weapon tip
+	# and flattens emotes against the floor.
+	var eff_pivot := Vector2(pivot.x, clamp(pivot.y - CHARACTER_FLOOR_OFFSET_PX, 0.0, tex_size.y))
 
 	# Facing flip is applied via the node's scale.x (see set_facing_from_axis),
 	# which mirrors body, face, and any future overlay around x=0 uniformly.
@@ -129,30 +151,50 @@ func _draw() -> void:
 		var face_tex := _resolve_face_texture()
 		if face_tex != null:
 			var face_size := face_tex.get_size()
-			var face_rect := Rect2(-eff_pivot + _face_local, face_size)
+			# Re-anchor the face so the brow point stays where the default face
+			# would have placed it. The default's top_left was computed for the
+			# default origin; a variant canvas may be taller (angry) or shifted
+			# (love), so we offset by (default_origin - variant_origin).
+			var face_offset := _face_variant_origin_delta()
+			var face_rect := Rect2(-eff_pivot + _face_local + face_offset, face_size)
 			draw_texture_rect(face_tex, face_rect, false)
+
+
+func _face_variant_origin_delta() -> Vector2:
+	# Only shift when the actually-rendered texture is a variant; otherwise
+	# (fallback to default) we want the original top_left.
+	if _last_resolved_variant == "" or _last_resolved_variant == "default":
+		return Vector2.ZERO
+	if not _face_variant_brow_px.has(_last_resolved_variant):
+		return Vector2.ZERO
+	var variant_brow: Vector2 = _face_variant_brow_px[_last_resolved_variant]
+	return _face_default_brow_px - variant_brow
 
 
 # --- Face resolution ---
 
 func _resolve_face_texture() -> Texture2D:
-	var candidates: Array[String] = []
+	_last_resolved_variant = "default"
+	var candidates: Array = []  # [{ "path": String, "variant": String }]
 	if _active_face_variant != "default" and _active_face_variant != "":
 		var variant_path := _make_variant_path(_face_default_path, _active_face_variant)
 		if variant_path != "":
-			candidates.append(variant_path)
-	candidates.append(_face_default_path)
+			candidates.append({"path": variant_path, "variant": _active_face_variant})
+	candidates.append({"path": _face_default_path, "variant": "default"})
 
-	for candidate in candidates:
+	for entry in candidates:
+		var candidate := str(entry["path"])
 		if candidate == "":
 			continue
 		if _texture_cache.has(candidate):
 			var c = _texture_cache[candidate]
 			if c is Texture2D:
+				_last_resolved_variant = str(entry["variant"])
 				return c as Texture2D
 			continue
 		var tex := _load_texture(candidate)
 		if tex != null:
+			_last_resolved_variant = str(entry["variant"])
 			return tex
 	return null
 
@@ -210,6 +252,21 @@ func _get_frame_meta(texture_path: String) -> Dictionary:
 						var tl := tl_v as Array
 						meta["face_local"] = Vector2(float(tl[0]) - bl, float(tl[1]) - bt)
 					meta["face_default_path"] = str(e.get("png", ""))
+					# Combine origin + anchors_local.brow to get the brow pixel
+					# within the default face image (what variant entries align to).
+					var origin_px := Vector2.ZERO
+					var origin_v = e.get("origin", [])
+					if typeof(origin_v) == TYPE_ARRAY and (origin_v as Array).size() >= 2:
+						var oa := origin_v as Array
+						origin_px = Vector2(float(oa[0]), float(oa[1]))
+					var brow_local := Vector2.ZERO
+					var anchors_local_v = e.get("anchors_local", {})
+					if typeof(anchors_local_v) == TYPE_DICTIONARY:
+						var brow_v = (anchors_local_v as Dictionary).get("brow", [])
+						if typeof(brow_v) == TYPE_ARRAY and (brow_v as Array).size() >= 2:
+							var ba := brow_v as Array
+							brow_local = Vector2(float(ba[0]), float(ba[1]))
+					meta["face_default_brow_px"] = origin_px + brow_local
 					break
 
 	_frame_meta_cache[texture_path] = meta
@@ -260,31 +317,6 @@ func _get_anim_pivots(anim_json_path: String) -> Array:
 
 	_anim_pivot_cache[anim_json_path] = pivots
 	return pivots
-
-
-# --- Visible-pixel scanning (correct for transparent padding below feet) ---
-
-func _get_visible_bottom(texture_path: String, tex: Texture2D) -> int:
-	if _visible_bottom_cache.has(texture_path):
-		return _visible_bottom_cache[texture_path]
-	var result := _scan_visible_bottom(tex)
-	_visible_bottom_cache[texture_path] = result
-	return result
-
-
-func _scan_visible_bottom(tex: Texture2D) -> int:
-	if tex == null:
-		return -1
-	var img := tex.get_image()
-	if img == null:
-		return -1
-	var h := img.get_height()
-	var w := img.get_width()
-	for y in range(h - 1, -1, -1):
-		for x in range(w):
-			if img.get_pixel(x, y).a > 0.05:
-				return y
-	return -1
 
 
 # --- Texture and file loading ---
