@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="ActorDefinition" load_steps=9 format=3]
+[gd_resource type="Resource" script_class="ActorDefinition" load_steps=14 format=3]
 
 [ext_resource type="Script" path="res://content/types/actor_definition.gd" id="1"]
 [ext_resource type="Resource" path="res://content/imported/demo/demo_skeleton.tres" id="2"]
@@ -9,6 +9,11 @@
 [ext_resource type="Resource" path="res://content/imported/demo/walk_clip.tres" id="7"]
 [ext_resource type="Resource" path="res://content/imported/demo/jump_clip.tres" id="8"]
 [ext_resource type="Resource" path="res://content/imported/demo/happy_emote_clip.tres" id="9"]
+[ext_resource type="Resource" path="res://content/imported/demo/sit_clip.tres" id="10"]
+[ext_resource type="Resource" path="res://content/imported/demo/sleep_clip.tres" id="11"]
+[ext_resource type="Resource" path="res://content/imported/demo/gift_clip.tres" id="12"]
+[ext_resource type="Resource" path="res://content/imported/demo/wander_clip.tres" id="13"]
+[ext_resource type="Resource" path="res://content/imported/demo/visitor_clip.tres" id="14"]
 
 [resource]
 script = ExtResource("1")
@@ -19,6 +24,17 @@ semantic_defaults = {
 "walk": "walk",
 "jump": "jump",
 "climb": "climb",
+"sit": "sit",
+"sit_emote": "sit",
+"sleep": "sleep",
+"sleep_emote": "sleep",
+"gift": "gift",
+"gift_emote": "gift",
+"wander": "wander",
+"wander_emote": "wander",
+"visitor": "visitor",
+"visitor_emote": "visitor",
+"happy": "happy_emote",
 "happy_emote": "happy_emote",
 "sad_emote": "happy_emote",
 "angry_emote": "happy_emote",
@@ -30,10 +46,15 @@ skins = [ExtResource("3")]
 attachment_slots = ExtResource("4")
 behavior_profile = ExtResource("5")
 clips = {
+"gift": ExtResource("12"),
 "happy_emote": ExtResource("9"),
 "idle": ExtResource("6"),
 "jump": ExtResource("8"),
-"walk": ExtResource("7")
+"sit": ExtResource("10"),
+"sleep": ExtResource("11"),
+"visitor": ExtResource("14"),
+"walk": ExtResource("7"),
+"wander": ExtResource("13")
 }
 movement_profile = {
 "gravity": 750.0,

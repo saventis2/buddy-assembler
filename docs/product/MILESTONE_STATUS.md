@@ -42,6 +42,9 @@ Updated: 2026-04-16 (next-10 complete)
 - [done] Top-of-window control hint now wraps and remains readable
 - [done] Face-overlay emote architecture checkpoint recorded
   (`CHECKPOINT_2026-04-16_FACE_OVERLAY_ALIGNMENT.md`)
+- [done] sit / sleep / gift / wander / visitor clips imported and wired
+- [done] BehaviorEngine connected to BuddyBrain (fires events every 6s)
+- [done] Vertical slice test keys for all behavior animations (S/Z/G/V/W)
 
 ## Phase 4 (Utility Layer)
 

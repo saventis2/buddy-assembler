@@ -78,6 +78,7 @@ func _update_hint_label() -> void:
 	hint_label.text = (
 		"Arrow keys: move  Space: jump\n" +
 		"E: happy  R: sad  T: angry  Y: love\n" +
+		"S: sit  Z: sleep  G: gift  V: visitor  W: wander\n" +
 		"[/]: speech bubble %.1fs  |  actor.y=%.0f" % [actor.speech_bubble_visible_seconds, actor.global_position.y]
 	)
 
@@ -94,6 +95,16 @@ func _unhandled_input(event: InputEvent) -> void:
 				command_bridge.play_emote("angry")
 			elif key_event.keycode == KEY_Y:
 				command_bridge.play_emote("love")
+			elif key_event.keycode == KEY_S:
+				command_bridge.play_emote("sit")
+			elif key_event.keycode == KEY_Z:
+				command_bridge.play_emote("sleep")
+			elif key_event.keycode == KEY_G:
+				command_bridge.play_emote("gift")
+			elif key_event.keycode == KEY_V:
+				command_bridge.play_emote("visitor")
+			elif key_event.keycode == KEY_W:
+				command_bridge.play_emote("wander")
 			elif key_event.keycode == KEY_BRACKETLEFT:
 				actor.speech_bubble_visible_seconds = maxf(
 					SPEECH_BUBBLE_DURATION_MIN,
