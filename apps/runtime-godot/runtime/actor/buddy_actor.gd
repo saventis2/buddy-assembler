@@ -3,6 +3,12 @@ class_name BuddyActor
 
 const CharacterAssemblerScript = preload("res://runtime/actor/character_assembler.gd")
 
+# Body behavior animations need longer hold so the pose is clearly visible.
+# Face emotes (happy/sad/angry/love) stay at the shorter EMOTE_FORCE_MS.
+const BEHAVIOR_CLIP_IDS := ["sit", "sleep", "gift", "wander", "visitor"]
+const BEHAVIOR_FORCE_MS := 2500
+const EMOTE_FORCE_MS := 900
+
 @export var actor_definition: Resource
 
 @onready var state_machine: Node = $StateMachine
@@ -68,12 +74,16 @@ func on_skin_swap() -> void:
 func _on_play_emote_requested(emote_id: String) -> void:
 	var semantic_defaults: Dictionary = _runtime_bundle.get("semantic_defaults", {})
 	var clip_id := str(semantic_defaults.get(emote_id, emote_id))
-	state_machine.force_state(emote_id, 900)
+	var force_ms := BEHAVIOR_FORCE_MS if clip_id in BEHAVIOR_CLIP_IDS else EMOTE_FORCE_MS
+	state_machine.force_state(emote_id, force_ms)
 	animation_controller.play(clip_id, true)
-	# Drive face overlay for emote duration (strip _emote suffix -> semantic name)
 	var face_semantic := emote_id.trim_suffix("_emote")
 	renderer.call("set_emote", face_semantic)
-	await get_tree().create_timer(1.1).timeout
+	# Gift body is visually identical to idle (WZ source_action=stand1); show
+	# a speech bubble so the player sees the behavior fired.
+	if clip_id == "gift":
+		_on_say_requested("For you! ♪")
+	await get_tree().create_timer(float(force_ms) / 1000.0 + 0.1).timeout
 	renderer.call("reset_emote")
 
 

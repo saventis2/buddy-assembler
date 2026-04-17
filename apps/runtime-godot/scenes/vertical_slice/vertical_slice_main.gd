@@ -77,8 +77,9 @@ func _check_interaction_stubs(actor_pos: Vector2) -> void:
 func _update_hint_label() -> void:
 	hint_label.text = (
 		"Arrow keys: move  Space: jump\n" +
-		"E: happy  R: sad  T: angry  Y: love\n" +
-		"S: sit  Z: sleep  G: gift  V: visitor  W: wander\n" +
+		"E: happy  R: sad  T: angry  Y: love  (face emotes, 0.9s)\n" +
+		"S: sit  Z: sleep  G: gift*  V: visitor*  W: wander*  (body, 2.5s)\n" +
+		"* gift/visitor/wander reuse idle/walk frames (WZ source limit)\n" +
 		"[/]: speech bubble %.1fs  |  actor.y=%.0f" % [actor.speech_bubble_visible_seconds, actor.global_position.y]
 	)
 
