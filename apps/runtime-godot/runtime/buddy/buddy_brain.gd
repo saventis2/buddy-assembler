@@ -36,7 +36,7 @@ func _fire_behavior() -> void:
 	var context := {
 		"unlocked_actions": ["idle", "sit", "sleep", "wander", "happy", "gift", "visitor"]
 	}
-	var result := _behavior_engine.tick(now, context)
+	var result: Dictionary = _behavior_engine.tick(now, context)
 	var action_id := str(result.get("id", "idle"))
 	if action_id != "idle":
 		play_emote_requested.emit(action_id)
