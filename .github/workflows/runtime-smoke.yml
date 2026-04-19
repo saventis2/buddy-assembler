@@ -63,20 +63,23 @@ jobs:
         working-directory: ${{ env.RUNTIME_DIR }}
         run: |
           set -euo pipefail
-          godot --headless --path . res://tests/SmokeFloorLockTest.tscn 2>&1 | tee ../../smoke.log
+          # Hard per-test timeout: if Godot hangs (e.g. scene fails to parse and
+          # _ready never runs so get_tree().quit() is never reached), we want a
+          # fast red signal instead of burning the 15-min job budget.
+          timeout 90s godot --headless --path . res://tests/SmokeFloorLockTest.tscn 2>&1 | tee ../../smoke.log
 
       - name: Save-store durability test
         working-directory: ${{ env.RUNTIME_DIR }}
         run: |
           set -euo pipefail
-          godot --headless --path . res://tests/SaveStoreTest.tscn 2>&1 | tee ../../save-store.log
+          timeout 90s godot --headless --path . res://tests/SaveStoreTest.tscn 2>&1 | tee ../../save-store.log
           grep -E "save_store_test: PASS" ../../save-store.log
 
       - name: Pack validation + fallback test
         working-directory: ${{ env.RUNTIME_DIR }}
         run: |
           set -euo pipefail
-          godot --headless --path . res://tests/PackValidationTest.tscn 2>&1 | tee ../../pack-validation.log
+          timeout 90s godot --headless --path . res://tests/PackValidationTest.tscn 2>&1 | tee ../../pack-validation.log
           grep -E "pack_validation_test: PASS" ../../pack-validation.log
 
       - name: Upload logs (always)
