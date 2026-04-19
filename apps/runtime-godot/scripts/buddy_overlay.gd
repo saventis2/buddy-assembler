@@ -334,12 +334,16 @@ func _is_night() -> bool:
 
 func _load_content_pack() -> void:
     var selected_pack := str(AppState.settings.get("selectedPackId", "core_pack"))
-    var loaded := ContentLoader.load_pack(selected_pack)
-    if not bool(loaded.get("ok", false)):
-        loaded = ContentLoader.load_pack("core_pack")
-        selected_pack = "core_pack"
+    var loaded := ContentLoader.load_with_fallback(selected_pack)
 
-    _active_pack_id = selected_pack
+    var source_tier := str(loaded.get("source_tier", "selected"))
+    if source_tier != "selected":
+        print(
+            "content: pack fallback — tier=%s reason=%s errors_by_tier=%s"
+            % [source_tier, loaded.get("fallback_reason", ""), loaded.get("errors_by_tier", {})]
+        )
+
+    _active_pack_id = str(loaded.get("pack_id", "core_pack"))
     _active_manifest = loaded.get("manifest", {})
     _allowed_actions = ContentLoader.gather_action_ids(_active_manifest)
     if _allowed_actions.is_empty():

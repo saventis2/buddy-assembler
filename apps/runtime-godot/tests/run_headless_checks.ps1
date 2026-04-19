@@ -52,6 +52,16 @@ if ($saveCode -ne 0) {
 }
 Write-Host "Save store durability test PASSED."
 
+# --- Pack validation + fallback test ---
+Write-Host ""
+Write-Host "=== Pack validation + fallback test ==="
+$packCode = Invoke-GodotHeadless -ExtraArgs @("--scene", "res://tests/PackValidationTest.tscn") -Label "pack-validation"
+if ($packCode -ne 0) {
+    Write-Host "Pack validation test FAILED (exit $packCode)"
+    exit $packCode
+}
+Write-Host "Pack validation test PASSED."
+
 # --- Optional: frame-time profiling ---
 if ($Profile) {
     Write-Host ""
