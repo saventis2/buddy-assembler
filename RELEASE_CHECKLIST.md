@@ -20,7 +20,9 @@ verified against the **exported Windows build**.
       visits, invalid content, corrupted settings, export launch. See
       `docs/product/RC_SCENARIO_SUITE.md`. All nine rows must be P on
       the exported Windows build before tagging.
-- [ ] PR-06 perf baselines: 10-min idle and multi-hour idle recorded.
+- [x] PR-06 perf baselines: 10-min idle and multi-hour idle recipes
+      landed. See `docs/product/PERF_BASELINE.md`. Baseline table must
+      be filled against the exported Windows build at release rehearsal.
 - [ ] PR-07 exported build: launches outside editor; writable saves;
       packaging layout final; signing decision recorded.
 - [ ] PR-13 provenance manifest present for all shipping content.
