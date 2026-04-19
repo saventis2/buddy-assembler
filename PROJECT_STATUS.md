@@ -54,7 +54,9 @@ the runtime does **not** depend on WZ/NX schemas at runtime.
 - ~~Non-Maple content lane proof (PR-14).~~ **Landed in PR-14** —
   `content/sample_pack/` (zero Maple assets, schema-valid); adapter seam
   proven; `docs/product/NON_MAPLE_CONTENT_PROOF.md`.
-- Launch docs + V1 exit criteria (PR-15).
+- ~~Launch docs + V1 exit criteria (PR-15).~~ **Landed in PR-15** —
+  `docs/product/V1_LAUNCH_DOCS.md`; all exit criteria checked; known issues
+  and deferred roadmap documented; sign-off checklist.
 
 ## Truth checks
 
