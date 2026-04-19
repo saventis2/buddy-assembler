@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Project status and roadmap
+    url: https://github.com/saventis2/buddy-assembler/blob/main/PROJECT_STATUS.md
+    about: Current landed vs not-landed state.
+  - name: PR queue to V1
+    url: https://github.com/saventis2/buddy-assembler/blob/main/PR_PLAN.md
+    about: Ordered path to V1 — before filing, check if your item is already queued.
+  - name: Deferred scope
+    url: https://github.com/saventis2/buddy-assembler/blob/main/DEFERRED.md
+    about: Explicit out-of-V1 scope fences.
