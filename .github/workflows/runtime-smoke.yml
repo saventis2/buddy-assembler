@@ -137,6 +137,11 @@ jobs:
         working-directory: ${{ env.RUNTIME_DIR }}
         run: |
           $ErrorActionPreference = "Stop"
+          # Godot writes to stderr for non-fatal issues (addon warnings,
+          # display-server noise). With 2>&1 pwsh would treat that as a
+          # terminating error. Disable native-command error propagation so
+          # only a real non-zero exit code fails the step.
+          $PSNativeCommandUseErrorActionPreference = $false
           godot.exe --headless --import 2>&1 | Tee-Object -FilePath ..\..\win-import.log
           godot.exe --headless --quit  2>&1 | Tee-Object -FilePath ..\..\win-import.log -Append
 
@@ -145,6 +150,7 @@ jobs:
         working-directory: ${{ env.RUNTIME_DIR }}
         run: |
           $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $false
           $out = Join-Path (Resolve-Path ..\..).Path "build\windows"
           New-Item -ItemType Directory -Force -Path $out | Out-Null
           $exe = Join-Path $out "BuddyRuntime.exe"

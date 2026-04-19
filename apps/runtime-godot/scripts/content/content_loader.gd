@@ -202,7 +202,10 @@ static func validate_manifest(manifest: Dictionary) -> Array:
     if not errors.is_empty():
         return errors
 
-    if typeof(manifest.get("schemaVersion")) != TYPE_INT:
+    var sv = manifest.get("schemaVersion")
+    # JSON.parse_string returns numbers as float, so accept integer-valued floats.
+    var sv_ok := typeof(sv) == TYPE_INT or (typeof(sv) == TYPE_FLOAT and float(sv) == float(int(sv)))
+    if not sv_ok:
         errors.append("schemaVersion must be integer")
     if _is_blank(manifest.get("id")):
         errors.append("id must be non-empty string")
