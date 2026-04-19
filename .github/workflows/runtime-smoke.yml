@@ -65,6 +65,13 @@ jobs:
           set -euo pipefail
           godot --headless --path . res://tests/SmokeFloorLockTest.tscn 2>&1 | tee ../../smoke.log
 
+      - name: Save-store durability test
+        working-directory: ${{ env.RUNTIME_DIR }}
+        run: |
+          set -euo pipefail
+          godot --headless --path . res://tests/SaveStoreTest.tscn 2>&1 | tee ../../save-store.log
+          grep -E "save_store_test: PASS" ../../save-store.log
+
       - name: Upload logs (always)
         if: always()
         uses: actions/upload-artifact@v4
@@ -74,6 +81,7 @@ jobs:
             import.log
             parse.log
             smoke.log
+            save-store.log
           retention-days: 14
           if-no-files-found: warn
 

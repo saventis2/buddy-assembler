@@ -42,6 +42,16 @@ if ($smokeCode -ne 0) {
 }
 Write-Host "Smoke floor-lock test PASSED."
 
+# --- Save store durability test ---
+Write-Host ""
+Write-Host "=== Save store durability test ==="
+$saveCode = Invoke-GodotHeadless -ExtraArgs @("--scene", "res://tests/SaveStoreTest.tscn") -Label "save-store"
+if ($saveCode -ne 0) {
+    Write-Host "Save store durability test FAILED (exit $saveCode)"
+    exit $saveCode
+}
+Write-Host "Save store durability test PASSED."
+
 # --- Optional: frame-time profiling ---
 if ($Profile) {
     Write-Host ""

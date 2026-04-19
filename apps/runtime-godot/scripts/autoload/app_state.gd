@@ -1,6 +1,7 @@
 extends Node
 
 const SaveStore = preload("res://scripts/persistence/save_store.gd")
+const SchemaMigrations = preload("res://scripts/persistence/schema_migrations.gd")
 const UnlockTable = preload("res://scripts/progression/unlock_table.gd")
 
 const SETTINGS_PATH := "user://settings.json"
@@ -17,17 +18,23 @@ func _ready() -> void:
 
 
 func load_state() -> void:
-    settings = _merge_defaults(
-        SaveStore.read_json(SETTINGS_PATH, _default_settings()),
-        _default_settings()
+    settings = SaveStore.load_versioned(
+        SETTINGS_PATH,
+        _default_settings,
+        SchemaMigrations.SETTINGS_CURRENT_VERSION,
+        SchemaMigrations.SETTINGS_MIGRATORS,
     )
-    profile = _merge_defaults(
-        SaveStore.read_json(PROFILE_PATH, _default_profile()),
-        _default_profile()
+    profile = SaveStore.load_versioned(
+        PROFILE_PATH,
+        _default_profile,
+        SchemaMigrations.PROFILE_CURRENT_VERSION,
+        SchemaMigrations.PROFILE_MIGRATORS,
     )
-    world_state = _merge_defaults(
-        SaveStore.read_json(WORLD_STATE_PATH, _default_world_state()),
-        _default_world_state()
+    world_state = SaveStore.load_versioned(
+        WORLD_STATE_PATH,
+        _default_world_state,
+        SchemaMigrations.WORLD_STATE_CURRENT_VERSION,
+        SchemaMigrations.WORLD_STATE_MIGRATORS,
     )
     _refresh_unlocks()
     _prune_event_buckets()
