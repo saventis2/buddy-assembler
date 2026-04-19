@@ -13,7 +13,7 @@ collision_map_resource = ExtResource("3")
 
 [node name="Background" type="ColorRect" parent="."]
 offset_right = 340.0
-offset_bottom = 240.0
+offset_bottom = 340.0
 color = Color(0.102, 0.118, 0.149, 1)
 
 [node name="FloorVisual" type="ColorRect" parent="."]

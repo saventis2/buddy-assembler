@@ -1,4 +1,4 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://runtime/actor/buddy_actor.gd" id="1"]
 [ext_resource type="Script" path="res://runtime/actor/state_machine.gd" id="2"]
@@ -7,6 +7,7 @@
 [ext_resource type="Script" path="res://runtime/actor/character_renderer_2d.gd" id="5"]
 [ext_resource type="Script" path="res://runtime/buddy/buddy_brain.gd" id="6"]
 [ext_resource type="Resource" path="res://content/imported/demo/demo_actor_definition.tres" id="7"]
+[ext_resource type="Script" path="res://runtime/ui/chat_balloon.gd" id="8"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_1"]
 size = Vector2(22, 44)
@@ -36,12 +37,7 @@ script = ExtResource("5")
 [node name="BuddyBrain" type="Node" parent="."]
 script = ExtResource("6")
 
-[node name="SpeechBubble" type="Label" parent="."]
+[node name="SpeechBubble" type="Node2D" parent="."]
+script = ExtResource("8")
+position = Vector2(0, -55)
 visible = false
-offset_left = -56.0
-offset_top = -78.0
-offset_right = 104.0
-offset_bottom = -30.0
-text = "..."
-horizontal_alignment = 1
-vertical_alignment = 1

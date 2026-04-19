@@ -76,7 +76,7 @@
   "action_resolution": [
     {
       "asset_kind": "body",
-      "part_id": 2001,
+      "part_id": 2000,
       "requested_action": "walk1",
       "requested_frame": 3,
       "selected_action": "walk1",
@@ -86,7 +86,7 @@
     },
     {
       "asset_kind": "head",
-      "part_id": 12005,
+      "part_id": 12000,
       "requested_action": "walk1",
       "requested_frame": 3,
       "selected_action": "walk1",
@@ -171,13 +171,13 @@
   "assets_loaded": [
     {
       "kind": "body",
-      "part_id": 2001,
-      "xml": "C:\\Users\\GGPC\\OneDrive\\Desktop\\83 complete\\Base.wz\\Character\\Character.wz\\00002001.img.xml"
+      "part_id": 2000,
+      "xml": "C:\\Users\\GGPC\\OneDrive\\Desktop\\83 complete\\Base.wz\\Character\\Character.wz\\00002000.img.xml"
     },
     {
       "kind": "head",
-      "part_id": 12005,
-      "xml": "C:\\Users\\GGPC\\OneDrive\\Desktop\\83 complete\\Base.wz\\Character\\Character.wz\\00012005.img.xml"
+      "part_id": 12000,
+      "xml": "C:\\Users\\GGPC\\OneDrive\\Desktop\\83 complete\\Base.wz\\Character\\Character.wz\\00012000.img.xml"
     },
     {
       "kind": "face",
@@ -214,7 +214,7 @@
   "draw_order": [
     {
       "asset_kind": "body",
-      "part_id": 2001,
+      "part_id": 2000,
       "z": "body",
       "z_index": 76,
       "top_left": [
@@ -250,8 +250,8 @@
           -13
         ]
       },
-      "png": "C:\\Users\\GGPC\\OneDrive\\Desktop\\83 complete\\Base.wz\\Character\\Character.wz\\00002001.img\\walk1\\3\\body.png",
-      "node_path": "00002001.img/walk1/3/body"
+      "png": "C:\\Users\\GGPC\\OneDrive\\Desktop\\83 complete\\Base.wz\\Character\\Character.wz\\00002000.img\\walk1\\3\\body.png",
+      "node_path": "00002000.img/walk1/3/body"
     },
     {
       "asset_kind": "shoes",
@@ -387,7 +387,7 @@
     },
     {
       "asset_kind": "body",
-      "part_id": 2001,
+      "part_id": 2000,
       "z": "arm",
       "z_index": 51,
       "top_left": [
@@ -423,8 +423,8 @@
           0
         ]
       },
-      "png": "C:\\Users\\GGPC\\OneDrive\\Desktop\\83 complete\\Base.wz\\Character\\Character.wz\\00002001.img\\walk1\\3\\arm.png",
-      "node_path": "00002001.img/walk1/3/arm"
+      "png": "C:\\Users\\GGPC\\OneDrive\\Desktop\\83 complete\\Base.wz\\Character\\Character.wz\\00002000.img\\walk1\\3\\arm.png",
+      "node_path": "00002000.img/walk1/3/arm"
     },
     {
       "asset_kind": "coat",
@@ -461,7 +461,7 @@
     },
     {
       "asset_kind": "head",
-      "part_id": 12005,
+      "part_id": 12000,
       "z": "head",
       "z_index": 45,
       "top_left": [
@@ -513,8 +513,8 @@
           -13
         ]
       },
-      "png": "C:\\Users\\GGPC\\OneDrive\\Desktop\\83 complete\\Base.wz\\Character\\Character.wz\\00012005.img\\front\\head.png",
-      "node_path": "00012005.img/front/head"
+      "png": "C:\\Users\\GGPC\\OneDrive\\Desktop\\83 complete\\Base.wz\\Character\\Character.wz\\00012000.img\\front\\head.png",
+      "node_path": "00012000.img/front/head"
     },
     {
       "asset_kind": "face",

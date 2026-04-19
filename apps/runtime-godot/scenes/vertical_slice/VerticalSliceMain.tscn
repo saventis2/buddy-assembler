@@ -19,10 +19,16 @@ target_actor_path = NodePath("../BuddyActor")
 [node name="CanvasLayer" type="CanvasLayer" parent="."]
 
 [node name="HintLabel" type="Label" parent="CanvasLayer"]
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
 offset_left = 8.0
-offset_top = 8.0
-offset_right = 332.0
-offset_bottom = 72.0
+offset_top = -100.0
+offset_right = -8.0
+offset_bottom = -8.0
+grow_horizontal = 2
+grow_vertical = 0
 theme_override_font_sizes/font_size = 13
 autowrap_mode = 3
 text = "Arrow keys move, Space jumps, E emote"

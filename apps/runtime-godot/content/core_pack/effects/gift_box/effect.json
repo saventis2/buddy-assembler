@@ -1,0 +1,11 @@
+{
+  "source": "Item.wz/Etc/0408.img/04080000/info/icon",
+  "loop": true,
+  "anchor_to": "hand",
+  "frames": [
+    {
+      "origin_px": [14, 32],
+      "delay_ms": 1000
+    }
+  ]
+}

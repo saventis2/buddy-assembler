@@ -18,14 +18,24 @@ func tick(now_unix: int, context: Dictionary) -> Dictionary:
 		_cooldowns[forced_action] = now_unix + 3
 		return {"id": forced_action, "weight": 1000.0, "cooldown": 3}
 
+	# wander deliberately NOT in rotation: it's a walk1 alias, nothing new.
+	# visitor spawns a second BuddyActor via BuddyBrain (Phase D).
+	# sit: chair_basic overlay (Item.wz/Install/03010000).
+	# gift: happy_emote body pose + gift_box icon overlay + bubble.
 	var base_options := [
 		{"id": "idle", "weight": 7.0, "cooldown": 1},
-		{"id": "wander", "weight": 4.0, "cooldown": 4},
-		{"id": "sit", "weight": 3.0, "cooldown": 5},
-		{"id": "happy", "weight": 2.0, "cooldown": 6},
-		{"id": "gift", "weight": 1.0, "cooldown": 12},
+		{"id": "happy", "weight": 1.2, "cooldown": 8},
+		{"id": "stunned", "weight": 0.5, "cooldown": 20},
+		{"id": "proud", "weight": 0.5, "cooldown": 20},
+		{"id": "embarrassed", "weight": 0.5, "cooldown": 20},
+		{"id": "sparkle", "weight": 0.5, "cooldown": 25},
+		{"id": "humming", "weight": 0.5, "cooldown": 20},
+		{"id": "kiss", "weight": 0.4, "cooldown": 25},
+		{"id": "bow", "weight": 0.4, "cooldown": 25},
+		{"id": "sit", "weight": 1.5, "cooldown": 8},
 		{"id": "sleep", "weight": 1.5, "cooldown": 8},
-		{"id": "visitor", "weight": 0.8, "cooldown": 14},
+		{"id": "gift", "weight": 0.8, "cooldown": 20},
+		{"id": "visitor", "weight": 0.6, "cooldown": 30},
 	]
 
 	var allowed_map := _index_map(context.get("allowed_actions", []))

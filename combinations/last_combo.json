@@ -9,8 +9,8 @@
   "z_draw_order": "front-last",
   "hair_mode": "auto",
   "ids": {
-    "base_id": "2001",
-    "head_id": "12005",
+    "base_id": "2000",
+    "head_id": "12000",
     "face_id": "20204",
     "hair_id": "30167",
     "accessory_id": "",

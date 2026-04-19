@@ -7,16 +7,21 @@ const CharacterAssemblerScript = preload("res://runtime/actor/character_assemble
 # Face emotes (happy/sad/angry/love) stay at the shorter EMOTE_FORCE_MS.
 const BEHAVIOR_CLIP_IDS := ["sit", "sleep", "gift", "wander", "visitor"]
 const BEHAVIOR_FORCE_MS := 2500
-const EMOTE_FORCE_MS := 900
+# Face emotes held for 1.8s — the old 0.9s cut mid-animation and felt twitchy.
+const EMOTE_FORCE_MS := 1800
 
 @export var actor_definition: Resource
+# When true, _physics_process reads external_axis instead of Input.
+# Used by the visitor controller to drive a second spawned BuddyActor.
+@export var autonomous: bool = false
+var external_axis: float = 0.0
 
 @onready var state_machine: Node = $StateMachine
 @onready var movement_controller: Node = $MovementController
 @onready var animation_controller: Node = $AnimationController
 @onready var renderer: Node2D = $CharacterRenderer2D
 @onready var buddy_brain: Node = $BuddyBrain
-@onready var speech_bubble: Label = $SpeechBubble
+@onready var speech_bubble: Node2D = $SpeechBubble
 
 var _assembler = CharacterAssemblerScript.new()
 var _runtime_bundle: Dictionary = {}
@@ -39,8 +44,14 @@ func _ready() -> void:
 
 
 func _physics_process(delta: float) -> void:
-	var input_axis := Input.get_axis("ui_left", "ui_right")
-	var jump_pressed := Input.is_action_just_pressed("ui_accept")
+	var input_axis: float
+	var jump_pressed: bool
+	if autonomous:
+		input_axis = external_axis
+		jump_pressed = false
+	else:
+		input_axis = Input.get_axis("ui_left", "ui_right")
+		jump_pressed = Input.is_action_just_pressed("ui_accept")
 	var floor_lock_grounded := _is_floor_lock_grounded()
 	movement_controller.update(self, delta, input_axis, jump_pressed, floor_lock_grounded)
 	_apply_floor_lock_fallback()
@@ -56,7 +67,10 @@ func _physics_process(delta: float) -> void:
 	var clip_id := str(semantic_defaults.get(next_state, next_state))
 	animation_controller.play(clip_id)
 	animation_controller.update(delta)
-	buddy_brain.tick(delta)
+	# Autonomous actors (visitor) are driven externally — don't let their own
+	# brain fire random emotes that would interrupt the scripted sequence.
+	if not autonomous:
+		buddy_brain.tick(delta)
 
 
 func command_play_emote(emote_name: String) -> void:
@@ -79,18 +93,32 @@ func _on_play_emote_requested(emote_id: String) -> void:
 	animation_controller.play(clip_id, true)
 	var face_semantic := emote_id.trim_suffix("_emote")
 	renderer.call("set_emote", face_semantic)
-	# Gift body is visually identical to idle (WZ source_action=stand1); show
-	# a speech bubble so the player sees the behavior fired.
-	if clip_id == "gift":
+	# Gift reuses the happy_emote body pose (alert / raised arm) plus a
+	# gift-box icon overlay at the hand and a speech bubble.
+	var is_gift := emote_id == "gift" or emote_id == "gift_emote"
+	if is_gift:
 		_on_say_requested("For you!")
+		renderer.call("play_overlay", "gift_box", true)
+	# Chair prop renders behind the body for the duration of the sit pose.
+	if clip_id == "sit":
+		renderer.call("play_back_overlay", "chair_basic", true)
+	# Soft sparkle on happy — IncEXP is a gentle warm glow, appropriate for
+	# a positive emote (LevelUp was too ceremonial).
+	elif emote_id == "happy" or emote_id == "happy_emote":
+		renderer.call("play_overlay", "happy_sparkle", false)
 	await get_tree().create_timer(float(force_ms) / 1000.0 + 0.1).timeout
 	renderer.call("reset_emote")
+	if clip_id == "sit":
+		renderer.call("stop_back_overlay")
+	if is_gift:
+		renderer.call("stop_overlay")
 
 
 func _on_say_requested(text: String) -> void:
-	speech_bubble.text = text
 	speech_bubble.visible = true
+	speech_bubble.call("show_text", text)
 	await get_tree().create_timer(speech_bubble_visible_seconds).timeout
+	speech_bubble.call("hide_bubble")
 	speech_bubble.visible = false
 
 

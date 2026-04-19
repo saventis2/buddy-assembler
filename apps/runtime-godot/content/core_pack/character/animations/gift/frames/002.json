@@ -1,35 +1,35 @@
 {
-  "action": "stand1",
+  "action": "heal",
   "frame": 2,
   "base_wz": "C:\\Users\\GGPC\\OneDrive\\Desktop\\83 complete\\Base.wz",
-  "output_png": "C:\\Users\\GGPC\\buddy-assembler\\apps\\runtime-godot\\content\\core_pack\\character\\animations\\gift\\frames\\002.png",
-  "drawn_layers": 10,
+  "output_png": "C:\\Users\\GGPC\\buddy-assembler\\_tmp_gift\\character\\animations\\gift\\frames\\002.png",
+  "drawn_layers": 9,
   "canvas_size": [
-    63,
-    88
+    64,
+    84
   ],
   "frame_bounds_world": {
-    "left": -31,
+    "left": -35,
     "top": -54,
-    "right": 34,
-    "bottom": 35
+    "right": 32,
+    "bottom": 30
   },
   "world_anchors": {
     "brow": [
       -2,
-      -31
+      -32
     ],
     "earBelowHead": [
       -15,
-      -17
+      -18
     ],
     "earOverHead": [
       17,
-      -16
+      -17
     ],
     "hand": [
-      12,
-      6
+      -17,
+      -16
     ],
     "navel": [
       0,
@@ -37,7 +37,7 @@
     ],
     "neck": [
       2,
-      -11
+      -12
     ]
   },
   "z_draw_order": "front-last",
@@ -76,20 +76,20 @@
   "action_resolution": [
     {
       "asset_kind": "body",
-      "part_id": 2001,
-      "requested_action": "stand1",
+      "part_id": 2000,
+      "requested_action": "heal",
       "requested_frame": 2,
-      "selected_action": "stand1",
+      "selected_action": "heal",
       "selected_frame": 2,
       "selection_mode": "exact_action_exact_frame",
       "entry_count": 2
     },
     {
       "asset_kind": "head",
-      "part_id": 12005,
-      "requested_action": "stand1",
+      "part_id": 12000,
+      "requested_action": "heal",
       "requested_frame": 2,
-      "selected_action": "stand1",
+      "selected_action": "heal",
       "selected_frame": 2,
       "selection_mode": "exact_action_exact_frame",
       "entry_count": 1
@@ -97,7 +97,7 @@
     {
       "asset_kind": "face",
       "part_id": 20204,
-      "requested_action": "stand1",
+      "requested_action": "heal",
       "requested_frame": 2,
       "selected_action": "default",
       "selected_frame": null,
@@ -107,9 +107,9 @@
     {
       "asset_kind": "hair",
       "part_id": 30167,
-      "requested_action": "stand1",
+      "requested_action": "heal",
       "requested_frame": 2,
-      "selected_action": "stand1",
+      "selected_action": "heal",
       "selected_frame": 2,
       "selection_mode": "exact_action_exact_frame",
       "entry_count": 1
@@ -117,9 +117,9 @@
     {
       "asset_kind": "coat",
       "part_id": 1042164,
-      "requested_action": "stand1",
+      "requested_action": "heal",
       "requested_frame": 2,
-      "selected_action": "stand1",
+      "selected_action": "heal",
       "selected_frame": 2,
       "selection_mode": "exact_action_exact_frame",
       "entry_count": 2
@@ -127,9 +127,9 @@
     {
       "asset_kind": "pants",
       "part_id": 1062085,
-      "requested_action": "stand1",
+      "requested_action": "heal",
       "requested_frame": 2,
-      "selected_action": "stand1",
+      "selected_action": "heal",
       "selected_frame": 2,
       "selection_mode": "exact_action_exact_frame",
       "entry_count": 1
@@ -137,19 +137,9 @@
     {
       "asset_kind": "shoes",
       "part_id": 1072121,
-      "requested_action": "stand1",
+      "requested_action": "heal",
       "requested_frame": 2,
-      "selected_action": "stand1",
-      "selected_frame": 2,
-      "selection_mode": "exact_action_exact_frame",
-      "entry_count": 1
-    },
-    {
-      "asset_kind": "weapon",
-      "part_id": 1312007,
-      "requested_action": "stand1",
-      "requested_frame": 2,
-      "selected_action": "stand1",
+      "selected_action": "heal",
       "selected_frame": 2,
       "selection_mode": "exact_action_exact_frame",
       "entry_count": 1
@@ -160,7 +150,7 @@
     {
       "asset_kind": "face",
       "part_id": 20204,
-      "requested_action": "stand1",
+      "requested_action": "heal",
       "requested_frame": 2,
       "selected_action": "default",
       "selected_frame": null,
@@ -171,13 +161,13 @@
   "assets_loaded": [
     {
       "kind": "body",
-      "part_id": 2001,
-      "xml": "C:\\Users\\GGPC\\OneDrive\\Desktop\\83 complete\\Base.wz\\Character\\Character.wz\\00002001.img.xml"
+      "part_id": 2000,
+      "xml": "C:\\Users\\GGPC\\OneDrive\\Desktop\\83 complete\\Base.wz\\Character\\Character.wz\\00002000.img.xml"
     },
     {
       "kind": "head",
-      "part_id": 12005,
-      "xml": "C:\\Users\\GGPC\\OneDrive\\Desktop\\83 complete\\Base.wz\\Character\\Character.wz\\00012005.img.xml"
+      "part_id": 12000,
+      "xml": "C:\\Users\\GGPC\\OneDrive\\Desktop\\83 complete\\Base.wz\\Character\\Character.wz\\00012000.img.xml"
     },
     {
       "kind": "face",
@@ -203,23 +193,18 @@
       "kind": "shoes",
       "part_id": 1072121,
       "xml": "C:\\Users\\GGPC\\OneDrive\\Desktop\\83 complete\\Base.wz\\Character\\Character.wz\\Shoes\\01072121.img.xml"
-    },
-    {
-      "kind": "weapon",
-      "part_id": 1312007,
-      "xml": "C:\\Users\\GGPC\\OneDrive\\Desktop\\83 complete\\Base.wz\\Character\\Character.wz\\Weapon\\01312007.img.xml"
     }
   ],
   "unresolved": [],
   "draw_order": [
     {
       "asset_kind": "body",
-      "part_id": 2001,
+      "part_id": 2000,
       "z": "body",
       "z_index": 76,
       "top_left": [
         -12,
-        -10
+        -11
       ],
       "origin": [
         18,
@@ -227,13 +212,13 @@
       ],
       "asset_origin_world": [
         6,
-        21
+        20
       ],
       "used_anchor": "navel",
       "anchors_local": {
         "navel": [
           -6,
-          -21
+          -20
         ],
         "neck": [
           -4,
@@ -247,11 +232,11 @@
         ],
         "neck": [
           2,
-          -11
+          -12
         ]
       },
-      "png": "C:\\Users\\GGPC\\OneDrive\\Desktop\\83 complete\\Base.wz\\Character\\Character.wz\\00002001.img\\stand1\\2\\body.png",
-      "node_path": "00002001.img/stand1/2/body"
+      "png": "C:\\Users\\GGPC\\OneDrive\\Desktop\\83 complete\\Base.wz\\Character\\Character.wz\\00002000.img\\swingO2\\0\\body.png",
+      "node_path": "00002000.img/swingO2/0/body"
     },
     {
       "asset_kind": "shoes",
@@ -259,22 +244,22 @@
       "z": "shoesOverPants",
       "z_index": 69,
       "top_left": [
-        -9,
-        13
+        -11,
+        12
       ],
       "origin": [
-        10,
+        11,
         5
       ],
       "asset_origin_world": [
-        1,
-        18
+        0,
+        17
       ],
       "used_anchor": "navel",
       "anchors_local": {
         "navel": [
-          -1,
-          -18
+          0,
+          -17
         ]
       },
       "anchors_world": {
@@ -283,8 +268,8 @@
           0
         ]
       },
-      "png": "C:\\Users\\GGPC\\OneDrive\\Desktop\\83 complete\\Base.wz\\Character\\Character.wz\\Shoes\\01072121.img\\stand1\\2\\shoes.png",
-      "node_path": "01072121.img/stand1/2/shoes"
+      "png": "C:\\Users\\GGPC\\OneDrive\\Desktop\\83 complete\\Base.wz\\Character\\Character.wz\\Shoes\\01072121.img\\swingO2\\0\\shoes.png",
+      "node_path": "01072121.img/swingO2/0/shoes"
     },
     {
       "asset_kind": "pants",
@@ -292,12 +277,12 @@
       "z": "pantsOverShoesBelowMailChest",
       "z_index": 68,
       "top_left": [
-        -5,
-        1
+        -6,
+        0
       ],
       "origin": [
-        5,
-        -1
+        6,
+        0
       ],
       "asset_origin_world": [
         0,
@@ -316,8 +301,8 @@
           0
         ]
       },
-      "png": "C:\\Users\\GGPC\\OneDrive\\Desktop\\83 complete\\Base.wz\\Character\\Character.wz\\Pants\\01062085.img\\stand1\\2\\pants.png",
-      "node_path": "01062085.img/stand1/2/pants"
+      "png": "C:\\Users\\GGPC\\OneDrive\\Desktop\\83 complete\\Base.wz\\Character\\Character.wz\\Pants\\01062085.img\\swingO2\\0\\pants.png",
+      "node_path": "01062085.img/swingO2/0/pants"
     },
     {
       "asset_kind": "coat",
@@ -325,12 +310,12 @@
       "z": "mailChest",
       "z_index": 66,
       "top_left": [
-        -9,
-        -10
+        -6,
+        -11
       ],
       "origin": [
-        9,
-        10
+        6,
+        11
       ],
       "asset_origin_world": [
         0,
@@ -349,105 +334,72 @@
           0
         ]
       },
-      "png": "C:\\Users\\GGPC\\OneDrive\\Desktop\\83 complete\\Base.wz\\Character\\Character.wz\\Coat\\01042164.img\\stand1\\2\\mail.png",
-      "node_path": "01042164.img/stand1/2/mail"
-    },
-    {
-      "asset_kind": "weapon",
-      "part_id": 1312007,
-      "z": "weapon",
-      "z_index": 52,
-      "top_left": [
-        -21,
-        -1
-      ],
-      "origin": [
-        25,
-        7
-      ],
-      "asset_origin_world": [
-        4,
-        6
-      ],
-      "used_anchor": "hand",
-      "anchors_local": {
-        "hand": [
-          8,
-          0
-        ]
-      },
-      "anchors_world": {
-        "hand": [
-          12,
-          6
-        ]
-      },
-      "png": "C:\\Users\\GGPC\\OneDrive\\Desktop\\83 complete\\Base.wz\\Character\\Character.wz\\Weapon\\01312007.img\\stand1\\0\\weapon.png",
-      "node_path": "01312007.img/stand1/0/weapon"
+      "png": "C:\\Users\\GGPC\\OneDrive\\Desktop\\83 complete\\Base.wz\\Character\\Character.wz\\Coat\\01042164.img\\swingO2\\0\\mail.png",
+      "node_path": "01042164.img/swingO2/0/mail"
     },
     {
       "asset_kind": "body",
-      "part_id": 2001,
-      "z": "arm",
-      "z_index": 51,
+      "part_id": 2000,
+      "z": "armBelowHead",
+      "z_index": 60,
       "top_left": [
-        7,
-        -8
+        -22,
+        -19
       ],
       "origin": [
-        6,
-        9
+        11,
+        7
       ],
       "asset_origin_world": [
-        13,
-        1
+        -11,
+        -12
       ],
       "used_anchor": "navel",
       "anchors_local": {
         "hand": [
-          -1,
-          5
+          -6,
+          -4
         ],
         "navel": [
-          -13,
-          -1
+          11,
+          12
         ]
       },
       "anchors_world": {
         "hand": [
-          12,
-          6
+          -17,
+          -16
         ],
         "navel": [
           0,
           0
         ]
       },
-      "png": "C:\\Users\\GGPC\\OneDrive\\Desktop\\83 complete\\Base.wz\\Character\\Character.wz\\00002001.img\\stand1\\2\\arm.png",
-      "node_path": "00002001.img/stand1/2/arm"
+      "png": "C:\\Users\\GGPC\\OneDrive\\Desktop\\83 complete\\Base.wz\\Character\\Character.wz\\00002000.img\\swingO2\\0\\arm.png",
+      "node_path": "00002000.img/swingO2/0/arm"
     },
     {
       "asset_kind": "coat",
       "part_id": 1042164,
-      "z": "mailArm",
-      "z_index": 48,
+      "z": "mailArmBelowHead",
+      "z_index": 59,
       "top_left": [
-        6,
-        -8
+        -13,
+        -11
       ],
       "origin": [
-        -6,
-        8
+        5,
+        3
       ],
       "asset_origin_world": [
-        0,
-        0
+        -8,
+        -8
       ],
       "used_anchor": "navel",
       "anchors_local": {
         "navel": [
-          0,
-          0
+          8,
+          8
         ]
       },
       "anchors_world": {
@@ -456,17 +408,17 @@
           0
         ]
       },
-      "png": "C:\\Users\\GGPC\\OneDrive\\Desktop\\83 complete\\Base.wz\\Character\\Character.wz\\Coat\\01042164.img\\stand1\\2\\mailArm.png",
-      "node_path": "01042164.img/stand1/2/mailArm"
+      "png": "C:\\Users\\GGPC\\OneDrive\\Desktop\\83 complete\\Base.wz\\Character\\Character.wz\\Coat\\01042164.img\\swingO2\\0\\mailArm.png",
+      "node_path": "01042164.img/swingO2/0/mailArm"
     },
     {
       "asset_kind": "head",
-      "part_id": 12005,
+      "part_id": 12000,
       "z": "head",
       "z_index": 45,
       "top_left": [
         -17,
-        -43
+        -44
       ],
       "origin": [
         19,
@@ -474,7 +426,7 @@
       ],
       "asset_origin_world": [
         2,
-        -26
+        -27
       ],
       "used_anchor": "neck",
       "anchors_local": {
@@ -498,23 +450,23 @@
       "anchors_world": {
         "brow": [
           -2,
-          -31
+          -32
         ],
         "earBelowHead": [
           -15,
-          -17
+          -18
         ],
         "earOverHead": [
           17,
-          -16
+          -17
         ],
         "neck": [
           2,
-          -11
+          -12
         ]
       },
-      "png": "C:\\Users\\GGPC\\OneDrive\\Desktop\\83 complete\\Base.wz\\Character\\Character.wz\\00012005.img\\front\\head.png",
-      "node_path": "00012005.img/front/head"
+      "png": "C:\\Users\\GGPC\\OneDrive\\Desktop\\83 complete\\Base.wz\\Character\\Character.wz\\00012000.img\\front\\head.png",
+      "node_path": "00012000.img/front/head"
     },
     {
       "asset_kind": "face",
@@ -523,7 +475,7 @@
       "z_index": 42,
       "top_left": [
         -14,
-        -25
+        -26
       ],
       "origin": [
         12,
@@ -531,7 +483,7 @@
       ],
       "asset_origin_world": [
         -2,
-        -18
+        -19
       ],
       "used_anchor": "brow",
       "anchors_local": {
@@ -543,7 +495,7 @@
       "anchors_world": {
         "brow": [
           -2,
-          -31
+          -32
         ]
       },
       "png": "C:\\Users\\GGPC\\OneDrive\\Desktop\\83 complete\\Base.wz\\Character\\Character.wz\\Face\\00020204.img\\default\\face.png",
@@ -556,7 +508,7 @@
       "z_index": 34,
       "top_left": [
         -16,
-        -43
+        -44
       ],
       "origin": [
         17,
@@ -564,7 +516,7 @@
       ],
       "asset_origin_world": [
         1,
-        -32
+        -33
       ],
       "used_anchor": "brow",
       "anchors_local": {
@@ -576,7 +528,7 @@
       "anchors_world": {
         "brow": [
           -2,
-          -31
+          -32
         ]
       },
       "png": "C:\\Users\\GGPC\\OneDrive\\Desktop\\83 complete\\Base.wz\\Character\\Character.wz\\Hair\\00030167.img\\default\\hair.png",
@@ -584,11 +536,11 @@
     }
   ],
   "normalized_canvas_offset": {
-    "x": 0,
-    "y": 1
+    "x": 3,
+    "y": 0
   },
   "normalized_canvas_size": [
-    65,
-    89
+    67,
+    84
   ]
 }

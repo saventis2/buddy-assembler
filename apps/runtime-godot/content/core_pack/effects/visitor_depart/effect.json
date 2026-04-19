@@ -1,0 +1,34 @@
+{
+  "source": "BasicEff.img/Teleport",
+  "loop": false,
+  "frames": [
+    {
+      "origin_px": [
+        34,
+        122
+      ],
+      "delay_ms": 80
+    },
+    {
+      "origin_px": [
+        25,
+        105
+      ],
+      "delay_ms": 80
+    },
+    {
+      "origin_px": [
+        20,
+        94
+      ],
+      "delay_ms": 80
+    },
+    {
+      "origin_px": [
+        17,
+        61
+      ],
+      "delay_ms": 80
+    }
+  ]
+}

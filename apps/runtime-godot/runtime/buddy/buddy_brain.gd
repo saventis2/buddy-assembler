@@ -3,6 +3,7 @@ class_name BuddyBrain
 
 signal play_emote_requested(emote_id: String)
 signal say_requested(text: String)
+signal visitor_arrival_requested()
 
 const BehaviorEngineScript = preload("res://scripts/behavior/behavior_engine.gd")
 
@@ -34,12 +35,21 @@ func tick(delta: float) -> void:
 func _fire_behavior() -> void:
 	var now := int(Time.get_unix_time_from_system())
 	var context := {
-		"unlocked_actions": ["idle", "sit", "sleep", "wander", "happy", "gift", "visitor"]
+		"unlocked_actions": [
+			"idle", "sit", "sleep", "happy", "gift", "visitor",
+			"stunned", "proud", "embarrassed", "sparkle", "humming", "kiss", "bow"
+		]
 	}
 	var result: Dictionary = _behavior_engine.tick(now, context)
 	var action_id := str(result.get("id", "idle"))
-	if action_id != "idle":
+	if action_id == "visitor":
+		visitor_arrival_requested.emit()
+	elif action_id != "idle":
 		play_emote_requested.emit(action_id)
+
+
+func request_visitor_arrival() -> void:
+	visitor_arrival_requested.emit()
 
 
 func play_emote(emote_name: String) -> void:

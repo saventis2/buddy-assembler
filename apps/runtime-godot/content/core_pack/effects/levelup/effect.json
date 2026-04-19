@@ -1,0 +1,153 @@
+{
+  "source": "BasicEff.img/LevelUp",
+  "loop": false,
+  "frames": [
+    {
+      "origin_px": [
+        43,
+        70
+      ],
+      "delay_ms": 90
+    },
+    {
+      "origin_px": [
+        45,
+        76
+      ],
+      "delay_ms": 90
+    },
+    {
+      "origin_px": [
+        67,
+        77
+      ],
+      "delay_ms": 90
+    },
+    {
+      "origin_px": [
+        100,
+        235
+      ],
+      "delay_ms": 90
+    },
+    {
+      "origin_px": [
+        109,
+        289
+      ],
+      "delay_ms": 90
+    },
+    {
+      "origin_px": [
+        124,
+        315
+      ],
+      "delay_ms": 90
+    },
+    {
+      "origin_px": [
+        143,
+        329
+      ],
+      "delay_ms": 90
+    },
+    {
+      "origin_px": [
+        123,
+        345
+      ],
+      "delay_ms": 90
+    },
+    {
+      "origin_px": [
+        148,
+        301
+      ],
+      "delay_ms": 90
+    },
+    {
+      "origin_px": [
+        109,
+        312
+      ],
+      "delay_ms": 90
+    },
+    {
+      "origin_px": [
+        121,
+        317
+      ],
+      "delay_ms": 90
+    },
+    {
+      "origin_px": [
+        146,
+        330
+      ],
+      "delay_ms": 90
+    },
+    {
+      "origin_px": [
+        121,
+        161
+      ],
+      "delay_ms": 90
+    },
+    {
+      "origin_px": [
+        146,
+        161
+      ],
+      "delay_ms": 90
+    },
+    {
+      "origin_px": [
+        83,
+        161
+      ],
+      "delay_ms": 90
+    },
+    {
+      "origin_px": [
+        83,
+        198
+      ],
+      "delay_ms": 90
+    },
+    {
+      "origin_px": [
+        83,
+        201
+      ],
+      "delay_ms": 90
+    },
+    {
+      "origin_px": [
+        83,
+        198
+      ],
+      "delay_ms": 90
+    },
+    {
+      "origin_px": [
+        83,
+        189
+      ],
+      "delay_ms": 90
+    },
+    {
+      "origin_px": [
+        83,
+        134
+      ],
+      "delay_ms": 90
+    },
+    {
+      "origin_px": [
+        83,
+        136
+      ],
+      "delay_ms": 90
+    }
+  ]
+}
