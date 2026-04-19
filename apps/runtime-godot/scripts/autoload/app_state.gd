@@ -231,7 +231,17 @@ func _default_settings() -> Dictionary:
         "selectedPackId": "core_pack",
         "preferredScreen": 0,
         "lastWindowPosition": [120, 120],
+        "firstRunSeen": false,
     }
+
+
+func is_first_run() -> bool:
+    return not bool(settings.get("firstRunSeen", false))
+
+
+func mark_first_run_seen() -> void:
+    settings["firstRunSeen"] = true
+    SaveStore.write_json(SETTINGS_PATH, settings)
 
 
 func _default_profile() -> Dictionary:
