@@ -3,6 +3,7 @@ extends RefCounted
 const CONTENT_ROOT := "res://content"
 const CORE_PACK_ID := "core_pack"
 const BUILTIN_PACK_ID := "__builtin_safe"
+const CONTENT_SCHEMA_VERSION := 1
 const REQUIRED_KEYS := [
     "schemaVersion",
     "id",
@@ -207,6 +208,11 @@ static func validate_manifest(manifest: Dictionary) -> Array:
     var sv_ok := typeof(sv) == TYPE_INT or (typeof(sv) == TYPE_FLOAT and float(sv) == float(int(sv)))
     if not sv_ok:
         errors.append("schemaVersion must be integer")
+    elif int(sv) > CONTENT_SCHEMA_VERSION:
+        errors.append(
+            "schemaVersion %d exceeds runtime maximum %d — update the runtime to load this pack"
+            % [int(sv), CONTENT_SCHEMA_VERSION]
+        )
     if _is_blank(manifest.get("id")):
         errors.append("id must be non-empty string")
     if _is_blank(manifest.get("name")):
