@@ -36,12 +36,11 @@ the runtime does **not** depend on WZ/NX schemas at runtime.
   `docs/product/PACKAGING.md`, export preset metadata finalized,
   SHA256SUMS generated in CI, V1 unsigned with SmartScreen path
   documented.
-- First-run onboarding (PR-08 — open, not yet merged).
-- ~~Bond cadence (PR-09).~~ **Landed in PR-09** —
-  `content/core_pack/progression/bond_tiers.json` (tuning table),
-  unlock_table loads from JSON with fallback, XP capped at max_level,
-  idle phrases shown per bond tier on ~1-in-6 idle ticks.
-- Transition polish (PR-10); shipped companion pack (PR-11).
+- ~~First-run onboarding (PR-08).~~ **Landed in PR-08** —
+  `docs/product/FIRST_RUN_ONBOARDING.md`, `firstRunSeen` flag in
+  settings, 6-second welcome tooltip on first launch.
+- Bond cadence (PR-09); transition polish (PR-10); shipped companion
+  pack (PR-11).
 - Schema freeze + importer boundary cleanup (PR-12).
 - Provenance manifest + snapshot promotion (PR-13).
 - Non-Maple content lane proof (PR-14).

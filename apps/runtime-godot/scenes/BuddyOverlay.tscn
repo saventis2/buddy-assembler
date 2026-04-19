@@ -26,6 +26,29 @@ theme_override_colors/font_outline_color = Color(0, 0, 0, 0.85)
 theme_override_constants/outline_size = 3
 text = "telemetry"
 
+[node name="WelcomeLayer" type="CanvasLayer" parent="."]
+
+[node name="WelcomeLabel" type="Label" parent="WelcomeLayer"]
+visible = false
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -160.0
+offset_top = -40.0
+offset_right = 160.0
+offset_bottom = 40.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 15
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.9)
+theme_override_constants/outline_size = 4
+text = "Hi! I'm your new desktop buddy.\nRight-click me to sleep. Drag to move."
+horizontal_alignment = 1
+autowrap_mode = 3
+
 [node name="BondSpeechLayer" type="CanvasLayer" parent="."]
 
 [node name="BondSpeechLabel" type="Label" parent="BondSpeechLayer"]

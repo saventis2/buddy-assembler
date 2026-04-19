@@ -48,6 +48,7 @@ const ProductivityTracker = preload("res://scripts/utility/productivity_tracker.
 @onready var telemetry_timer: Timer = $TelemetryTimer
 @onready var telemetry_label: Label = $Telemetry/Label
 @onready var bond_speech_label: Label = $BondSpeechLayer/BondSpeechLabel
+@onready var welcome_label: Label = $WelcomeLayer/WelcomeLabel
 
 var _engine := BehaviorEngine.new()
 var _encounters := EncounterScheduler.new()
@@ -125,6 +126,8 @@ func _ready() -> void:
     _productivity.note_session_reset(int(Time.get_unix_time_from_system()))
     telemetry_label.visible = false
     _refresh_telemetry()
+    if AppState.is_first_run():
+        _show_welcome_once()
 
 
 func _configure_window() -> void:
@@ -1336,3 +1339,10 @@ func _maybe_show_bond_phrase() -> void:
     bond_speech_label.visible = true
     await get_tree().create_timer(4.0).timeout
     bond_speech_label.visible = false
+
+
+func _show_welcome_once() -> void:
+    welcome_label.visible = true
+    AppState.mark_first_run_seen()
+    await get_tree().create_timer(6.0).timeout
+    welcome_label.visible = false
