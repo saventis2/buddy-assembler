@@ -1,6 +1,42 @@
 # Milestone Status
 
-Updated: 2026-04-16 (next-10 complete)
+Updated: 2026-04-19 (gift-pipeline + face-emote-rotation complete)
+
+## Phase 5 (Visual polish & WZ asset expansion — 2026-04-19)
+
+- [done] Per-frame hand tracking for held-prop overlays (renderer parses
+  `world_anchors.hand` + `pivot_world` per body frame)
+- [done] Gift pipeline: weaponless `heal` body + WZ `04080000` gift_box icon
+  in hand + WZ ChatBalloon speech bubble
+- [done] Back-layer overlay system (chair_basic / Item.wz Install 03010000)
+- [done] Effect.wz overlays wired: IncEXP (happy), Summoned (visitor arrival),
+  Teleport (visitor depart)
+- [done] Replaced Label-on-forehead bubble with WZ `UI.wz/ChatBalloon.img/0`
+  9-slice Node2D
+- [done] 14 face emote variants exposed (stunned, proud, embarrassed,
+  sparkle, humming, kiss, bow, sleepy, sick, pain, wink, hot, vomit, despair,
+  troubled) — base-name `semantic_defaults`, behavior rotation, hotkeys
+  U/I/O/P/H/K/B
+- [done] Visitor as second BuddyActor with distinct skin (walk-in, wave,
+  walk-off + Teleport sparkle)
+- [done] WZ catalog tooling: `build_wz_index.py` + `analysis/wz_index/`
+  (BasicEff / CharacterEff / ItemEff / Install chairs)
+- [done] `export_effect_sprites.py` extracts Effect.wz canvases with
+  origin/delay metadata
+
+### Deferred (require further extraction or design)
+
+- [deferred] `hit` body action — needs combat/damage trigger wiring; no
+  in-game source for damage events yet
+- [deferred] `sit2`, `rope` body actions — low marginal value over `sit` /
+  `ladder` already shipped
+- [deferred] `shoot1` body action — requires bow/gun weapon swap (default
+  combo wand silently omits weapon layer per v1 weapon-action compat rule)
+- [deferred] Sleep "Zz" balloon overlay — not in `Effect.wz`; lives in
+  `Character.wz` mob/face emote subsystem; needs separate extractor
+- [deferred] Heart/aura overlays for love/excited emotes — no clean
+  `Effect.wz` source found in `BasicEff`; would need `Item.wz` Cash
+  consumables or `Skill.wz` particle scrub
 
 ## Phase 0 (Clarification/Stabilization)
 
