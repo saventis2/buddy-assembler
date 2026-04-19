@@ -1301,7 +1301,7 @@ func _read_text_file(path: String) -> String:
 func _load_core_character_animation_fallbacks() -> void:
     var actions := ["idle", "wander", "sit", "sleep", "happy", "gift", "visitor"]
     for action_id in actions:
-        var res_path := "res://content/core_pack/character/animations/%s.json" % action_id
+        var res_path: String = "res://content/core_pack/character/animations/%s.json" % action_id
         var animation := _load_animation_spec(res_path, "core_pack")
         if not animation.is_empty():
             _action_animations[action_id] = animation
@@ -1313,7 +1313,7 @@ func _load_core_character_animation_fallbacks() -> void:
 func _load_core_character_sprite_fallbacks() -> void:
     var actions := ["idle", "wander", "sit", "sleep", "happy", "gift", "visitor"]
     for action_id in actions:
-        var res_path := "res://content/core_pack/character/%s.png" % action_id
+        var res_path: String = "res://content/core_pack/character/%s.png" % action_id
         var texture := _resolve_texture(res_path, "core_pack")
         if texture != null:
             _action_textures[action_id] = texture

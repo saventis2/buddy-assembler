@@ -37,8 +37,8 @@ func _process(delta: float) -> void:
 
 func _report_and_exit() -> void:
 	if _frame_deltas.is_empty():
-		print("profile_20actors: no frames recorded")
-		OS.exit(1)
+		push_error("profile_20actors: no frames recorded")
+		get_tree().quit(1)
 		return
 
 	var total := 0.0
@@ -61,4 +61,4 @@ func _report_and_exit() -> void:
 	print("Avg dt:  %.2f ms (%.1f fps)" % [avg_dt * 1000.0, 1.0 / max(avg_dt, 0.0001)])
 	print("===================================")
 
-	OS.exit(0)
+	get_tree().quit(0)

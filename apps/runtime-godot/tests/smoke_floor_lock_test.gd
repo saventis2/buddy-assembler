@@ -18,10 +18,10 @@ func _ready() -> void:
 
 	if _all_passed:
 		print("smoke_floor_lock: ALL PASS")
-		OS.exit(0)
+		get_tree().quit(0)
 	else:
-		print("smoke_floor_lock: FAILED — see errors above")
-		OS.exit(1)
+		push_error("smoke_floor_lock: FAILED — see errors above")
+		get_tree().quit(1)
 
 
 func _run_clamp_below_floor(actor: CharacterBody2D) -> void:
