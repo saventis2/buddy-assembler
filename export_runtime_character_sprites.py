@@ -22,8 +22,20 @@ STATE_CONFIGS: dict[str, dict[str, Any]] = {
     "sit": {"action": "sit", "key_frame": 0, "loop": True},
     "sleep": {"action": "prone", "key_frame": 0, "loop": True},
     "happy": {"action": "alert", "key_frame": 0, "loop": True},
-    "gift": {"action": "stand1", "key_frame": 1, "loop": False},
+    # gift: heal action (both hands raised, palms up) — the gift-box icon
+    # overlay is placed between the hands at runtime.
+    "gift": {"action": "heal", "key_frame": 0, "loop": True},
     "visitor": {"action": "walk1", "key_frame": 1, "loop": True},
+    # Phase B additions: real visually-distinct WZ body actions.
+    # shoot1 intentionally omitted: the default combo weapon (1312007 wand)
+    # does not support ranged actions — per the v1 rule, the weapon layer
+    # would be silently omitted, leaving a ranged pose with no weapon.
+    # Add only when a compatible bow/gun is selected.
+    "fly": {"action": "fly", "key_frame": 0, "loop": True},
+    "climb": {"action": "ladder", "key_frame": 0, "loop": True},
+    "swing": {"action": "swingO1", "key_frame": 0, "loop": False},
+    "stab": {"action": "stabT1", "key_frame": 0, "loop": False},
+    "alt_idle": {"action": "stand2", "key_frame": 0, "loop": True},
 }
 
 
