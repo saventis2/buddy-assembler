@@ -41,7 +41,9 @@ the runtime does **not** depend on WZ/NX schemas at runtime.
   settings, 6-second welcome tooltip on first launch.
 - Bond cadence (PR-09); transition polish (PR-10); shipped companion
   pack (PR-11).
-- Schema freeze + importer boundary cleanup (PR-12).
+- ~~Schema freeze + importer boundary cleanup (PR-12).~~ **Landed in PR-12** —
+  `docs/product/CONTENT_SCHEMA.md`; `CONTENT_SCHEMA_VERSION = 1` in
+  ContentLoader; max-version rejection; runtime has no WZ/NX awareness.
 - Provenance manifest + snapshot promotion (PR-13).
 - Non-Maple content lane proof (PR-14).
 - Launch docs + V1 exit criteria (PR-15).
