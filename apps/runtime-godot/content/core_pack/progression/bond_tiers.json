@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "xp_per_level": 25,
+  "max_level": 10,
+  "unlocks": [
+    { "level": 2, "id": "unlock-wander",  "type": "action", "value": "wander"  },
+    { "level": 2, "id": "unlock-happy",   "type": "action", "value": "happy"   },
+    { "level": 3, "id": "unlock-gift",    "type": "action", "value": "gift"    },
+    { "level": 4, "id": "unlock-visitor", "type": "action", "value": "visitor" }
+  ],
+  "cadence": [
+    {
+      "from_level": 1,
+      "label": "new",
+      "idle_phrases": [
+        "...",
+        "Hello.",
+        "Nice to meet you."
+      ],
+      "happy_weight_bias": 1.0,
+      "gift_weight_bias": 1.0
+    },
+    {
+      "from_level": 3,
+      "label": "warming",
+      "idle_phrases": [
+        "Hey.",
+        "Still here!",
+        "What are you up to?",
+        "Comfy over here."
+      ],
+      "happy_weight_bias": 1.3,
+      "gift_weight_bias": 1.2
+    },
+    {
+      "from_level": 6,
+      "label": "close",
+      "idle_phrases": [
+        "Hey, you!",
+        "I was just thinking about you.",
+        "Glad you're here.",
+        "This spot is perfect.",
+        "You seem busy today.",
+        "Together again!"
+      ],
+      "happy_weight_bias": 1.6,
+      "gift_weight_bias": 1.5
+    }
+  ]
+}

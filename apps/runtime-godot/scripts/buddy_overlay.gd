@@ -47,6 +47,7 @@ const ProductivityTracker = preload("res://scripts/utility/productivity_tracker.
 @onready var tick_timer: Timer = $TickTimer
 @onready var telemetry_timer: Timer = $TelemetryTimer
 @onready var telemetry_label: Label = $Telemetry/Label
+@onready var bond_speech_label: Label = $BondSpeechLayer/BondSpeechLabel
 
 var _engine := BehaviorEngine.new()
 var _encounters := EncounterScheduler.new()
@@ -324,6 +325,8 @@ func _on_tick_timer_timeout() -> void:
     _set_visual_for_state(_state)
     AppState.apply_behavior(_state)
     _refresh_telemetry()
+    if _state == "idle":
+        _maybe_show_bond_phrase()
 
 
 func _is_night() -> bool:
@@ -1317,3 +1320,20 @@ func _load_core_character_sprite_fallbacks() -> void:
         var texture := _resolve_texture(res_path, "core_pack")
         if texture != null:
             _action_textures[action_id] = texture
+
+
+func _maybe_show_bond_phrase() -> void:
+	# Show an idle phrase from the current bond cadence tier ~1-in-6 idle ticks.
+	if randi() % 6 != 0:
+		return
+	var tier := AppState.get_bond_tier()
+	var phrases: Variant = tier.get("idle_phrases", null)
+	if typeof(phrases) != TYPE_ARRAY or (phrases as Array).is_empty():
+		return
+	var phrase := str((phrases as Array)[randi() % (phrases as Array).size()])
+	if phrase == "" or phrase == "...":
+		return
+	bond_speech_label.text = phrase
+	bond_speech_label.visible = true
+	await get_tree().create_timer(4.0).timeout
+	bond_speech_label.visible = false
