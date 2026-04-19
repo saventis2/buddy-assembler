@@ -1,0 +1,162 @@
+name: Runtime smoke
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+# Two jobs:
+#  - parse-and-smoke (ubuntu): fast gate. Headless Godot import, parse check,
+#    and the SmokeFloorLockTest scene. Catches broken GDScript and obvious
+#    runtime breakage on every PR.
+#  - windows-export (windows): release-truth gate. Installs export templates,
+#    exports the Windows build, uploads it as an artifact. Editor-play is not
+#    sufficient for release claims — this artifact is.
+#
+# Both jobs upload logs on failure. Artifacts are retained 14 days.
+
+env:
+  GODOT_VERSION: "4.2.2"
+  GODOT_RELEASE: "4.2.2-stable"
+  RUNTIME_DIR: apps/runtime-godot
+
+jobs:
+  parse-and-smoke:
+    name: Parse + headless smoke (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Godot ${{ env.GODOT_VERSION }} (headless Linux)
+        run: |
+          set -euo pipefail
+          curl -fsSL -o godot.zip \
+            "https://github.com/godotengine/godot/releases/download/${GODOT_RELEASE}/Godot_v${GODOT_RELEASE}_linux.x86_64.zip"
+          unzip -q godot.zip
+          mv "Godot_v${GODOT_RELEASE}_linux.x86_64" /usr/local/bin/godot
+          chmod +x /usr/local/bin/godot
+          godot --version
+
+      - name: Headless import (populate .godot cache)
+        working-directory: ${{ env.RUNTIME_DIR }}
+        run: |
+          set -euo pipefail
+          # First run primes the import cache and then exits.
+          godot --headless --import 2>&1 | tee ../../import.log || true
+          # A second quit ensures import fully completes on some versions.
+          godot --headless --quit 2>&1 | tee -a ../../import.log
+
+      - name: Parse check
+        working-directory: ${{ env.RUNTIME_DIR }}
+        run: |
+          set -euo pipefail
+          godot --headless --quit 2>&1 | tee ../../parse.log
+          # Surface any GDScript parse errors explicitly.
+          if grep -Ei "SCRIPT ERROR|Parse Error|error\(s\)" ../../parse.log; then
+            echo "Parse errors detected." >&2
+            exit 1
+          fi
+
+      - name: Smoke floor-lock test
+        working-directory: ${{ env.RUNTIME_DIR }}
+        run: |
+          set -euo pipefail
+          godot --headless --path . res://tests/SmokeFloorLockTest.tscn 2>&1 | tee ../../smoke.log
+
+      - name: Upload logs (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-smoke-logs
+          path: |
+            import.log
+            parse.log
+            smoke.log
+          retention-days: 14
+          if-no-files-found: warn
+
+  windows-export:
+    name: Windows export (release-truth artifact)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Godot ${{ env.GODOT_VERSION }} (Windows)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $release = $env:GODOT_RELEASE
+          $url = "https://github.com/godotengine/godot/releases/download/$release/Godot_v${release}_win64.exe.zip"
+          Invoke-WebRequest -Uri $url -OutFile godot.zip
+          Expand-Archive -Path godot.zip -DestinationPath godot-bin
+          $exe = Get-ChildItem godot-bin -Filter "Godot_v*_win64.exe" | Select-Object -First 1
+          Rename-Item $exe.FullName (Join-Path $exe.Directory "godot.exe")
+          "$((Get-Location).Path)\godot-bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+          & "$((Get-Location).Path)\godot-bin\godot.exe" --version
+
+      - name: Install export templates
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $release = $env:GODOT_RELEASE
+          $url = "https://github.com/godotengine/godot/releases/download/$release/Godot_v${release}_export_templates.tpz"
+          Invoke-WebRequest -Uri $url -OutFile templates.tpz
+          # Templates live under %APPDATA%/Godot/export_templates/<version>/
+          $base = Join-Path $env:APPDATA "Godot\export_templates\$($env:GODOT_VERSION).stable"
+          New-Item -ItemType Directory -Force -Path $base | Out-Null
+          Expand-Archive -Path templates.tpz -DestinationPath templates-extracted
+          Get-ChildItem -Recurse "templates-extracted" -File | ForEach-Object {
+            Copy-Item $_.FullName (Join-Path $base $_.Name) -Force
+          }
+          Get-ChildItem $base | Select-Object -First 5
+
+      - name: Headless import (populate .godot cache)
+        shell: pwsh
+        working-directory: ${{ env.RUNTIME_DIR }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          godot.exe --headless --import 2>&1 | Tee-Object -FilePath ..\..\win-import.log
+          godot.exe --headless --quit  2>&1 | Tee-Object -FilePath ..\..\win-import.log -Append
+
+      - name: Export Windows Desktop preset
+        shell: pwsh
+        working-directory: ${{ env.RUNTIME_DIR }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $out = Join-Path (Resolve-Path ..\..).Path "build\windows"
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          $exe = Join-Path $out "BuddyRuntime.exe"
+          # Preset name is defined in apps/runtime-godot/export_presets.cfg.
+          # If the preset is not named "Windows Desktop", the following step
+          # will fail loudly and the preset name should be corrected in a
+          # follow-up; PR-07 formalizes packaging layout.
+          godot.exe --headless --export-release "Windows Desktop" $exe 2>&1 |
+            Tee-Object -FilePath ..\..\win-export.log
+          if (-not (Test-Path $exe)) {
+            Write-Error "Export did not produce $exe — see win-export.log"
+            exit 1
+          }
+          Get-ChildItem $out
+
+      - name: Upload Windows build artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: buddy-runtime-windows
+          path: build/windows/**
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Upload Windows logs (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-export-logs
+          path: |
+            win-import.log
+            win-export.log
+          retention-days: 14
+          if-no-files-found: warn
