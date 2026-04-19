@@ -1,0 +1,53 @@
+name: Bug report
+description: The buddy runtime or importer misbehaves.
+title: "[bug] "
+labels: ["type:bug"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - runtime (apps/runtime-godot)
+        - importer (root Python tooling)
+        - content pack / validator
+        - packaging / Windows export
+        - docs
+    validations:
+      required: true
+  - type: dropdown
+    id: build
+    attributes:
+      label: Build source
+      description: Editor play vs exported Windows build. Exported build is the release truth.
+      options:
+        - exported Windows build
+        - editor play
+        - not applicable
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction steps
+      description: Minimal steps. Include the pack or content used, if relevant.
+      placeholder: |
+        1. Launch buddy.exe
+        2. ...
+        3. Expected: ... / Actual: ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / artifacts
+      description: Attach Godot output, save files (scrub personal data), or screenshots.
+  - type: input
+    id: os
+    attributes:
+      label: OS / version
+      placeholder: Windows 11 Pro 24H2
+  - type: input
+    id: commit
+    attributes:
+      label: Commit or release tag

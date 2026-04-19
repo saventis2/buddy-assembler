@@ -1,0 +1,33 @@
+name: Release / packaging issue
+description: Problem with the Windows exported build, packaging, saves, or release smoke.
+title: "[release] "
+labels: ["area:packaging", "risk:packaging"]
+body:
+  - type: dropdown
+    id: phase
+    attributes:
+      label: Phase
+      options:
+        - Windows export
+        - launch outside editor
+        - save path / user:// permissions
+        - save corruption / migration
+        - release smoke scenario
+        - artifact / signing
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+    validations:
+      required: true
+  - type: textarea
+    id: checklist
+    attributes:
+      label: Checklist items hit
+      description: Which items in RELEASE_CHECKLIST.md or docs/product/WINDOWS_RELEASE_CHECKLIST.md are affected?
+  - type: input
+    id: build
+    attributes:
+      label: Build / tag

@@ -1,0 +1,31 @@
+# CODEOWNERS — review ownership by area.
+# Syntax: path pattern + owners. Until team handles exist, @saventis2 owns
+# everything. Replace with team handles as contributors join.
+
+*                                   @saventis2
+
+# Runtime (the shipping product)
+/apps/runtime-godot/                @saventis2
+
+# Content pack schema + validator
+/packages/content-schema/           @saventis2
+/packages/content-validator/        @saventis2
+
+# Product docs, PRD, milestones, release checklist
+/docs/product/                      @saventis2
+
+# Top-level discovery docs — treat as release-governance surface
+/PROJECT_STATUS.md                  @saventis2
+/PR_PLAN.md                         @saventis2
+/DEFERRED.md                        @saventis2
+/RELEASE_CHECKLIST.md               @saventis2
+/README.md                          @saventis2
+
+# CI and repo rails
+/.github/                           @saventis2
+
+# Importer / dev-host tooling (root Python).
+# Owned by importer area; runtime reviewers are not auto-tagged here.
+/*.py                               @saventis2
+/analysis/                          @saventis2
+/combinations/                      @saventis2
