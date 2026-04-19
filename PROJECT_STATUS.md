@@ -32,7 +32,10 @@ the runtime does **not** depend on WZ/NX schemas at runtime.
 - ~~Perf instrumentation + burn-in (PR-06).~~ **Landed in PR-06** —
   `docs/product/PERF_BASELINE.md` + `tests/IdleProfile.tscn`. Baseline
   table populated at release rehearsal.
-- Final Windows packaging + release smoke (PR-07).
+- ~~Final Windows packaging + release smoke (PR-07).~~ **Landed in PR-07** —
+  `docs/product/PACKAGING.md`, export preset metadata finalized,
+  SHA256SUMS generated in CI, V1 unsigned with SmartScreen path
+  documented.
 - First-run onboarding (PR-08); bond cadence (PR-09); transition polish
   (PR-10); shipped companion pack (PR-11).
 - Schema freeze + importer boundary cleanup (PR-12).
