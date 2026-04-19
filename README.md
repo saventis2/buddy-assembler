@@ -1,82 +1,80 @@
 # buddy-assembler
 
-A desktop MapleStory character tooling suite for working with extracted `Base.wz` assets.
+A Windows desktop buddy — a small, ambient companion that lives on your
+screen through long work or study sessions without being noisy or
+distracting.
 
-At the moment this repo is focused on:
-- building item catalogues from extracted character data
-- rendering single composed character frames
-- exporting animation frame sequences, GIFs, and sprite sheets
-- diffing two extracted `Character.wz` trees
-- auditing alignment, fallback, and metadata quality
-- reporting weapon-to-action compatibility from source assets
+The shipping product is the Godot runtime under `apps/runtime-godot/`.
+The Python scripts at the repo root are **dev-host importer / tooling**
+used to build internal content packs; they are not part of the runtime
+and will move under `tools/importers/` in a later PR (see `PR_PLAN.md`
+→ PR-12).
 
-The current operator workflow is:
-1. Generate or load a catalogue
-2. Apply item IDs to a build
-3. Render a single frame
-4. Batch export a full action or action set
-5. Run audit or diff tools when validating output
+## Start here
 
-## Main entrypoint
+- `PROJECT_STATUS.md` — what is landed and what is not
+- `PR_PLAN.md` — ordered path to V1
+- `DEFERRED.md` — explicit out-of-V1 scope
+- `RELEASE_CHECKLIST.md` — release gate summary
+- `docs/product/V1_PRD.md` — product intent and V1 ship criteria
+- `docs/product/MILESTONE_STATUS.md` — current milestone detail
 
-The primary operator entrypoint is the desktop GUI:
+## Product runtime
+
+- `apps/runtime-godot/` — Windows-first desktop buddy runtime
+- `apps/runtime-godot/README.md` — runtime overview
+- `apps/runtime-godot/README_VERTICAL_SLICE.md` — current vertical slice
+
+## Content pack pipeline
+
+- `packages/content-schema/` — content pack schema contract
+- `packages/content-validator/` — local schema/pack validation tool
+- Runtime consumes internal content packs only. The runtime does **not**
+  depend on WZ/NX structures directly.
+
+## Legacy / importer tooling (dev-host only)
+
+These Python scripts at the repo root generate internal content from
+extracted source trees. They are not part of the shipped runtime.
+
+- `character_tooling_gui.py` — desktop GUI orchestrator
+- `render_character_frame.py` — single-frame renderer
+- `build_item_catalogue.py` / `build_itemwz_catalogue.py` — catalogue generators
+- `diff_character_assets.py` — extracted tree diff tool
+- `alignment_audit.py` — batch alignment and quality audit
+- `weapon_action_compatibility_report.py` — weapon action compatibility reporting
+- `analyze_npc_animation_links.py` — NPC animation + link-chain inspection
+- `export_runtime_character_sprites.py` — runtime companion sprite/animation exporter
+- `import_runtime_ground_tile.py` — imports map tile terrain into runtime content packs
+- `analyze_character_assets.py` — reverse-engineering and dataset analysis
+- `audit_dataset_metadata.py` — metadata coverage audit
+- `build_wz_index.py` / `export_effect_sprites.py` — WZ catalog / Effect.wz export helpers
+
+Run:
 
 ```powershell
 python character_tooling_gui.py
 ```
 
-## Main scripts
+Importer defaults may point at machine-specific Windows paths; these
+will be moved into config / first-run setup as part of the PR-12
+boundary cleanup.
 
-- `character_tooling_gui.py` — desktop GUI orchestrator
-- `render_character_frame.py` — single-frame renderer
-- `build_item_catalogue.py` — catalogue generator
-- `build_itemwz_catalogue.py` — Item.wz-wide catalogue generator (Cash/Consume/Etc/Install/Pet/Special)
-- `diff_character_assets.py` — extracted tree diff tool
-- `alignment_audit.py` — batch alignment and quality audit
-- `weapon_action_compatibility_report.py` — weapon action compatibility reporting
-- `analyze_npc_animation_links.py` — NPC animation + link-chain inspection tool
-- `export_runtime_character_sprites.py` — runtime companion sprite/animation exporter
-- `import_runtime_ground_tile.py` — imports map tile terrain into runtime content packs
-- `analyze_character_assets.py` — reverse-engineering and dataset analysis
-- `audit_dataset_metadata.py` — metadata coverage audit
+## Deeper documentation
 
-## Documentation
+- `docs/REPO_INDEX.md` — indexed view of the repo
+- `docs/ARCHITECTURE.md` — architecture and data flow
+- `docs/WORKFLOW.md` — operator workflow guide
+- `docs/product/` — PRD, decisions, execution plan, release checklist
+- `docs/DEVLOGS/` — session logs
 
-- `docs/REPO_INDEX.md` — indexed view of the repo and what each file does
-- `docs/ARCHITECTURE.md` — architecture, data flow, and current structural notes
-- `docs/WORKFLOW.md` — practical operator workflow guide
-- `docs/DEVLOGS/Session-Log-2026-04-15.md` — copied devlog location for future cleanup
+## IP / provenance posture
 
-## Current state
-
-This repo already has real functionality, but it is still early in its public-facing structure.
-
-Things to be aware of:
-- some script defaults currently point at machine-specific Windows paths
-- the GUI file is large and currently acts as the main orchestration layer
-- the repo name is broader than the current MapleStory-specific implementation
-
-## Suggested next cleanup steps
-
-- move machine-specific defaults into config or first-run setup
-- split the GUI into smaller modules by tab or feature area
-- move session logs into a dedicated `docs/` or `devlogs/` area
-- add an install/dependency file if one is not yet present
-
-## Notes
-
-This project assumes you are working with an extracted MapleStory `Base.wz` tree and related XML/PNG asset folders.
-
-## Companion Runtime Track (2026-04-15)
-
-This repository now also includes a new desktop companion implementation track.
-
-The runtime track is intentionally separated from the MapleStory tooling code:
-
-- `apps/runtime-godot/` - Windows-first desktop buddy runtime scaffold
-- `packages/content-schema/` - content pack schema contract
-- `packages/content-validator/` - local schema/pack validation tool
-- `docs/product/` - product decisions, PRD, and execution milestones
-
-This keeps existing tooling stable while we build the companion product as a
-clean, modular runtime.
+No WZ/NX or other proprietary binary assets are committed to this
+repository. Public MapleStory v83 references are used only for
+taxonomy, availability discovery, naming/state reference, and
+validation cases. Any derived internal resource records provenance and
+transformation notes; a provenance manifest for shipping content is
+formalized in PR-13. The codebase preserves the ability to replace
+Maple-derived references with non-Maple sources (PR-14 proves this
+seam).
