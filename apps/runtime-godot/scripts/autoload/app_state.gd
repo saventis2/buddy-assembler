@@ -193,10 +193,17 @@ func is_quiet_hours_now() -> bool:
     return hour >= start_hour or hour < end_hour
 
 
+func get_bond_tier() -> Dictionary:
+    var level := int(profile.get("bond_level", 1))
+    return UnlockTable.cadence_for_level(level)
+
+
 func _apply_level_from_xp() -> void:
     var xp := int(profile.get("bond_xp", 0))
-    var level := 1 + int(xp / 25)
-    profile["bond_level"] = max(1, level)
+    var xp_cap := UnlockTable.xp_per_level() * UnlockTable.max_level()
+    profile["bond_xp"] = min(xp, xp_cap)
+    var level := 1 + int(min(xp, xp_cap) / max(1, UnlockTable.xp_per_level()))
+    profile["bond_level"] = clamp(level, 1, UnlockTable.max_level())
     _refresh_unlocks()
 
 
