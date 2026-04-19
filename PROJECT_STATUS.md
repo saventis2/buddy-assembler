@@ -39,8 +39,12 @@ the runtime does **not** depend on WZ/NX schemas at runtime.
 - ~~First-run onboarding (PR-08).~~ **Landed in PR-08** —
   `docs/product/FIRST_RUN_ONBOARDING.md`, `firstRunSeen` flag in
   settings, 6-second welcome tooltip on first launch.
-- Bond cadence (PR-09); transition polish (PR-10); shipped companion
-  pack (PR-11).
+- ~~Bond cadence (PR-09).~~ **Landed in PR-09** — `bond_tiers.json`, data-driven
+  unlock table, idle phrase cadence per bond tier.
+- ~~Transition polish (PR-10).~~ **Landed in PR-10** — sleep immunity from
+  tick, drag-release idle return, bond phrase overlap guard.
+- ~~Shipped companion pack (PR-11).~~ **Landed in PR-11** — `core_pack` bumped
+  to 1.0.0; `docs/product/COMPANION_PACK_AUDIT.md`; all 7 actions audited.
 - ~~Schema freeze + importer boundary cleanup (PR-12).~~ **Landed in PR-12** —
   `docs/product/CONTENT_SCHEMA.md`; `CONTENT_SCHEMA_VERSION = 1` in
   ContentLoader; max-version rejection; runtime has no WZ/NX awareness.

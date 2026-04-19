@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "core-pack",
   "name": "Core Companion Pack",
-  "version": "0.1.1",
+  "version": "1.0.0",
   "companion": {
     "id": "buddy-default",
     "displayName": "Buddy",
