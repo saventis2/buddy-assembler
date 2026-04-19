@@ -13,8 +13,9 @@ verified against the **exported Windows build**.
 - [ ] PR-02 CI smoke green on the release commit (import + Windows export).
 - [x] PR-03 durable saves/settings: versioned, corruption-recoverable,
       `user://` path. Gated by `tests/SaveStoreTest.tscn` in CI.
-- [ ] PR-04 pack validator: shipping manifests pass; missing/invalid
-      content falls back deterministically.
+- [x] PR-04 pack validator: shipping manifests pass; missing/invalid
+      content falls back deterministically (selected → core → builtin).
+      Gated by `tests/PackValidationTest.tscn` in CI.
 - [ ] PR-05 scenario suite: first run, restart, drag/click, idle, sleep,
       visits, invalid content, corrupted settings, export launch.
 - [ ] PR-06 perf baselines: 10-min idle and multi-hour idle recorded.

@@ -1,6 +1,8 @@
 extends RefCounted
 
 const CONTENT_ROOT := "res://content"
+const CORE_PACK_ID := "core_pack"
+const BUILTIN_PACK_ID := "__builtin_safe"
 const REQUIRED_KEYS := [
     "schemaVersion",
     "id",
@@ -12,10 +14,31 @@ const REQUIRED_KEYS := [
     "eventRules",
 ]
 
+# Last-resort synthetic manifest. The runtime returns to this when the
+# user's selected pack AND core_pack both fail validation. It references
+# no external assets so it cannot itself fail an asset check — the buddy
+# falls back to a code-drawn placeholder, but the app still launches.
+const BUILTIN_FALLBACK_MANIFEST := {
+    "schemaVersion": 1,
+    "id": "builtin-safe",
+    "name": "Built-in Safe Mode",
+    "version": "0.0.0",
+    "companion": {
+        "id": "builtin-buddy",
+        "displayName": "Buddy (safe mode)",
+        "traits": ["calm"],
+    },
+    "idleActions": ["idle"],
+    "reactionActions": ["happy"],
+    "encounterActions": [],
+    "eventRules": [],
+}
 
-static func list_pack_ids() -> Array:
+
+static func list_pack_ids(root_override: String = "") -> Array:
+    var root := root_override if root_override != "" else CONTENT_ROOT
     var ids := []
-    var dir := DirAccess.open(CONTENT_ROOT)
+    var dir := DirAccess.open(root)
     if dir == null:
         return ids
 
@@ -33,12 +56,15 @@ static func list_pack_ids() -> Array:
     return ids
 
 
-static func load_pack(pack_id: String) -> Dictionary:
-    var manifest_path := "%s/%s/manifest.json" % [CONTENT_ROOT, pack_id]
+static func load_pack(pack_id: String, root_override: String = "") -> Dictionary:
+    var root := root_override if root_override != "" else CONTENT_ROOT
+    var pack_root := "%s/%s" % [root, pack_id]
+    var manifest_path := "%s/manifest.json" % pack_root
     if not FileAccess.file_exists(manifest_path):
         return {
             "ok": false,
             "pack_id": pack_id,
+            "pack_root": pack_root,
             "manifest_path": manifest_path,
             "manifest": {},
             "errors": ["Manifest not found: %s" % manifest_path],
@@ -49,6 +75,7 @@ static func load_pack(pack_id: String) -> Dictionary:
         return {
             "ok": false,
             "pack_id": pack_id,
+            "pack_root": pack_root,
             "manifest_path": manifest_path,
             "manifest": {},
             "errors": ["Could not open manifest: %s" % manifest_path],
@@ -62,6 +89,7 @@ static func load_pack(pack_id: String) -> Dictionary:
         return {
             "ok": false,
             "pack_id": pack_id,
+            "pack_root": pack_root,
             "manifest_path": manifest_path,
             "manifest": {},
             "errors": ["Manifest root must be object"],
@@ -69,13 +97,101 @@ static func load_pack(pack_id: String) -> Dictionary:
 
     var manifest := parsed as Dictionary
     var errors := validate_manifest(manifest)
+    if errors.is_empty():
+        errors = validate_assets(manifest, pack_root)
     return {
         "ok": errors.is_empty(),
         "pack_id": pack_id,
+        "pack_root": pack_root,
         "manifest_path": manifest_path,
         "manifest": manifest,
         "errors": errors,
     }
+
+
+# Deterministic fallback cascade. Callers should prefer this over
+# calling load_pack directly so the runtime always has a usable manifest.
+#
+# Returns a dictionary with:
+#   pack_id         : id of the pack actually in use
+#   manifest        : the manifest dict (never empty)
+#   source_tier     : "selected" | "core" | "builtin"
+#   fallback_reason : "" when source_tier == "selected", else a short
+#                     human-readable string
+#   errors_by_tier  : { "<tier>": Array[String] } of validation errors
+#                     collected on the way down
+static func load_with_fallback(selected_pack_id: String, root_override: String = "") -> Dictionary:
+    var errors_by_tier := {}
+
+    var selected := load_pack(selected_pack_id, root_override)
+    if bool(selected.get("ok", false)):
+        return {
+            "pack_id": selected.get("pack_id", selected_pack_id),
+            "manifest": selected.get("manifest", {}),
+            "source_tier": "selected",
+            "fallback_reason": "",
+            "errors_by_tier": errors_by_tier,
+        }
+    errors_by_tier[selected_pack_id] = selected.get("errors", [])
+    push_warning("content: selected pack %s failed: %s" % [selected_pack_id, selected.get("errors", [])])
+
+    if selected_pack_id != CORE_PACK_ID:
+        var core := load_pack(CORE_PACK_ID, root_override)
+        if bool(core.get("ok", false)):
+            return {
+                "pack_id": CORE_PACK_ID,
+                "manifest": core.get("manifest", {}),
+                "source_tier": "core",
+                "fallback_reason": "selected pack failed validation",
+                "errors_by_tier": errors_by_tier,
+            }
+        errors_by_tier[CORE_PACK_ID] = core.get("errors", [])
+        push_warning("content: core_pack failed: %s" % [core.get("errors", [])])
+
+    return {
+        "pack_id": BUILTIN_PACK_ID,
+        "manifest": BUILTIN_FALLBACK_MANIFEST.duplicate(true),
+        "source_tier": "builtin",
+        "fallback_reason": "selected and core_pack both failed validation",
+        "errors_by_tier": errors_by_tier,
+    }
+
+
+# Asset-existence pass. Returns errors for any referenced animation JSON
+# or sprite PNG that does not resolve under pack_root. Intentionally
+# narrow: we only check the fields the renderer actually dereferences
+# during a normal boot. The dev-time validator in
+# packages/content-validator/ owns deeper pack audits.
+static func validate_assets(manifest: Dictionary, pack_root: String) -> Array:
+    var errors: Array = []
+    var visual_variant = manifest.get("visual", null)
+    if typeof(visual_variant) != TYPE_DICTIONARY:
+        return errors
+    var visual: Dictionary = visual_variant
+
+    for field in ["animations", "sprites"]:
+        var group_variant = visual.get(field, null)
+        if typeof(group_variant) != TYPE_DICTIONARY:
+            continue
+        var group: Dictionary = group_variant
+        for key in group.keys():
+            var rel := str(group[key])
+            if rel == "":
+                continue
+            var abs_path := _resolve_asset_path(rel, pack_root)
+            if abs_path == "":
+                continue  # absolute res:// path left to Godot; skip
+            if not FileAccess.file_exists(abs_path):
+                errors.append(
+                    "visual.%s.%s -> %s (missing at %s)" % [field, key, rel, abs_path]
+                )
+    return errors
+
+
+static func _resolve_asset_path(rel: String, pack_root: String) -> String:
+    if rel.begins_with("res://") or rel.begins_with("user://"):
+        return rel  # caller treats as already-absolute; we don't check
+    return "%s/%s" % [pack_root, rel]
 
 
 static func validate_manifest(manifest: Dictionary) -> Array:
