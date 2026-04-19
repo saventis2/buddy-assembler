@@ -47,7 +47,9 @@ the runtime does **not** depend on WZ/NX schemas at runtime.
 - ~~Provenance manifest + snapshot promotion (PR-13).~~ **Landed in PR-13** —
   `content/core_pack/PROVENANCE.md`; asset categories approved; promotion
   procedure documented.
-- Non-Maple content lane proof (PR-14).
+- ~~Non-Maple content lane proof (PR-14).~~ **Landed in PR-14** —
+  `content/sample_pack/` (zero Maple assets, schema-valid); adapter seam
+  proven; `docs/product/NON_MAPLE_CONTENT_PROOF.md`.
 - Launch docs + V1 exit criteria (PR-15).
 
 ## Truth checks

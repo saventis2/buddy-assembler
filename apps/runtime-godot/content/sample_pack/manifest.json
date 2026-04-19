@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "sample_pack",
+  "name": "Sample Pack (non-Maple proof)",
+  "version": "1.0.0",
+  "companion": {
+    "id": "sample-buddy",
+    "displayName": "Sample",
+    "traits": [
+      "calm"
+    ]
+  },
+  "idleActions": ["idle", "sit", "sleep"],
+  "reactionActions": ["happy"],
+  "encounterActions": [],
+  "eventRules": []
+}
