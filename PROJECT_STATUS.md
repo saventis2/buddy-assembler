@@ -27,7 +27,9 @@ the runtime does **not** depend on WZ/NX schemas at runtime.
 - CI import/export smoke + artifact retention (PR-02).
 - ~~Save/settings versioning and corruption recovery (PR-03).~~ **Landed in PR-03.**
 - ~~Pack validation + runtime fallback (PR-04).~~ **Landed in PR-04.**
-- RC scenario suite (PR-05); perf instrumentation + burn-in (PR-06).
+- ~~RC scenario suite (PR-05).~~ **Landed in PR-05** —
+  `docs/product/RC_SCENARIO_SUITE.md`. Perf instrumentation + burn-in
+  still pending (PR-06).
 - Final Windows packaging + release smoke (PR-07).
 - First-run onboarding (PR-08); bond cadence (PR-09); transition polish
   (PR-10); shipped companion pack (PR-11).
