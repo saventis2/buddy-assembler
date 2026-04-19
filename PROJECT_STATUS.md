@@ -44,7 +44,9 @@ the runtime does **not** depend on WZ/NX schemas at runtime.
 - ~~Schema freeze + importer boundary cleanup (PR-12).~~ **Landed in PR-12** —
   `docs/product/CONTENT_SCHEMA.md`; `CONTENT_SCHEMA_VERSION = 1` in
   ContentLoader; max-version rejection; runtime has no WZ/NX awareness.
-- Provenance manifest + snapshot promotion (PR-13).
+- ~~Provenance manifest + snapshot promotion (PR-13).~~ **Landed in PR-13** —
+  `content/core_pack/PROVENANCE.md`; asset categories approved; promotion
+  procedure documented.
 - Non-Maple content lane proof (PR-14).
 - Launch docs + V1 exit criteria (PR-15).
 
