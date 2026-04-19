@@ -1,0 +1,16 @@
+[remap]
+
+importer="buddy_importer.bif"
+importer_version=1
+type="Resource"
+uid="uid://cydwgr7af2wug"
+path="res://.godot/imported/bif_actor.bif-f2f3dea4fe6576df341448b8b3b0b9e3.tres"
+
+[deps]
+
+source_file="res://content/intermediate/bif_actor.bif"
+dest_files=["res://.godot/imported/bif_actor.bif-f2f3dea4fe6576df341448b8b3b0b9e3.tres"]
+
+[params]
+
+preserve_source_debug=true

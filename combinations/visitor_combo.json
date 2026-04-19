@@ -1,0 +1,27 @@
+{
+  "schema": "ms_character_combo_v1",
+  "saved_at_utc": "2026-04-18T00:00:00+00:00",
+  "base_wz": "C:\\Users\\GGPC\\OneDrive\\Desktop\\83 complete\\Base.wz",
+  "action": "stand1",
+  "frame": "0",
+  "starter_male": true,
+  "class_preset": "Custom",
+  "z_draw_order": "front-last",
+  "hair_mode": "auto",
+  "ids": {
+    "base_id": "2000",
+    "head_id": "12000",
+    "face_id": "20100",
+    "hair_id": "30100",
+    "accessory_id": "",
+    "cap_id": "",
+    "coat_id": "1042100",
+    "longcoat_id": "",
+    "pants_id": "1062085",
+    "shoes_id": "1072121",
+    "glove_id": "",
+    "cape_id": "",
+    "shield_id": "",
+    "weapon_id": ""
+  }
+}

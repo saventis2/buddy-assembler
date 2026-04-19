@@ -1,0 +1,29 @@
+name: Content Validator
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  validate-content:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Validate core content packs
+        run: |
+          python packages/content-validator/validate_pack.py apps/runtime-godot/content/core_pack/manifest.json
+          python packages/content-validator/validate_pack.py apps/runtime-godot/content/night_pack/manifest.json
+
+      - name: Run fixture checks
+        run: |
+          python packages/content-validator/run_fixture_checks.py
+

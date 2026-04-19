@@ -1,0 +1,10 @@
+{
+  "source": "Item.wz/Install/0301.img/03010000/effect",
+  "loop": true,
+  "frames": [
+    {
+      "origin_px": [21, 36],
+      "delay_ms": 1000
+    }
+  ]
+}

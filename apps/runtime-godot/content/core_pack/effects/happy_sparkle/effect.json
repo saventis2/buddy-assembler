@@ -1,0 +1,62 @@
+{
+  "source": "BasicEff.img/IncEXP",
+  "loop": false,
+  "frames": [
+    {
+      "origin_px": [
+        67,
+        101
+      ],
+      "delay_ms": 80
+    },
+    {
+      "origin_px": [
+        68,
+        99
+      ],
+      "delay_ms": 80
+    },
+    {
+      "origin_px": [
+        67,
+        96
+      ],
+      "delay_ms": 80
+    },
+    {
+      "origin_px": [
+        56,
+        92
+      ],
+      "delay_ms": 80
+    },
+    {
+      "origin_px": [
+        48,
+        81
+      ],
+      "delay_ms": 80
+    },
+    {
+      "origin_px": [
+        43,
+        79
+      ],
+      "delay_ms": 80
+    },
+    {
+      "origin_px": [
+        43,
+        78
+      ],
+      "delay_ms": 80
+    },
+    {
+      "origin_px": [
+        43,
+        77
+      ],
+      "delay_ms": 80
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+[gd_resource type="Resource" script_class="ActorDefinition" load_steps=9 format=3]
+
+[ext_resource type="Script" path="res://content/types/actor_definition.gd" id="1"]
+[ext_resource type="Resource" path="res://content/imported/demo/demo_skeleton.tres" id="2"]
+[ext_resource type="Resource" path="res://content/imported/demo/demo_skin.tres" id="3"]
+[ext_resource type="Resource" path="res://content/imported/demo/demo_attachment_slots.tres" id="4"]
+[ext_resource type="Resource" path="res://content/imported/demo/demo_behavior_profile.tres" id="5"]
+[ext_resource type="Resource" path="res://content/imported/demo/visitor_idle_clip.tres" id="6"]
+[ext_resource type="Resource" path="res://content/imported/demo/visitor_walk_clip.tres" id="7"]
+[ext_resource type="Resource" path="res://content/imported/demo/visitor_jump_clip.tres" id="8"]
+[ext_resource type="Resource" path="res://content/imported/demo/visitor_happy_emote_clip.tres" id="9"]
+
+[resource]
+script = ExtResource("1")
+actor_id = "visitor_actor_001"
+display_name = "Visitor"
+semantic_defaults = {
+"idle": "idle",
+"walk": "walk",
+"jump": "jump",
+"happy": "happy_emote",
+"happy_emote": "happy_emote"
+}
+skeleton = ExtResource("2")
+skins = [ExtResource("3")]
+attachment_slots = ExtResource("4")
+behavior_profile = ExtResource("5")
+clips = {
+"happy_emote": ExtResource("9"),
+"idle": ExtResource("6"),
+"jump": ExtResource("8"),
+"walk": ExtResource("7")
+}
+movement_profile = {
+"gravity": 750.0,
+"jump_velocity": -280.0,
+"terminal_velocity": 900.0,
+"walk_speed": 110.0
+}
+metadata = {
+"converter_version": "0.1.0",
+"import_version": 1,
+"source_hash": "visitor-hash",
+"source_path": "visitor_combo"
+}

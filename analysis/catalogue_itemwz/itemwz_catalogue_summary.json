@@ -1,0 +1,39 @@
+{
+  "generated_at_utc": "2026-04-15T11:19:00.370684+00:00",
+  "base_wz": "C:\\Users\\GGPC\\OneDrive\\Desktop\\83 complete\\Base.wz",
+  "item_root": "C:\\Users\\GGPC\\OneDrive\\Desktop\\83 complete\\Base.wz\\Item\\Item.wz",
+  "output_dir": "C:\\Users\\GGPC\\buddy-assembler\\analysis\\catalogue_itemwz",
+  "total_items": 6062,
+  "roots": {
+    "Cash": {
+      "count": 484,
+      "with_names": 464,
+      "with_icon": 484
+    },
+    "Consume": {
+      "count": 2286,
+      "with_names": 2261,
+      "with_icon": 1623
+    },
+    "Etc": {
+      "count": 2360,
+      "with_names": 2356,
+      "with_icon": 2323
+    },
+    "Install": {
+      "count": 294,
+      "with_names": 249,
+      "with_icon": 294
+    },
+    "Pet": {
+      "count": 54,
+      "with_names": 54,
+      "with_icon": 54
+    },
+    "Special": {
+      "count": 584,
+      "with_names": 0,
+      "with_icon": 466
+    }
+  }
+}

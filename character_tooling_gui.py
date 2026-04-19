@@ -22,12 +22,15 @@ from PIL import Image, ImageTk
 
 from diff_character_assets import diff_character_trees
 from render_character_frame import render
-from build_item_catalogue import build_catalogue
+from build_item_catalogue import build_catalogue as build_character_catalogue
+from build_itemwz_catalogue import build_catalogue as build_itemwz_catalogue
 from alignment_audit import run_alignment_audit
 
 
 DEFAULT_BASE_WZ = r"C:\Users\GGPC\OneDrive\Desktop\83 complete\Base.wz"
 DEFAULT_ANALYSIS_DIR = r"C:\Users\GGPC\OneDrive\Desktop\83 complete\analysis"
+CATALOGUE_MODE_CHARACTER = "Character (Equip)"
+CATALOGUE_MODE_ITEMWZ = "Item.wz (Other Items)"
 
 CLASS_PRESET_DEFS = {
     "Custom": {
@@ -2799,6 +2802,7 @@ class App(tk.Tk):
 
         self.cat_base_wz = tk.StringVar(value=DEFAULT_BASE_WZ)
         self.cat_output_dir = tk.StringVar(value=str(Path(DEFAULT_ANALYSIS_DIR) / "catalogue"))
+        self.cat_mode = tk.StringVar(value=CATALOGUE_MODE_CHARACTER)
         self.cat_filter_category = tk.StringVar(value="(All)")
         self.cat_search = tk.StringVar(value="")
         self.cat_slot_hint = tk.StringVar(value="Auto slot: (select an item)")
@@ -2818,16 +2822,25 @@ class App(tk.Tk):
         ttk.Button(top, text="Browse", command=lambda: self._browse_dir(self.cat_output_dir)).grid(
             row=1, column=2, padx=4, pady=4
         )
+        ttk.Label(top, text="Catalogue Type").grid(row=2, column=0, sticky="w", padx=4, pady=4)
+        self.cat_mode_combo = ttk.Combobox(
+            top,
+            textvariable=self.cat_mode,
+            values=[CATALOGUE_MODE_CHARACTER, CATALOGUE_MODE_ITEMWZ],
+            state="readonly",
+            width=28,
+        )
+        self.cat_mode_combo.grid(row=2, column=1, sticky="w", padx=4, pady=4)
 
         btn_row = ttk.Frame(top)
-        btn_row.grid(row=2, column=0, columnspan=3, sticky="w", padx=4, pady=8)
+        btn_row.grid(row=3, column=0, columnspan=3, sticky="w", padx=4, pady=8)
         self.cat_generate_btn = ttk.Button(btn_row, text="Generate Catalogue", command=self.on_generate_catalogue)
         self.cat_generate_btn.pack(side="left", padx=(0, 8))
         ttk.Button(btn_row, text="Load Catalogue", command=self.on_load_catalogue).pack(side="left", padx=(0, 8))
         ttk.Button(btn_row, text="Open Output Folder", command=self.on_open_catalogue_folder).pack(side="left")
 
         filters = ttk.Frame(top)
-        filters.grid(row=3, column=0, columnspan=3, sticky="ew", padx=4, pady=4)
+        filters.grid(row=4, column=0, columnspan=3, sticky="ew", padx=4, pady=4)
         ttk.Label(filters, text="Category").pack(side="left")
         self.cat_category_combo = ttk.Combobox(
             filters, textvariable=self.cat_filter_category, values=["(All)"], width=20, state="readonly"
@@ -2920,10 +2933,37 @@ class App(tk.Tk):
 
         self.cat_filter_category.trace_add("write", lambda *_: self._refresh_catalogue_tree())
         self.cat_search.trace_add("write", lambda *_: self._refresh_catalogue_tree())
+        self.cat_mode.trace_add("write", lambda *_: self._on_catalogue_mode_changed())
 
     def _append_cat_log(self, text: str) -> None:
         self.cat_log.insert("end", text + "\n")
         self.cat_log.see("end")
+
+    def _is_itemwz_catalogue_mode(self) -> bool:
+        return self.cat_mode.get().strip() == CATALOGUE_MODE_ITEMWZ
+
+    def _catalogue_csv_name(self) -> str:
+        return "itemwz_catalogue_all.csv" if self._is_itemwz_catalogue_mode() else "catalogue_all.csv"
+
+    def _normalize_catalogue_rows(self, raw_rows: list[dict]) -> list[dict]:
+        if not self._is_itemwz_catalogue_mode():
+            return raw_rows
+
+        normalized: list[dict] = []
+        for row in raw_rows:
+            out = dict(row)
+            out["part_category"] = str(row.get("item_root", ""))
+            out["eqp_category"] = str(row.get("group_file", ""))
+            out["islot"] = str(row.get("slot_max", ""))
+            out["vslot"] = str(row.get("price", ""))
+            normalized.append(out)
+        return normalized
+
+    def _on_catalogue_mode_changed(self) -> None:
+        if self._is_itemwz_catalogue_mode():
+            self.cat_slot_hint.set("Auto slot: n/a (Item.wz browse mode)")
+        else:
+            self.cat_slot_hint.set("Auto slot: (select an item)")
 
     def on_open_catalogue_folder(self) -> None:
         out = Path(self.cat_output_dir.get())
@@ -2943,10 +2983,15 @@ class App(tk.Tk):
             return
 
         self.cat_generate_btn.config(state="disabled")
-        self._append_cat_log("Generating catalogue...")
+        if self._is_itemwz_catalogue_mode():
+            self._append_cat_log("Generating Item.wz catalogue...")
+        else:
+            self._append_cat_log("Generating character catalogue...")
 
         def task():
-            return build_catalogue(base_wz=base_wz, output_dir=Path(self.cat_output_dir.get()))
+            if self._is_itemwz_catalogue_mode():
+                return build_itemwz_catalogue(base_wz=base_wz, output_dir=Path(self.cat_output_dir.get()))
+            return build_character_catalogue(base_wz=base_wz, output_dir=Path(self.cat_output_dir.get()))
 
         def done(ok: bool, payload) -> None:
             self.cat_generate_btn.config(state="normal")
@@ -2957,20 +3002,29 @@ class App(tk.Tk):
                 messagebox.showerror("Catalogue Failed", str(exc))
                 return
             summary = payload
-            self._append_cat_log(
-                f"Catalogue complete: {summary['total_items']} items across {len(summary['categories'])} categories."
-            )
+            total_items = int(summary.get("total_items", 0))
+            if self._is_itemwz_catalogue_mode():
+                roots = summary.get("roots", {})
+                self._append_cat_log(
+                    f"Item.wz catalogue complete: {total_items} items across {len(roots)} roots."
+                )
+            else:
+                categories = summary.get("categories", {})
+                self._append_cat_log(
+                    f"Character catalogue complete: {total_items} items across {len(categories)} categories."
+                )
             self.on_load_catalogue()
 
         self._run_async(task, done)
 
     def on_load_catalogue(self) -> None:
-        all_csv = Path(self.cat_output_dir.get()) / "catalogue_all.csv"
+        all_csv = Path(self.cat_output_dir.get()) / self._catalogue_csv_name()
         if not all_csv.exists():
             messagebox.showerror("Load Error", f"Catalogue not found: {all_csv}")
             return
         with all_csv.open("r", encoding="utf-8", newline="") as f:
-            self.catalogue_rows = list(csv.DictReader(f))
+            raw_rows = list(csv.DictReader(f))
+        self.catalogue_rows = self._normalize_catalogue_rows(raw_rows)
 
         categories = sorted({r.get("part_category", "") for r in self.catalogue_rows if r.get("part_category", "")})
         self.cat_category_combo["values"] = ["(All)"] + categories
@@ -2978,7 +3032,8 @@ class App(tk.Tk):
             self.cat_filter_category.set("(All)")
         self._refresh_catalogue_tree()
         self._update_catalogue_icon_preview(None)
-        self._append_cat_log(f"Loaded catalogue rows: {len(self.catalogue_rows)}")
+        mode_label = "Item.wz" if self._is_itemwz_catalogue_mode() else "Character"
+        self._append_cat_log(f"Loaded {mode_label} catalogue rows: {len(self.catalogue_rows)} ({all_csv.name})")
 
     def _refresh_catalogue_tree(self) -> None:
         if not hasattr(self, "cat_tree"):
@@ -3043,12 +3098,13 @@ class App(tk.Tk):
             if self.catalogue_rows:
                 return
         out_dir = Path(self.cat_output_dir.get()) if hasattr(self, "cat_output_dir") else (Path(DEFAULT_ANALYSIS_DIR) / "catalogue")
-        all_csv = out_dir / "catalogue_all.csv"
+        all_csv = out_dir / self._catalogue_csv_name()
         if not all_csv.exists():
             return
         try:
             with all_csv.open("r", encoding="utf-8", newline="") as f:
-                self.catalogue_rows = list(csv.DictReader(f))
+                raw_rows = list(csv.DictReader(f))
+                self.catalogue_rows = self._normalize_catalogue_rows(raw_rows)
         except Exception:
             return
 
@@ -3343,6 +3399,12 @@ class App(tk.Tk):
         self._update_catalogue_icon_preview(item)
         item_id = item["id"]
         item_name = item["name"]
+        if self._is_itemwz_catalogue_mode():
+            self.cat_slot_hint.set("Auto slot: n/a (Item.wz)")
+            self.cat_build_status.set(
+                f"Item.wz selection: {item_name} [{item_id}] (browse-only in this build)."
+            )
+            return
         target = self._infer_slot_from_catalogue_categories(item["part_category"], item["eqp_category"])
         if target is None:
             self.cat_slot_hint.set("Auto slot: unsupported")
@@ -3427,6 +3489,15 @@ class App(tk.Tk):
         item = self._selected_catalogue_item()
         if item is None:
             messagebox.showerror("Apply Error", "Select a catalogue row first.")
+            return
+        if self._is_itemwz_catalogue_mode():
+            messagebox.showinfo(
+                "Browse-Only",
+                (
+                    "Item.wz catalogue entries are browse-only right now.\n"
+                    "Switch Catalogue Type to 'Character (Equip)' to apply IDs to render slots."
+                ),
+            )
             return
         item_id = item["id"]
         item_name = item["name"]

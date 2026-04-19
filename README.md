@@ -30,9 +30,13 @@ python character_tooling_gui.py
 - `character_tooling_gui.py` — desktop GUI orchestrator
 - `render_character_frame.py` — single-frame renderer
 - `build_item_catalogue.py` — catalogue generator
+- `build_itemwz_catalogue.py` — Item.wz-wide catalogue generator (Cash/Consume/Etc/Install/Pet/Special)
 - `diff_character_assets.py` — extracted tree diff tool
 - `alignment_audit.py` — batch alignment and quality audit
 - `weapon_action_compatibility_report.py` — weapon action compatibility reporting
+- `analyze_npc_animation_links.py` — NPC animation + link-chain inspection tool
+- `export_runtime_character_sprites.py` — runtime companion sprite/animation exporter
+- `import_runtime_ground_tile.py` — imports map tile terrain into runtime content packs
 - `analyze_character_assets.py` — reverse-engineering and dataset analysis
 - `audit_dataset_metadata.py` — metadata coverage audit
 
@@ -62,3 +66,17 @@ Things to be aware of:
 ## Notes
 
 This project assumes you are working with an extracted MapleStory `Base.wz` tree and related XML/PNG asset folders.
+
+## Companion Runtime Track (2026-04-15)
+
+This repository now also includes a new desktop companion implementation track.
+
+The runtime track is intentionally separated from the MapleStory tooling code:
+
+- `apps/runtime-godot/` - Windows-first desktop buddy runtime scaffold
+- `packages/content-schema/` - content pack schema contract
+- `packages/content-validator/` - local schema/pack validation tool
+- `docs/product/` - product decisions, PRD, and execution milestones
+
+This keeps existing tooling stable while we build the companion product as a
+clean, modular runtime.

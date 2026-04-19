@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="AnimationClip" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://content/types/animation_clip.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+clip_id = "stab"
+loop = false
+frames = [{
+"texture_path": "res://content/core_pack/character/animations/stab/frames/000.png",
+"delay_ms": 300,
+"anchor_px": [0, 0]
+}, {
+"texture_path": "res://content/core_pack/character/animations/stab/frames/001.png",
+"delay_ms": 100,
+"anchor_px": [0, 0]
+}, {
+"texture_path": "res://content/core_pack/character/animations/stab/frames/002.png",
+"delay_ms": 350,
+"anchor_px": [0, 0]
+}]
+metadata = {
+"source_action": "stabT1",
+"source_frame_ids": [0, 1, 2],
+"source_hash": "demo-hash",
+"import_version": 1
+}

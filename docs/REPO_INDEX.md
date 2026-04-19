@@ -152,3 +152,16 @@ buddy-assembler/
 ## Bottom line
 
 This repo is already a functioning MapleStory tooling suite. The biggest remaining work is not basic capability; it is improving structure, naming clarity, onboarding, and public-facing polish.
+
+## 2026-04-15 Companion Runtime Track
+
+In addition to the MapleStory tooling suite, the repo now contains an initial
+desktop companion product track:
+
+- `apps/runtime-godot/`
+- `packages/content-schema/`
+- `packages/content-validator/`
+- `docs/product/`
+
+These directories are isolated so companion product work can proceed without
+breaking existing tooling flows.

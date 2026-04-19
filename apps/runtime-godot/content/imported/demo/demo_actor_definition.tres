@@ -1,0 +1,134 @@
+[gd_resource type="Resource" script_class="ActorDefinition" load_steps=19 format=3]
+
+[ext_resource type="Script" path="res://content/types/actor_definition.gd" id="1"]
+[ext_resource type="Resource" path="res://content/imported/demo/demo_skeleton.tres" id="2"]
+[ext_resource type="Resource" path="res://content/imported/demo/demo_skin.tres" id="3"]
+[ext_resource type="Resource" path="res://content/imported/demo/demo_attachment_slots.tres" id="4"]
+[ext_resource type="Resource" path="res://content/imported/demo/demo_behavior_profile.tres" id="5"]
+[ext_resource type="Resource" path="res://content/imported/demo/idle_clip.tres" id="6"]
+[ext_resource type="Resource" path="res://content/imported/demo/walk_clip.tres" id="7"]
+[ext_resource type="Resource" path="res://content/imported/demo/jump_clip.tres" id="8"]
+[ext_resource type="Resource" path="res://content/imported/demo/happy_emote_clip.tres" id="9"]
+[ext_resource type="Resource" path="res://content/imported/demo/sit_clip.tres" id="10"]
+[ext_resource type="Resource" path="res://content/imported/demo/sleep_clip.tres" id="11"]
+[ext_resource type="Resource" path="res://content/imported/demo/wander_clip.tres" id="13"]
+[ext_resource type="Resource" path="res://content/imported/demo/visitor_clip.tres" id="14"]
+[ext_resource type="Resource" path="res://content/imported/demo/fly_clip.tres" id="15"]
+[ext_resource type="Resource" path="res://content/imported/demo/climb_clip.tres" id="16"]
+[ext_resource type="Resource" path="res://content/imported/demo/swing_clip.tres" id="17"]
+[ext_resource type="Resource" path="res://content/imported/demo/stab_clip.tres" id="18"]
+[ext_resource type="Resource" path="res://content/imported/demo/alt_idle_clip.tres" id="20"]
+[ext_resource type="Resource" path="res://content/imported/demo/gift_clip.tres" id="21"]
+
+[resource]
+script = ExtResource("1")
+actor_id = "demo_actor_001"
+display_name = "Demo Buddy"
+semantic_defaults = {
+"idle": "idle",
+"walk": "walk",
+"jump": "jump",
+"climb": "climb",
+"sit": "sit",
+"sit_emote": "sit",
+"sleep": "sleep",
+"sleep_emote": "sleep",
+"wander": "wander",
+"wander_emote": "wander",
+"visitor": "visitor",
+"visitor_emote": "visitor",
+"gift": "gift",
+"gift_emote": "gift",
+"happy": "happy_emote",
+"happy_emote": "happy_emote",
+"sad": "happy_emote",
+"sad_emote": "happy_emote",
+"angry": "happy_emote",
+"angry_emote": "happy_emote",
+"surprised": "happy_emote",
+"surprised_emote": "happy_emote",
+"love": "happy_emote",
+"love_emote": "happy_emote",
+"proud": "happy_emote",
+"proud_emote": "happy_emote",
+"embarrassed": "happy_emote",
+"embarrassed_emote": "happy_emote",
+"stunned": "happy_emote",
+"stunned_emote": "happy_emote",
+"worried": "happy_emote",
+"worried_emote": "happy_emote",
+"despair": "happy_emote",
+"despair_emote": "happy_emote",
+"feverish": "happy_emote",
+"feverish_emote": "happy_emote",
+"humming": "happy_emote",
+"humming_emote": "happy_emote",
+"hurt": "happy_emote",
+"hurt_emote": "happy_emote",
+"damaged": "happy_emote",
+"damaged_emote": "happy_emote",
+"sparkle": "happy_emote",
+"sparkle_emote": "happy_emote",
+"shine": "happy_emote",
+"shine_emote": "happy_emote",
+"excited": "happy_emote",
+"excited_emote": "happy_emote",
+"bow": "happy_emote",
+"bow_emote": "happy_emote",
+"kiss": "happy_emote",
+"kiss_emote": "happy_emote",
+"sleepy": "happy_emote",
+"sleepy_emote": "happy_emote",
+"sick": "happy_emote",
+"sick_emote": "happy_emote",
+"pain": "happy_emote",
+"pain_emote": "happy_emote",
+"wink": "happy_emote",
+"wink_emote": "happy_emote",
+"bewildered": "happy_emote",
+"fly": "fly",
+"fly_emote": "fly",
+"swing": "swing",
+"swing_emote": "swing",
+"stab": "stab",
+"stab_emote": "stab",
+"alt_idle": "alt_idle",
+"alt_idle_emote": "alt_idle"
+}
+skeleton = ExtResource("2")
+skins = [ExtResource("3")]
+attachment_slots = ExtResource("4")
+behavior_profile = ExtResource("5")
+clips = {
+"alt_idle": ExtResource("20"),
+"climb": ExtResource("16"),
+"fly": ExtResource("15"),
+"gift": ExtResource("21"),
+"happy_emote": ExtResource("9"),
+"idle": ExtResource("6"),
+"jump": ExtResource("8"),
+"sit": ExtResource("10"),
+"sleep": ExtResource("11"),
+"stab": ExtResource("18"),
+"swing": ExtResource("17"),
+"visitor": ExtResource("14"),
+"walk": ExtResource("7"),
+"wander": ExtResource("13")
+}
+movement_profile = {
+"gravity": 750.0,
+"jump_velocity": -280.0,
+"terminal_velocity": 900.0,
+"walk_speed": 110.0
+}
+metadata = {
+"converter_version": "0.1.0",
+"import_version": 1,
+"source_action_map": {
+"jump": "jump",
+"stand1": "idle",
+"walk1": "walk"
+},
+"source_hash": "demo-hash",
+"source_path": "offline_source_bundle"
+}

@@ -140,3 +140,55 @@ If something looks wrong:
 ## Bottom line
 
 The repo is designed to move from source inspection to composition to export to validation. The fastest way to stay productive is to keep that order and avoid jumping straight to batch export before a single-frame render looks right.
+
+---
+
+## Runtime Modes
+
+### Normal overlay (default)
+
+Runs the always-on-top transparent desktop buddy overlay.
+
+```powershell
+godot_console.exe --path apps/runtime-godot
+```
+
+### Vertical slice
+
+Runs the development test map with a controllable actor (keyboard movement, jump, emotes).
+
+```powershell
+godot_console.exe --path apps/runtime-godot -- --vertical-slice
+```
+
+### Headless parse check
+
+Verifies the project loads cleanly and runs the smoke floor-lock test.
+
+```powershell
+pwsh ./apps/runtime-godot/tests/run_headless_checks.ps1
+```
+
+### Headless profiling (optional)
+
+Runs the 20-actor frame-time profiling scene and prints a timing report.
+
+```powershell
+pwsh ./apps/runtime-godot/tests/run_headless_checks.ps1 --profile
+```
+
+### Stable branch checkpoints
+
+| Label | Type | Ref |
+|-------|------|-----|
+| `stable/2026-04-15-weapon-skill-baseline` | branch | `b67d821` |
+| `stable-2026-04-15-weapon-skill-baseline` | tag | `b67d821` |
+| `checkpoint-2026-04-16-face-overlay-alignment` | tag | `6e36cb7` |
+
+To restore a stable checkpoint:
+
+```powershell
+git checkout stable/2026-04-15-weapon-skill-baseline
+# or
+git checkout stable-2026-04-15-weapon-skill-baseline
+```

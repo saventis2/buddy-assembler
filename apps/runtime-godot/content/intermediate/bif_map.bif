@@ -1,0 +1,29 @@
+{
+  "kind": "map",
+  "map_id": "test_map_001",
+  "spawn_point": {
+    "x": 96,
+    "y": 60
+  },
+  "footholds": [
+    {
+      "x0": 16,
+      "y0": 180,
+      "x1": 320,
+      "y1": 180
+    }
+  ],
+  "ladders": [],
+  "portals": [],
+  "interaction_markers": {
+    "desk_left": {
+      "x": 220,
+      "y": 145
+    }
+  },
+  "metadata": {
+    "source_hash": "testhash",
+    "converter_version": "0.1.0",
+    "source_path": "offline_source_bundle"
+  }
+}

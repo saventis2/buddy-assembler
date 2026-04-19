@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="CollisionMapResource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://content/types/collision_map_resource.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+map_id = "test_map_001"
+spawn_point = Vector2(96, 60)
+footholds = [{
+"x0": 24.0,
+"y0": 184.0,
+"x1": 316.0,
+"y1": 184.0
+}]
+ladders = []
+portals = []
+interaction_markers = {
+"desk_left": {
+"x": 220.0,
+"y": 144.0
+}
+}
+metadata = {
+"source_hash": "demo-hash",
+"import_version": 1
+}

@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="SkeletonResource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://content/types/skeleton_resource.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+skeleton_id = "demo_skeleton"
+bones = PackedStringArray("root", "body", "head")
+root_bone = "root"
+default_slots = {
+"body": "body",
+"face": "face"
+}
+metadata = {
+"source_hash": "demo-hash",
+"import_version": 1
+}

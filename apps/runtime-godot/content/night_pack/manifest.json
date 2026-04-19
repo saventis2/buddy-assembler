@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "id": "night-pack",
+  "name": "Night Companion Pack",
+  "version": "0.1.0",
+  "companion": {
+    "id": "buddy-night",
+    "displayName": "Nocti",
+    "traits": [
+      "calm",
+      "sleepy",
+      "mysterious"
+    ]
+  },
+  "visual": {
+    "scale": 2.35,
+    "anchor": [
+      0.5,
+      0.95
+    ],
+    "animations": {
+      "idle": "res://content/core_pack/character/animations/idle.json",
+      "wander": "res://content/core_pack/character/animations/wander.json",
+      "sit": "res://content/core_pack/character/animations/sit.json",
+      "sleep": "res://content/core_pack/character/animations/sleep.json",
+      "happy": "res://content/core_pack/character/animations/happy.json",
+      "gift": "res://content/core_pack/character/animations/gift.json",
+      "visitor": "res://content/core_pack/character/animations/visitor.json"
+    },
+    "sprites": {
+      "idle": "res://content/core_pack/character/idle.png",
+      "wander": "res://content/core_pack/character/wander.png",
+      "sit": "res://content/core_pack/character/sit.png",
+      "sleep": "res://content/core_pack/character/sleep.png",
+      "happy": "res://content/core_pack/character/happy.png",
+      "gift": "res://content/core_pack/character/gift.png",
+      "visitor": "res://content/core_pack/character/visitor.png"
+    }
+  },
+  "idleActions": [
+    "idle",
+    "sit",
+    "sleep"
+  ],
+  "reactionActions": [
+    "happy",
+    "gift"
+  ],
+  "encounterActions": [
+    "visitor"
+  ],
+  "eventRules": [
+    {
+      "id": "night-gift",
+      "action": "gift",
+      "weight": 0.7,
+      "cooldownSeconds": 200,
+      "perHour": 1,
+      "perDay": 3
+    },
+    {
+      "id": "night-visitor",
+      "action": "visitor",
+      "weight": 1.1,
+      "cooldownSeconds": 260,
+      "perHour": 1,
+      "perDay": 2
+    }
+  ]
+}

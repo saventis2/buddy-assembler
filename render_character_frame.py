@@ -1226,6 +1226,7 @@ def render(
     output_json: Optional[Path] = None,
     z_draw_order: str = "front-last",
     hair_mode: str = "auto",
+    include_face: bool = True,
 ) -> dict:
     char_root = base_wz / "Character" / "Character.wz"
     equipment_normalization: List[dict] = []
@@ -1407,13 +1408,14 @@ def render(
         if not p.draw.png_path.exists():
             continue
         img = Image.open(p.draw.png_path).convert("RGBA")
+        should_draw = not (p.draw.asset_kind == "face" and not include_face)
         x, y = p.top_left
         w, h = img.size
         min_x = min(min_x, x)
         min_y = min(min_y, y)
         max_x = max(max_x, x + w)
         max_y = max(max_y, y + h)
-        draw_queue.append((p, img))
+        draw_queue.append((p, img, should_draw))
 
     if not draw_queue:
         raise RuntimeError("No drawable PNG assets resolved for requested frame.")
@@ -1427,7 +1429,9 @@ def render(
     frame_right_world = max_x + pad
     frame_bottom_world = max_y + pad
 
-    for p, img in draw_queue:
+    for p, img, should_draw in draw_queue:
+        if not should_draw:
+            continue
         x, y = p.top_left
         dx = x - min_x + pad
         dy = y - min_y + pad
@@ -1481,7 +1485,7 @@ def render(
                 "png": str(p.draw.png_path),
                 "node_path": "/".join(p.draw.node_path),
             }
-            for p, _ in draw_queue
+            for p, _, _ in draw_queue
         ],
     }
 
@@ -1518,6 +1522,11 @@ def main() -> None:
         choices=["auto", "force-show", "force-hide"],
         default="auto",
         help="Hair handling around caps: auto|force-show|force-hide",
+    )
+    parser.add_argument(
+        "--exclude-face",
+        action="store_true",
+        help="Do not composite face layer into the output PNG (keeps metadata for overlay use).",
     )
 
     parser.add_argument("--starter-male", action="store_true", help="Apply starter male defaults")
@@ -1585,6 +1594,7 @@ def main() -> None:
         output_json=Path(args.output_json) if args.output_json else None,
         z_draw_order=args.z_draw_order,
         hair_mode=args.hair_mode,
+        include_face=not bool(args.exclude_face),
     )
     print(
         json.dumps(

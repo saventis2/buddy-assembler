@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="AttachmentSlotSet" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://content/types/attachment_slot_set.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+slot_names = PackedStringArray("body", "face")
+semantic_tags = {
+"body": "core",
+"face": "expression"
+}
+metadata = {
+"source_hash": "demo-hash",
+"import_version": 1
+}

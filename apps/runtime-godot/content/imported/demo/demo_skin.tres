@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="SkinResource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://content/types/skin_resource.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+skin_id = "demo_skin"
+label = "Maple Derived Demo"
+slot_textures = {
+"body": "res://content/core_pack/character/idle.png"
+}
+palette_tags = PackedStringArray("default")
+metadata = {
+"source_hash": "demo-hash",
+"import_version": 1
+}

@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "id": "broken-pack",
+  "name": "Broken Pack",
+  "version": "0.0.1",
+  "companion": {
+    "id": "broken",
+    "displayName": "Broken Buddy",
+    "traits": [
+      "broken"
+    ]
+  },
+  "idleActions": [
+    "idle"
+  ],
+  "reactionActions": [
+    "happy"
+  ],
+  "encounterActions": [
+    "visitor"
+  ],
+  "eventRules": [
+    {
+      "id": "broken-event",
+      "weight": 1.0,
+      "cooldownSeconds": 30
+    }
+  ]
+}
+
