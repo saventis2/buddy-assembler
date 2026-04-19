@@ -104,6 +104,7 @@ var _last_face_texture_path := ""
 var _roam_speed_px_per_sec := DEFAULT_ROAM_SPEED_PX_PER_SEC
 var _roam_direction := 1
 var _roam_subpixel_x := 0.0
+var _bond_phrase_active := false
 
 
 func _ready() -> void:
@@ -183,6 +184,7 @@ func _input(event: InputEvent) -> void:
                     DisplayServer.window_get_current_screen(),
                     DisplayServer.window_get_position()
                 )
+                _return_to_idle_after_drag()
         elif button_event.button_index == MOUSE_BUTTON_RIGHT and button_event.pressed:
             if _hit_test(button_event.position):
                 _state = "sleep" if _state != "sleep" else "idle"
@@ -322,8 +324,12 @@ func _on_tick_timer_timeout() -> void:
             _last_event_id = event_id
             AppState.record_event_trigger(event_id, action_id)
 
+    var was_sleeping := _state == "sleep"
     var action := _engine.tick(now_unix, context)
-    _state = str(action.get("id", "idle"))
+    var new_state := str(action.get("id", "idle"))
+    if was_sleeping and not context.has("forced_action"):
+        new_state = "sleep"
+    _state = new_state
     _set_emote_from_state(_state)
     _set_visual_for_state(_state)
     AppState.apply_behavior(_state)
@@ -1326,7 +1332,7 @@ func _load_core_character_sprite_fallbacks() -> void:
 
 
 func _maybe_show_bond_phrase() -> void:
-    if randi() % 6 != 0:
+    if _bond_phrase_active or randi() % 6 != 0:
         return
     var tier := AppState.get_bond_tier()
     var phrases: Variant = tier.get("idle_phrases", null)
@@ -1335,10 +1341,21 @@ func _maybe_show_bond_phrase() -> void:
     var phrase := str((phrases as Array)[randi() % (phrases as Array).size()])
     if phrase == "" or phrase == "...":
         return
+    _bond_phrase_active = true
     bond_speech_label.text = phrase
     bond_speech_label.visible = true
     await get_tree().create_timer(4.0).timeout
     bond_speech_label.visible = false
+    _bond_phrase_active = false
+
+
+func _return_to_idle_after_drag() -> void:
+    await get_tree().create_timer(0.5).timeout
+    if not _dragging:
+        _state = "idle"
+        _set_emote_from_state(_state)
+        _set_visual_for_state(_state)
+        queue_redraw()
 
 
 func _show_welcome_once() -> void:
