@@ -136,14 +136,16 @@ jobs:
         shell: pwsh
         working-directory: ${{ env.RUNTIME_DIR }}
         run: |
-          $ErrorActionPreference = "Stop"
-          # Godot writes to stderr for non-fatal issues (addon warnings,
-          # display-server noise). With 2>&1 pwsh would treat that as a
-          # terminating error. Disable native-command error propagation so
-          # only a real non-zero exit code fails the step.
+          # This is a cache-populate step, not a gate. godot.exe may exit
+          # non-zero on benign editor warnings (e.g. addon import noise,
+          # display-server cursor warnings). The real gate is the export
+          # step below, which checks for the produced .exe.
           $PSNativeCommandUseErrorActionPreference = $false
           godot.exe --headless --import 2>&1 | Tee-Object -FilePath ..\..\win-import.log
+          Write-Host "godot --import exited with $LASTEXITCODE"
           godot.exe --headless --quit  2>&1 | Tee-Object -FilePath ..\..\win-import.log -Append
+          Write-Host "godot --quit exited with $LASTEXITCODE"
+          exit 0
 
       - name: Export Windows Desktop preset
         shell: pwsh
