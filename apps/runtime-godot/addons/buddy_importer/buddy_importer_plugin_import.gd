@@ -3,6 +3,13 @@ extends EditorImportPlugin
 
 const FORMAT_VERSION := 1
 
+# Preload type scripts directly instead of relying on global class_name lookup.
+# Headless CI first-run has an empty global_script_class_cache.cfg, so global
+# names like ActorDefinition resolve as "Identifier not declared" during parse.
+const ActorDefinitionType = preload("res://content/types/actor_definition.gd")
+const AnimationClipType = preload("res://content/types/animation_clip.gd")
+const CollisionMapResourceType = preload("res://content/types/collision_map_resource.gd")
+
 
 func _get_importer_name() -> String:
 	return "buddy_importer.bif"
@@ -18,6 +25,14 @@ func _get_recognized_extensions() -> PackedStringArray:
 
 func _get_save_extension() -> String:
 	return "tres"
+
+
+func _get_priority() -> float:
+	return 1.0
+
+
+func _get_import_order() -> int:
+	return 0
 
 
 func _get_resource_type() -> String:
@@ -78,7 +93,7 @@ func _import(
 			)
 
 	if kind == "actor":
-		var actor := ActorDefinition.new()
+		var actor := ActorDefinitionType.new()
 		actor.actor_id = str(source_data.get("actor_id", ""))
 		actor.display_name = str(source_data.get("display_name", ""))
 		actor.semantic_defaults = source_data.get("semantic_defaults", {}).duplicate()
@@ -88,7 +103,7 @@ func _import(
 		return ResourceSaver.save(actor, "%s.%s" % [save_path, _get_save_extension()])
 
 	if kind == "anim":
-		var clip := AnimationClip.new()
+		var clip := AnimationClipType.new()
 		clip.clip_id = str(source_data.get("clip_id", ""))
 		clip.loop = bool(source_data.get("loop", true))
 		clip.frames = _to_dictionary_array(source_data.get("frames", []))
@@ -98,7 +113,7 @@ func _import(
 		return ResourceSaver.save(clip, "%s.%s" % [save_path, _get_save_extension()])
 
 	if kind == "map":
-		var map_res := CollisionMapResource.new()
+		var map_res := CollisionMapResourceType.new()
 		map_res.map_id = str(source_data.get("map_id", ""))
 		var spawn = source_data.get("spawn_point", {})
 		if typeof(spawn) == TYPE_DICTIONARY:

@@ -39,7 +39,7 @@ func _run_all() -> void:
 func _case(name: String, body: Callable) -> void:
     _ran += 1
     _prepare_dir()
-    var err := body.call()
+    var err: Variant = body.call()
     if err != null and typeof(err) == TYPE_STRING and err != "":
         _failed += 1
         push_error("save_store_test[%s]: %s" % [name, err])
