@@ -168,6 +168,23 @@ jobs:
           }
           Get-ChildItem $out
 
+      - name: Compute SHA256SUMS
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $out = Join-Path (Get-Location).Path "build\windows"
+          if (-not (Test-Path $out)) {
+            Write-Error "build\windows missing — export must have failed"
+            exit 1
+          }
+          Get-ChildItem -Path $out -Recurse -File | Sort-Object FullName | ForEach-Object {
+            $hash = (Get-FileHash -Algorithm SHA256 $_.FullName).Hash.ToLower()
+            $rel  = Resolve-Path -Relative $_.FullName
+            "$hash  $rel"
+          } | Set-Content -Path (Join-Path $out "SHA256SUMS") -Encoding ascii
+          Write-Host "--- SHA256SUMS ---"
+          Get-Content (Join-Path $out "SHA256SUMS")
+
       - name: Upload Windows build artifact
         if: always()
         uses: actions/upload-artifact@v4
