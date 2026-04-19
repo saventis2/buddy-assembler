@@ -1323,17 +1323,16 @@ func _load_core_character_sprite_fallbacks() -> void:
 
 
 func _maybe_show_bond_phrase() -> void:
-	# Show an idle phrase from the current bond cadence tier ~1-in-6 idle ticks.
-	if randi() % 6 != 0:
-		return
-	var tier := AppState.get_bond_tier()
-	var phrases: Variant = tier.get("idle_phrases", null)
-	if typeof(phrases) != TYPE_ARRAY or (phrases as Array).is_empty():
-		return
-	var phrase := str((phrases as Array)[randi() % (phrases as Array).size()])
-	if phrase == "" or phrase == "...":
-		return
-	bond_speech_label.text = phrase
-	bond_speech_label.visible = true
-	await get_tree().create_timer(4.0).timeout
-	bond_speech_label.visible = false
+    if randi() % 6 != 0:
+        return
+    var tier := AppState.get_bond_tier()
+    var phrases: Variant = tier.get("idle_phrases", null)
+    if typeof(phrases) != TYPE_ARRAY or (phrases as Array).is_empty():
+        return
+    var phrase := str((phrases as Array)[randi() % (phrases as Array).size()])
+    if phrase == "" or phrase == "...":
+        return
+    bond_speech_label.text = phrase
+    bond_speech_label.visible = true
+    await get_tree().create_timer(4.0).timeout
+    bond_speech_label.visible = false
