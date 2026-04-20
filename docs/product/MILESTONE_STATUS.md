@@ -42,6 +42,14 @@ Updated: 2026-04-20 (world-layer stub wiring added)
 - [done] Added `CompanionDepthTest` coverage and wired it into headless checks
 - [pending] Final manual UX pass to confirm hint cadence is non-intrusive in desktop usage
 
+## Plan 7 (Economy Tuning Pass 2 — 2026-04-20)
+
+- [done] Added duplicate recycle cap tied to reward-box cost (anti-exploit)
+- [done] Added low-value streak protection for reward-box opens
+- [done] Added per-theme reward-box open telemetry (`box_open_stats`)
+- [done] Surfaced theme-open telemetry + pulled rarity in overlay debug readout
+- [done] Added `EconomyTuningTest` and wired it into headless checks
+
 ## Phase 5 (Visual polish & WZ asset expansion — 2026-04-19)
 
 - [done] Per-frame hand tracking for held-prop overlays (renderer parses

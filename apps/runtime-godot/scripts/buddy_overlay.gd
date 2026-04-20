@@ -567,6 +567,15 @@ func _refresh_telemetry() -> void:
         return
 
     var snapshot := AppState.get_telemetry_snapshot()
+    var cozy_open_count := 0
+    var heroic_open_count := 0
+    var box_stats_variant = snapshot.get("box_open_stats", {})
+    if typeof(box_stats_variant) == TYPE_DICTIONARY:
+        var box_stats: Dictionary = box_stats_variant
+        if box_stats.has("cozy") and typeof(box_stats["cozy"]) == TYPE_DICTIONARY:
+            cozy_open_count = int((box_stats["cozy"] as Dictionary).get("opens", 0))
+        if box_stats.has("heroic") and typeof(box_stats["heroic"]) == TYPE_DICTIONARY:
+            heroic_open_count = int((box_stats["heroic"] as Dictionary).get("opens", 0))
     var lines: Array[String] = [
         "state: %s" % _state,
         "emote: %s -> %s" % [_active_emote_semantic, _active_face_variant],
@@ -582,6 +591,7 @@ func _refresh_telemetry() -> void:
             int(snapshot.get("inventory_count", 0)),
         ],
         "dup recycle crystals: %d" % int(snapshot.get("duplicate_recycle_total", 0)),
+        "theme opens: cozy=%d heroic=%d" % [cozy_open_count, heroic_open_count],
         "pack: %s" % str(snapshot.get("active_pack", "core_pack")),
         "freq: %s  quiet: %s" % [
             str(AppState.settings.get("eventFrequency", "normal")),
@@ -1474,11 +1484,15 @@ func _open_debug_reward_box() -> void:
     _update_balloon_position()
     if bool(result.get("ok", false)):
         var item_name := str(result.get("item_name", "item"))
+        var item_rarity := str(result.get("item_rarity", "common"))
         if bool(result.get("duplicate", false)):
             var recycle := int(result.get("recycle_crystals", 0))
-            chat_balloon.show_text("Opened %s: %s (duplicate +%d crystals)" % [preferred, item_name, recycle])
+            chat_balloon.show_text(
+                "Opened %s: %s [%s] (duplicate +%d crystals)"
+                % [preferred, item_name, item_rarity, recycle]
+            )
         else:
-            chat_balloon.show_text("Opened %s: %s" % [preferred, item_name])
+            chat_balloon.show_text("Opened %s: %s [%s]" % [preferred, item_name, item_rarity])
     else:
         var reason := str(result.get("reason", "unavailable"))
         chat_balloon.show_text("Could not open %s (%s)" % [preferred, reason])

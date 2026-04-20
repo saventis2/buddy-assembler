@@ -61,22 +61,22 @@ Done gate:
 
 ### Plan 7: Economy Tuning Pass 2 (Drop Feel and Pacing)
 
-Status: `next`
+Status: `in_progress`
 
 Tasks:
-- [ ] Tune rarity tables to preserve high-rarity excitement
-- [ ] Add per-theme pull telemetry for balancing
-- [ ] Tune duplicate recycle values against box costs
-- [ ] Add minimum-value guarantee for low-value streak protection
+- [x] Tune rarity tables to preserve high-rarity excitement (kept high-rarity pulls rare; no inflation)
+- [x] Add per-theme pull telemetry for balancing
+- [x] Tune duplicate recycle values against box costs
+- [x] Add minimum-value guarantee for low-value streak protection
 
 Done gate:
-- [ ] Common pulls still feel useful
-- [ ] High rarity remains infrequent and meaningful
-- [ ] No economy exploit from duplicate recycle loop
+- [x] Common pulls still feel useful
+- [x] High rarity remains infrequent and meaningful
+- [x] No economy exploit from duplicate recycle loop
 
 ### Plan 8: World Variety Expansion (Low-Risk Content Growth)
 
-Status: `queued`
+Status: `next`
 
 Tasks:
 - [ ] Add 2-3 more NPCs with distinct quest flavor
@@ -107,3 +107,4 @@ Must pass:
 - PackValidationTest
 - WorldEconomyFlowTest
 - CompanionDepthTest
+- EconomyTuningTest

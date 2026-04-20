@@ -82,6 +82,16 @@ if ($depthCode -ne 0) {
 }
 Write-Host "Companion depth cadence test PASSED."
 
+# --- Economy tuning test ---
+Write-Host ""
+Write-Host "=== Economy tuning test ==="
+$economyCode = Invoke-GodotHeadless -ExtraArgs @("--scene", "res://tests/EconomyTuningTest.tscn") -Label "economy-tuning"
+if ($economyCode -ne 0) {
+    Write-Host "Economy tuning test FAILED (exit $economyCode)"
+    exit $economyCode
+}
+Write-Host "Economy tuning test PASSED."
+
 # --- Optional: frame-time profiling ---
 if ($Profile) {
     Write-Host ""

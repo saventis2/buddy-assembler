@@ -37,6 +37,10 @@ func ensure_world_state(world_state: Dictionary) -> Dictionary:
         merged["item_catalog"] = {}
     if typeof(merged.get("duplicate_recycles", null)) != TYPE_ARRAY:
         merged["duplicate_recycles"] = []
+    if typeof(merged.get("box_low_value_streaks", null)) != TYPE_DICTIONARY:
+        merged["box_low_value_streaks"] = {}
+    if typeof(merged.get("box_open_stats", null)) != TYPE_DICTIONARY:
+        merged["box_open_stats"] = {}
     return merged
 
 
@@ -125,11 +129,12 @@ func open_reward_box(world_state: Dictionary, box_id: String, seed: int) -> Dict
     var rng := RandomNumberGenerator.new()
     rng.seed = seed if seed != 0 else int(Time.get_unix_time_from_system())
     var selected := _pick_weighted(table, rng)
+    selected = _apply_low_value_protection(merged, box_id, selected, table, rng)
     var selected_id := str(selected.get("id", ""))
     var was_duplicate := _inventory_has_item_id(merged.get("inventory", []), selected_id)
     var recycle_crystals := 0
     if was_duplicate:
-        recycle_crystals = _duplicate_recycle_crystals_for(selected)
+        recycle_crystals = _duplicate_recycle_crystals_for(selected, cost)
 
     wallet["crystals"] = crystals - cost
     if recycle_crystals > 0:
@@ -137,6 +142,7 @@ func open_reward_box(world_state: Dictionary, box_id: String, seed: int) -> Dict
         _record_duplicate_recycle(merged, selected_id, recycle_crystals)
     merged["wallet"] = wallet
     merged = grant_item(merged, "reward_box:%s" % box_id, selected)
+    _record_box_open_stats(merged, box_id, str(box.get("theme", "unknown")), selected, was_duplicate, recycle_crystals)
     return {
         "ok": true,
         "reason": "",
@@ -158,10 +164,12 @@ func get_snapshot(world_state: Dictionary) -> Dictionary:
             if typeof(row_variant) != TYPE_DICTIONARY:
                 continue
             recycle_total += int((row_variant as Dictionary).get("crystals", 0))
+    var box_open_stats: Dictionary = merged.get("box_open_stats", {})
     return {
         "crystals": int(wallet.get("crystals", 0)),
         "inventory_count": inventory.size(),
         "duplicate_recycle_total": recycle_total,
+        "box_open_stats": box_open_stats,
     }
 
 
@@ -237,17 +245,19 @@ func _inventory_has_item_id(inventory_variant: Variant, item_id: String) -> bool
     return false
 
 
-func _duplicate_recycle_crystals_for(item: Dictionary) -> int:
+func _duplicate_recycle_crystals_for(item: Dictionary, box_cost: int) -> int:
     var rarity := str(item.get("rarity", "common")).to_lower()
+    var base := 1
     if rarity == "legendary":
-        return 12
-    if rarity == "epic":
-        return 7
-    if rarity == "rare":
-        return 4
-    if rarity == "uncommon":
-        return 2
-    return 1
+        base = 12
+    elif rarity == "epic":
+        base = 7
+    elif rarity == "rare":
+        base = 4
+    elif rarity == "uncommon":
+        base = 2
+    var capped_by_cost := maxi(1, int(floor(float(maxi(1, box_cost)) * 0.5)))
+    return mini(base, capped_by_cost)
 
 
 func _record_duplicate_recycle(world_state: Dictionary, item_id: String, crystals: int) -> void:
@@ -264,3 +274,70 @@ func _record_duplicate_recycle(world_state: Dictionary, item_id: String, crystal
     if rows.size() > 50:
         rows = rows.slice(rows.size() - 50, rows.size())
     world_state["duplicate_recycles"] = rows
+
+
+func _apply_low_value_protection(
+    world_state: Dictionary,
+    box_id: String,
+    selected: Dictionary,
+    table: Array,
+    rng: RandomNumberGenerator
+) -> Dictionary:
+    var streaks: Dictionary = world_state.get("box_low_value_streaks", {}).duplicate(true)
+    var streak := int(streaks.get(box_id, 0))
+    var rarity := str(selected.get("rarity", "common")).to_lower()
+    var is_low_value := rarity == "common"
+
+    if streak >= 3 and is_low_value:
+        var promoted_pool := _filter_non_common(table)
+        if not promoted_pool.is_empty():
+            selected = _pick_weighted(promoted_pool, rng)
+            rarity = str(selected.get("rarity", "common")).to_lower()
+            is_low_value = rarity == "common"
+
+    if is_low_value:
+        streaks[box_id] = streak + 1
+    else:
+        streaks[box_id] = 0
+    world_state["box_low_value_streaks"] = streaks
+    return selected
+
+
+func _filter_non_common(table: Array) -> Array:
+    var filtered: Array = []
+    for row_variant in table:
+        if typeof(row_variant) != TYPE_DICTIONARY:
+            continue
+        var row: Dictionary = row_variant
+        var rarity := str(row.get("rarity", "common")).to_lower()
+        if rarity == "common":
+            continue
+        filtered.append(row)
+    return filtered
+
+
+func _record_box_open_stats(
+    world_state: Dictionary,
+    box_id: String,
+    theme: String,
+    item: Dictionary,
+    duplicate: bool,
+    recycle_crystals: int
+) -> void:
+    var stats: Dictionary = world_state.get("box_open_stats", {}).duplicate(true)
+    var theme_key := theme if theme != "" else "unknown"
+    var row: Dictionary = stats.get(theme_key, {}).duplicate(true)
+    row["opens"] = int(row.get("opens", 0)) + 1
+    if duplicate:
+        row["duplicates"] = int(row.get("duplicates", 0)) + 1
+        row["recycle_crystals"] = int(row.get("recycle_crystals", 0)) + recycle_crystals
+
+    var rarity := str(item.get("rarity", "common")).to_lower()
+    var rarity_counts: Dictionary = row.get("rarity_counts", {}).duplicate(true)
+    rarity_counts[rarity] = int(rarity_counts.get(rarity, 0)) + 1
+    row["rarity_counts"] = rarity_counts
+    row["last_box_id"] = box_id
+    row["last_item_id"] = str(item.get("id", ""))
+    row["last_timestamp"] = Time.get_unix_time_from_system()
+    stats[theme_key] = row
+    world_state["box_open_stats"] = stats
