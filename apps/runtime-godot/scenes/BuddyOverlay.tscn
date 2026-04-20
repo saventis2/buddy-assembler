@@ -1,7 +1,8 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://scripts/buddy_overlay.gd" id="1"]
 [ext_resource type="Script" path="res://runtime/ui/chat_balloon.gd" id="2"]
+[ext_resource type="PackedScene" path="res://scenes/vertical_slice/BuddyActor.tscn" id="3"]
 
 [node name="BuddyOverlay" type="Node2D"]
 script = ExtResource("1")
@@ -13,6 +14,15 @@ autostart = true
 [node name="TelemetryTimer" type="Timer" parent="."]
 wait_time = 0.5
 autostart = true
+
+[node name="OverlayActorLayer" type="Node2D" parent="."]
+
+[node name="OverlayBuddyActor" parent="OverlayActorLayer" instance=ExtResource("3")]
+position = Vector2(120, 120)
+autonomous = true
+external_axis = 0.0
+collision_layer = 0
+collision_mask = 0
 
 [node name="Telemetry" type="CanvasLayer" parent="."]
 

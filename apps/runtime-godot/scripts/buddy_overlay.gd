@@ -53,10 +53,13 @@ const EncounterScheduler = preload("res://scripts/encounters/encounter_scheduler
 const ProductivityTracker = preload("res://scripts/utility/productivity_tracker.gd")
 const PromptCadence = preload("res://scripts/utility/prompt_cadence.gd")
 const ManualVerificationReport = preload("res://scripts/utility/manual_verification_report.gd")
+const BuddyActorScript = preload("res://runtime/actor/buddy_actor.gd")
 
 @onready var tick_timer: Timer = $TickTimer
 @onready var telemetry_timer: Timer = $TelemetryTimer
 @onready var telemetry_label: Label = $Telemetry/Label
+@onready var overlay_actor_layer: Node2D = $OverlayActorLayer
+@onready var overlay_actor: BuddyActor = $OverlayActorLayer/OverlayBuddyActor
 @onready var settings_window: Window = $SettingsWindow
 @onready var settings_label: RichTextLabel = $SettingsWindow/MarginContainer/SettingsVBox/SettingsLabel
 @onready var settings_btn_event_freq: Button = $SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid/BtnEventFreq
@@ -78,6 +81,7 @@ var _productivity := ProductivityTracker.new()
 var _prompt_cadence := PromptCadence.new()
 var _manual_verification_report := ManualVerificationReport.new()
 var _state := "idle"
+var _last_synced_actor_state := ""
 var _dragging := false
 var _drag_offset := Vector2i.ZERO
 var _bob_time := 0.0
@@ -156,6 +160,7 @@ func _ready() -> void:
     set_process_input(true)
     _productivity.note_session_reset(int(Time.get_unix_time_from_system()))
     telemetry_label.visible = false
+    _configure_overlay_actor_core()
     _configure_settings_window()
     _refresh_telemetry()
     if AppState.is_first_run():
@@ -237,6 +242,7 @@ func _input(event: InputEvent) -> void:
                 _state = "happy"
                 _set_emote_from_state(_state)
                 _set_visual_for_state(_state)
+                _sync_overlay_actor_state()
                 AppState.record_interaction("pet")
                 var after := AppState.get_telemetry_snapshot()
                 _show_progress_feedback(before, after)
@@ -255,6 +261,7 @@ func _input(event: InputEvent) -> void:
                 _state = "sleep" if _state != "sleep" else "idle"
                 _set_emote_from_state(_state)
                 _set_visual_for_state(_state)
+                _sync_overlay_actor_state()
                 AppState.record_interaction("toggle_sleep")
                 _productivity.note_user_activity(int(Time.get_unix_time_from_system()))
                 queue_redraw()
@@ -284,6 +291,7 @@ func _process(delta: float) -> void:
     else:
         _draw_center = base_center
     _advance_animation(delta)
+    _sync_overlay_actor_floor()
     queue_redraw()
 
 
@@ -344,6 +352,8 @@ func _configure_settings_window() -> void:
 
 
 func _draw() -> void:
+    if overlay_actor != null and is_instance_valid(overlay_actor):
+        return
     var center := _draw_center
     if _current_texture == null:
         _load_core_character_animation_fallbacks()
@@ -453,6 +463,7 @@ func _on_tick_timer_timeout() -> void:
     _state = new_state
     _set_emote_from_state(_state)
     _set_visual_for_state(_state)
+    _sync_overlay_actor_state()
     AppState.apply_behavior(_state)
     var world_prompt := AppState.tick_world_events(int(now_unix))
     if not world_prompt.is_empty():
@@ -716,6 +727,7 @@ func _cycle_pack() -> void:
     )
     _load_visual_assets(_active_pack_id, _active_manifest)
     AppState.apply_loaded_pack(_active_pack_id, _active_manifest)
+    _sync_overlay_actor_state(true)
     _update_balloon_position()
     chat_balloon.show_text(
         "Active pack: %s (%d available; visual deltas can be subtle)" % [_active_pack_id, ids.size()]
@@ -897,6 +909,38 @@ func _refresh_settings_menu() -> void:
     settings_btn_demo_world.text = "Demo World (Shift+F7)"
     settings_btn_reward.text = "Open Reward Box (F11)"
     settings_btn_telemetry.text = "Telemetry (F6): %s" % ("on" if _telemetry_enabled else "off")
+
+
+func _configure_overlay_actor_core() -> void:
+    if overlay_actor == null or not is_instance_valid(overlay_actor):
+        return
+    overlay_actor.autonomous = true
+    overlay_actor.external_axis = 0.0
+    overlay_actor.collision_layer = 0
+    overlay_actor.collision_mask = 0
+    _sync_overlay_actor_floor()
+    _sync_overlay_actor_state(true)
+
+
+func _sync_overlay_actor_floor() -> void:
+    if overlay_actor == null or not is_instance_valid(overlay_actor):
+        return
+    var floor := _floor_point()
+    overlay_actor.position.x = floor.x
+    overlay_actor.position.y = floor.y
+    overlay_actor.set_floor_lock_y(overlay_actor.global_position.y)
+
+
+func _sync_overlay_actor_state(force: bool = false) -> void:
+    if overlay_actor == null or not is_instance_valid(overlay_actor):
+        return
+    var target := _state
+    if target == "":
+        target = "idle"
+    if not force and target == _last_synced_actor_state:
+        return
+    _last_synced_actor_state = target
+    overlay_actor.command_play_emote(target)
 
 
 func _load_visual_assets(pack_id: String, manifest: Dictionary) -> void:
