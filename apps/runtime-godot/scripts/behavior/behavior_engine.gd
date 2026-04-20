@@ -97,6 +97,34 @@ func tick(now_unix: int, context: Dictionary) -> Dictionary:
 		if action_id == "visitor" and int(context.get("bond_level", 1)) >= 4:
 			weight *= 1.8
 
+		var activity_state := str(context.get("activity_state", "steady"))
+		if activity_state == "focused":
+			if action_id in ["idle", "sit", "sleep"]:
+				weight *= 1.25
+			elif action_id in ["gift", "visitor"]:
+				weight *= 0.65
+		elif activity_state == "idle":
+			if action_id in ["wander", "happy"]:
+				weight *= 1.25
+		elif activity_state == "late_session":
+			if action_id == "sleep":
+				weight *= 1.6
+			if action_id == "visitor":
+				weight *= 0.45
+
+		var interaction_intensity := str(context.get("interaction_intensity", "balanced"))
+		if interaction_intensity == "cozy":
+			if action_id in ["visitor", "gift"]:
+				weight *= 0.75
+		elif interaction_intensity == "deep":
+			if action_id in ["visitor", "gift", "happy"]:
+				weight *= 1.2
+
+		var quiet_strictness := str(context.get("quiet_strictness", "balanced"))
+		if context.get("quiet_mode", false) and quiet_strictness == "strict":
+			if action_id in ["visitor", "gift", "happy", "wander"]:
+				weight *= 0.05
+
 		if weight > 0.0:
 			weighted.append(
 				{

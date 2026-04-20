@@ -33,6 +33,15 @@ Updated: 2026-04-20 (world-layer stub wiring added)
   `PLAN5_MANUAL_VERIFICATION_LOG_2026-04-20.md`
 - [pending] Interactive desktop confirmation items in `SCENARIO_CHECKLIST.md`
 
+## Plan 6 (Companion Depth Foundation — 2026-04-20)
+
+- [done] Added activity-state context (`focused`, `idle`, `late_session`) from productivity tracker
+- [done] Added interaction-intensity + quiet-strictness knobs to behavior/encounter weighting
+- [done] Added user-facing support hints for focus/break/late-session events
+- [done] Added continuity digest memory in profile + continuity hint line on resume
+- [done] Added `CompanionDepthTest` coverage and wired it into headless checks
+- [pending] Final manual UX pass to confirm hint cadence is non-intrusive in desktop usage
+
 ## Phase 5 (Visual polish & WZ asset expansion — 2026-04-19)
 
 - [done] Per-frame hand tracking for held-prop overlays (renderer parses

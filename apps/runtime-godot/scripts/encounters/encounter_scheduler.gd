@@ -37,7 +37,11 @@ func configure(event_rules: Array, seed: int) -> void:
 func tick(now_unix: int, context: Dictionary) -> Dictionary:
     if _rules.is_empty():
         return {}
-    if bool(context.get("quiet_mode", false)):
+    var quiet_mode := bool(context.get("quiet_mode", false))
+    var quiet_strictness := str(context.get("quiet_strictness", "balanced"))
+    if quiet_mode and quiet_strictness == "strict":
+        return {}
+    if quiet_mode and quiet_strictness == "balanced":
         return {}
 
     var frequency := str(context.get("event_frequency", "normal"))
@@ -46,6 +50,25 @@ func tick(now_unix: int, context: Dictionary) -> Dictionary:
         gate_chance = 0.07
     elif frequency == "high":
         gate_chance = 0.30
+
+    var interaction_intensity := str(context.get("interaction_intensity", "balanced"))
+    if interaction_intensity == "cozy":
+        gate_chance *= 0.75
+    elif interaction_intensity == "deep":
+        gate_chance *= 1.2
+
+    var activity_state := str(context.get("activity_state", "steady"))
+    if activity_state == "focused":
+        gate_chance *= 0.70
+    elif activity_state == "idle":
+        gate_chance *= 1.15
+    elif activity_state == "late_session":
+        gate_chance *= 0.65
+
+    if quiet_mode and quiet_strictness == "lenient":
+        gate_chance *= 0.20
+
+    gate_chance = clampf(gate_chance, 0.01, 0.90)
 
     if _rng.randf() > gate_chance:
         return {}

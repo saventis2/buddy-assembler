@@ -45,23 +45,23 @@ Current log:
 
 ### Plan 6: Companion Depth Foundation (Milestone 5 from V1 plan)
 
-Status: `queued`
+Status: `in_progress`
 
 Tasks:
-- [ ] Add stronger real-activity reaction weighting (focus/idle/late sessions)
-- [ ] Add continuity memory summary between sessions (short rolling digest)
-- [ ] Add settings knobs for reaction intensity and quiet-mode strictness
-- [ ] Add user-facing state hints without notification spam
-- [ ] Add tests for activity-reaction cadence and quiet-hour suppression
+- [x] Add stronger real-activity reaction weighting (focus/idle/late sessions)
+- [x] Add continuity memory summary between sessions (short rolling digest)
+- [x] Add settings knobs for reaction intensity and quiet-mode strictness
+- [x] Add user-facing state hints without notification spam
+- [x] Add tests for activity-reaction cadence and quiet-hour suppression
 
 Done gate:
-- [ ] User activity reactions are visible but non-intrusive
-- [ ] Quiet settings consistently suppress high-frequency prompts
-- [ ] Headless checks pass with new tests
+- [ ] User activity reactions are visible but non-intrusive (manual desktop confirm)
+- [x] Quiet settings consistently suppress high-frequency prompts
+- [x] Headless checks pass with new tests
 
 ### Plan 7: Economy Tuning Pass 2 (Drop Feel and Pacing)
 
-Status: `queued`
+Status: `next`
 
 Tasks:
 - [ ] Tune rarity tables to preserve high-rarity excitement
@@ -106,3 +106,4 @@ Must pass:
 - SaveStoreTest
 - PackValidationTest
 - WorldEconomyFlowTest
+- CompanionDepthTest

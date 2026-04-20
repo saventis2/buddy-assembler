@@ -106,6 +106,7 @@ var _roam_direction := 1
 var _roam_subpixel_x := 0.0
 var _bond_phrase_active := false
 var _away_report_shown := false
+var _continuity_hint_shown := false
 
 
 func _ready() -> void:
@@ -159,6 +160,10 @@ func _input(event: InputEvent) -> void:
                 _cycle_home_mode()
             elif key_event.keycode == KEY_F7:
                 _cycle_event_frequency()
+            elif key_event.keycode == KEY_F4:
+                _cycle_interaction_intensity()
+            elif key_event.keycode == KEY_F3:
+                _cycle_quiet_strictness()
             elif key_event.keycode == KEY_F8:
                 _move_to_next_monitor()
             elif key_event.keycode == KEY_F9:
@@ -306,6 +311,9 @@ func _hit_test(point: Vector2) -> bool:
 func _on_tick_timer_timeout() -> void:
     var now_unix := Time.get_unix_time_from_system()
     var context := AppState.get_behavior_context(_allowed_actions)
+    var activity_context := _productivity.get_context(now_unix, AppState.settings)
+    for key in activity_context.keys():
+        context[key] = activity_context[key]
     var home_mode := str(context.get("home_mode", "overlay"))
 
     var productivity_event := _productivity.tick(now_unix, AppState.settings)
@@ -315,6 +323,7 @@ func _on_tick_timer_timeout() -> void:
         context["forced_action"] = prod_action
         _last_event_id = prod_event_id
         AppState.record_event_trigger(prod_event_id, prod_action)
+        _show_support_hint(productivity_event)
 
     if home_mode != "home":
         var selected_event := _encounters.tick(now_unix, context)
@@ -430,6 +439,34 @@ func _cycle_event_frequency() -> void:
     index = (index + 1) % values.size()
     AppState.settings["eventFrequency"] = values[index]
     AppState.flush()
+    _refresh_telemetry()
+
+
+func _cycle_interaction_intensity() -> void:
+    var current := str(AppState.settings.get("interactionIntensity", "balanced"))
+    var values := ["cozy", "balanced", "deep"]
+    var index := values.find(current)
+    if index < 0:
+        index = 1
+    index = (index + 1) % values.size()
+    AppState.settings["interactionIntensity"] = values[index]
+    AppState.flush()
+    _update_balloon_position()
+    chat_balloon.show_text("Interaction intensity: %s" % values[index])
+    _refresh_telemetry()
+
+
+func _cycle_quiet_strictness() -> void:
+    var current := str(AppState.settings.get("quietModeStrictness", "balanced"))
+    var values := ["lenient", "balanced", "strict"]
+    var index := values.find(current)
+    if index < 0:
+        index = 1
+    index = (index + 1) % values.size()
+    AppState.settings["quietModeStrictness"] = values[index]
+    AppState.flush()
+    _update_balloon_position()
+    chat_balloon.show_text("Quiet strictness: %s" % values[index])
     _refresh_telemetry()
 
 
@@ -550,6 +587,11 @@ func _refresh_telemetry() -> void:
             str(AppState.settings.get("eventFrequency", "normal")),
             "on" if AppState.is_quiet_hours_now() else "off"
         ],
+        "intensity: %s  quiet strict: %s" % [
+            str(snapshot.get("interaction_intensity", "balanced")),
+            str(snapshot.get("quiet_strictness", "balanced")),
+        ],
+        "continuity entries: %d" % int(snapshot.get("continuity_digest_count", 0)),
         "focus mins: %d  prod: %s" % [
             _productivity.focus_minutes(int(Time.get_unix_time_from_system())),
             "on" if bool(AppState.settings.get("productivityOptIn", false)) else "off"
@@ -567,7 +609,8 @@ func _refresh_telemetry() -> void:
         "pending quest: %s" % str(snapshot.get("pending_quest_id", "")),
         "pending encounter: %s" % str(snapshot.get("pending_encounter_id", "")),
         "world event: %s" % str(snapshot.get("last_world_event_id", "")),
-        "F5 mode  F6 telemetry  F7 freq  F8 monitor  F9 pack  F10 emotes  F11 reward  F12 world",
+        "F3 quiet strict  F4 intensity  F5 mode  F6 telemetry  F7 freq  F8 monitor",
+        "F9 pack  F10 emotes  F11 reward  F12 world",
     ]
     if _debug_emote_panel_enabled:
         var lock_remaining := maxi(0, _manual_emote_until_unix - int(Time.get_unix_time_from_system()))
@@ -1404,6 +1447,20 @@ func _show_while_away_report_once() -> void:
     await get_tree().create_timer(5.0).timeout
     chat_balloon.hide_bubble()
     AppState.clear_last_active_summary()
+    _show_continuity_hint_once()
+
+
+func _show_continuity_hint_once() -> void:
+    if _continuity_hint_shown or not bool(AppState.settings.get("supportHintsEnabled", true)):
+        return
+    _continuity_hint_shown = true
+    var hint := AppState.get_continuity_hint()
+    if hint == "":
+        return
+    _update_balloon_position()
+    chat_balloon.show_text(hint)
+    await get_tree().create_timer(4.0).timeout
+    chat_balloon.hide_bubble()
 
 
 func _open_debug_reward_box() -> void:
@@ -1495,3 +1552,20 @@ func _cycle_home_mode() -> void:
     else:
         chat_balloon.show_text("Overlay mode active.")
     _refresh_telemetry()
+
+
+func _show_support_hint(productivity_event: Dictionary) -> void:
+    if not bool(AppState.settings.get("supportHintsEnabled", true)):
+        return
+    var event_id := str(productivity_event.get("id", ""))
+    var line := ""
+    if event_id == "focus-celebration":
+        line = "You are focused. Nice momentum."
+    elif event_id == "break-suggestion":
+        line = "Quick stretch break could help."
+    elif event_id == "late-session-checkin":
+        line = "It is getting late. Want to wind down?"
+    if line == "":
+        return
+    _update_balloon_position()
+    chat_balloon.show_text(line)

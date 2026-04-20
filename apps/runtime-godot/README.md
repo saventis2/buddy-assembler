@@ -43,6 +43,8 @@ A separate architecture-first slice is available at:
 - Left click + drag: move companion
 - Right click: sleep toggle
 - `F6`: toggle telemetry overlay
+- `F3`: cycle quiet strictness (`lenient`, `balanced`, `strict`)
+- `F4`: cycle interaction intensity (`cozy`, `balanced`, `deep`)
 - `F7`: cycle event frequency (`low`, `normal`, `high`)
 - `F8`: move companion to next monitor
 - `F9`: cycle available content packs

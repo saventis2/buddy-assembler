@@ -220,6 +220,8 @@ func get_behavior_context(allowed_actions: Array = []) -> Dictionary:
         "trust_value": float(profile.get("trust_value", 0.2)),
         "quiet_mode": is_quiet_hours_now(),
         "event_frequency": str(settings.get("eventFrequency", "normal")),
+        "interaction_intensity": str(settings.get("interactionIntensity", "balanced")),
+        "quiet_strictness": str(settings.get("quietModeStrictness", "balanced")),
         "allowed_actions": allowed_actions,
         "unlocked_actions": get_unlocked_actions(),
         "dominant_mood": str(mood_ctx.get("dominant_mood", "calm")),
@@ -231,6 +233,38 @@ func get_behavior_context(allowed_actions: Array = []) -> Dictionary:
 
 func get_last_active_summary() -> String:
     return str(profile.get("last_active_summary", ""))
+
+
+func get_continuity_digest() -> Array:
+    var digest = profile.get("continuity_digest", [])
+    return digest if typeof(digest) == TYPE_ARRAY else []
+
+
+func get_latest_continuity_line() -> String:
+    var digest := get_continuity_digest()
+    if digest.is_empty():
+        return ""
+    var tail = digest[-1]
+    if typeof(tail) != TYPE_DICTIONARY:
+        return ""
+    return str((tail as Dictionary).get("line", ""))
+
+
+func get_continuity_hint() -> String:
+    if not bool(settings.get("continuityDigestEnabled", true)):
+        return ""
+    var digest := get_continuity_digest()
+    if digest.size() < 2:
+        return ""
+    var first = digest[digest.size() - 2]
+    var last = digest[digest.size() - 1]
+    if typeof(first) != TYPE_DICTIONARY or typeof(last) != TYPE_DICTIONARY:
+        return ""
+    var a := str((first as Dictionary).get("line", ""))
+    var b := str((last as Dictionary).get("line", ""))
+    if a == "" or b == "":
+        return ""
+    return "Last time: %s Now: %s" % [a, b]
 
 
 func clear_last_active_summary() -> void:
@@ -362,6 +396,9 @@ func get_telemetry_snapshot() -> Dictionary:
         "pending_quest_id": str(world_snapshot.get("pending_quest_id", "")),
         "pending_encounter_id": str(world_snapshot.get("pending_encounter_id", "")),
         "last_world_event_id": str(world_snapshot.get("last_world_event_id", "")),
+        "interaction_intensity": str(settings.get("interactionIntensity", "balanced")),
+        "quiet_strictness": str(settings.get("quietModeStrictness", "balanced")),
+        "continuity_digest_count": get_continuity_digest().size(),
     }
 
 
@@ -465,6 +502,23 @@ func _refresh_while_away_report() -> void:
     var summary := str(report.get("summary", ""))
     if summary != "":
         profile["last_active_summary"] = summary
+        _append_continuity_line(summary, int(report.get("elapsed_minutes", 0)))
+
+
+func _append_continuity_line(summary: String, elapsed_minutes: int) -> void:
+    if summary == "" or not bool(settings.get("continuityDigestEnabled", true)):
+        return
+    var digest: Array = get_continuity_digest()
+    digest.append(
+        {
+            "line": summary,
+            "elapsed_minutes": elapsed_minutes,
+            "timestamp": Time.get_unix_time_from_system(),
+        }
+    )
+    if digest.size() > 10:
+        digest = digest.slice(digest.size() - 10, digest.size())
+    profile["continuity_digest"] = digest
 
 
 func _call_profile_service(name: String, method: String, args: Array, write_back: bool = true) -> Dictionary:
@@ -519,9 +573,15 @@ func _default_settings() -> Dictionary:
         "quietHoursStart": 22,
         "quietHoursEnd": 7,
         "eventFrequency": "normal",
+        "interactionIntensity": "balanced",
+        "quietModeStrictness": "balanced",
+        "continuityDigestEnabled": true,
+        "supportHintsEnabled": true,
         "productivityOptIn": false,
         "focusCelebrateMinutes": 20,
         "breakSuggestMinutes": 45,
+        "lateSessionHourStart": 23,
+        "idleCheckinMinutes": 20,
         "selectedPackId": "core_pack",
         "preferredScreen": 0,
         "lastWindowPosition": [120, 120],
@@ -581,6 +641,7 @@ func _default_profile() -> Dictionary:
         "gifts_seen": 0,
         "total_interactions": 0,
         "last_active_summary": "",
+        "continuity_digest": [],
         "unlocks": [],
     }
 

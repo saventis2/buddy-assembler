@@ -72,6 +72,16 @@ if ($worldEcoCode -ne 0) {
 }
 Write-Host "World + economy flow test PASSED."
 
+# --- Companion depth cadence test ---
+Write-Host ""
+Write-Host "=== Companion depth cadence test ==="
+$depthCode = Invoke-GodotHeadless -ExtraArgs @("--scene", "res://tests/CompanionDepthTest.tscn") -Label "companion-depth"
+if ($depthCode -ne 0) {
+    Write-Host "Companion depth cadence test FAILED (exit $depthCode)"
+    exit $depthCode
+}
+Write-Host "Companion depth cadence test PASSED."
+
 # --- Optional: frame-time profiling ---
 if ($Profile) {
     Write-Host ""
