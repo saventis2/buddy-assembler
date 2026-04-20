@@ -155,6 +155,8 @@ func _input(event: InputEvent) -> void:
             if key_event.keycode == KEY_F6:
                 _telemetry_enabled = not _telemetry_enabled
                 _refresh_telemetry()
+            elif key_event.keycode == KEY_F5:
+                _cycle_home_mode()
             elif key_event.keycode == KEY_F7:
                 _cycle_event_frequency()
             elif key_event.keycode == KEY_F8:
@@ -304,6 +306,7 @@ func _hit_test(point: Vector2) -> bool:
 func _on_tick_timer_timeout() -> void:
     var now_unix := Time.get_unix_time_from_system()
     var context := AppState.get_behavior_context(_allowed_actions)
+    var home_mode := str(context.get("home_mode", "overlay"))
 
     var productivity_event := _productivity.tick(now_unix, AppState.settings)
     if not productivity_event.is_empty():
@@ -313,16 +316,17 @@ func _on_tick_timer_timeout() -> void:
         _last_event_id = prod_event_id
         AppState.record_event_trigger(prod_event_id, prod_action)
 
-    var selected_event := _encounters.tick(now_unix, context)
-    if not selected_event.is_empty():
-        var event_id := str(selected_event.get("id", ""))
-        var action_id := str(selected_event.get("action", "gift"))
-        var per_hour := int(selected_event.get("per_hour", 1))
-        var per_day := int(selected_event.get("per_day", 4))
-        if not context.has("forced_action") and AppState.try_consume_event_budget(event_id, per_hour, per_day):
-            context["forced_action"] = action_id
-            _last_event_id = event_id
-            AppState.record_event_trigger(event_id, action_id)
+    if home_mode != "home":
+        var selected_event := _encounters.tick(now_unix, context)
+        if not selected_event.is_empty():
+            var event_id := str(selected_event.get("id", ""))
+            var action_id := str(selected_event.get("action", "gift"))
+            var per_hour := int(selected_event.get("per_hour", 1))
+            var per_day := int(selected_event.get("per_day", 4))
+            if not context.has("forced_action") and AppState.try_consume_event_budget(event_id, per_hour, per_day):
+                context["forced_action"] = action_id
+                _last_event_id = event_id
+                AppState.record_event_trigger(event_id, action_id)
 
     var was_sleeping := _state == "sleep"
     var action := _engine.tick(now_unix, context)
@@ -554,11 +558,15 @@ func _refresh_telemetry() -> void:
         "sprite: %s" % _sprite_debug_label(),
         "ground: disabled",
         "last event: %s" % _last_event_id,
+        "mode: %s  wall decor: %s" % [
+            str(snapshot.get("home_mode", "overlay")),
+            str(snapshot.get("home_wall_decor", "")),
+        ],
         "home: %s" % str(snapshot.get("home_scene_id", "cozy_starter_room")),
         "pending quest: %s" % str(snapshot.get("pending_quest_id", "")),
         "pending encounter: %s" % str(snapshot.get("pending_encounter_id", "")),
         "world event: %s" % str(snapshot.get("last_world_event_id", "")),
-        "F6 telemetry  F7 freq  F8 monitor  F9 pack  F10 emotes  F11 reward  F12 world",
+        "F5 mode  F6 telemetry  F7 freq  F8 monitor  F9 pack  F10 emotes  F11 reward  F12 world",
     ]
     if _debug_emote_panel_enabled:
         var lock_remaining := maxi(0, _manual_emote_until_unix - int(Time.get_unix_time_from_system()))
@@ -1464,3 +1472,21 @@ func _resolve_world_prompt(engage_encounter: bool) -> void:
         return
 
     chat_balloon.show_text("No pending world prompt.")
+
+
+func _cycle_home_mode() -> void:
+    var snapshot := AppState.get_world_snapshot()
+    var current_mode := str(snapshot.get("home_mode", "overlay"))
+    var next_mode := "home" if current_mode != "home" else "overlay"
+    AppState.set_home_mode(next_mode)
+    _update_balloon_position()
+    var home_name := str(snapshot.get("home_scene_id", "cozy_starter_room"))
+    if next_mode == "home":
+        var wall_decor := str(snapshot.get("home_wall_decor", ""))
+        var suffix := ""
+        if wall_decor != "":
+            suffix = " wall decor: %s" % wall_decor
+        chat_balloon.show_text("Home mode active (%s)%s" % [home_name, suffix])
+    else:
+        chat_balloon.show_text("Overlay mode active.")
+    _refresh_telemetry()

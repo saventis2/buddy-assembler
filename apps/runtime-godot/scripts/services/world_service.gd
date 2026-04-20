@@ -298,8 +298,12 @@ func resolve_pending_encounter(world_state: Dictionary, engage: bool) -> Diction
 func get_snapshot(world_state: Dictionary) -> Dictionary:
 	var merged := ensure_world_state(world_state)
 	var world: Dictionary = merged.get("world", {})
+	var home_layout: Dictionary = world.get("home_layout", {})
+	var decor_slots: Dictionary = home_layout.get("decorSlots", {})
 	return {
+		"home_mode": str(world.get("home_mode", "overlay")),
 		"home_scene_id": str(world.get("home_layout", {}).get("sceneId", "cozy_starter_room")),
+		"home_wall_decor": str(decor_slots.get("wall", "")),
 		"pending_quest_id": str(world.get("pending_quest_id", "")),
 		"pending_encounter_id": str(world.get("pending_encounter_id", "")),
 		"npc_count": (world.get("npcs", []) as Array).size(),
@@ -307,6 +311,15 @@ func get_snapshot(world_state: Dictionary) -> Dictionary:
 		"encounter_count": (world.get("encounters", []) as Array).size(),
 		"last_world_event_id": str(world.get("last_world_event_id", "")),
 	}
+
+
+func set_home_mode(world_state: Dictionary, mode: String) -> Dictionary:
+	var merged := ensure_world_state(world_state)
+	var world: Dictionary = merged.get("world", {}).duplicate(true)
+	var normalized := "home" if mode == "home" else "overlay"
+	world["home_mode"] = normalized
+	merged["world"] = world
+	return merged
 
 
 func _normalize_npcs(value: Variant) -> Array:

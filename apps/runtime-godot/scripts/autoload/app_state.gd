@@ -213,6 +213,7 @@ func get_behavior_context(allowed_actions: Array = []) -> Dictionary:
     var mood_ctx: Dictionary = _call_service_with_fallback("mood", "get_context", [profile], {})
     var growth_ctx: Dictionary = _call_service_with_fallback("growth", "get_context", [profile], {})
     var identity_ctx: Dictionary = _call_service_with_fallback("identity", "get_context", [profile], {})
+    var world_snapshot: Dictionary = _call_service_with_fallback("world", "get_snapshot", [world_state], {})
     return {
         "is_night": _is_night(),
         "bond_level": int(profile.get("bond_level", 1)),
@@ -224,6 +225,7 @@ func get_behavior_context(allowed_actions: Array = []) -> Dictionary:
         "dominant_mood": str(mood_ctx.get("dominant_mood", "calm")),
         "growth_stage": int(growth_ctx.get("growth_stage", 1)),
         "top_trait": str(identity_ctx.get("top_trait", "curiosity")),
+        "home_mode": str(world_snapshot.get("home_mode", "overlay")),
     }
 
 
@@ -276,6 +278,11 @@ func tick_world_events(now_unix: int) -> Dictionary:
 func get_world_snapshot() -> Dictionary:
     var snapshot = _call_service_with_fallback("world", "get_snapshot", [world_state], {})
     return snapshot if typeof(snapshot) == TYPE_DICTIONARY else {}
+
+
+func set_home_mode(mode: String) -> void:
+    world_state = _call_world_service("world", "set_home_mode", [world_state, mode], false)
+    flush()
 
 
 func complete_pending_quest() -> Dictionary:
@@ -347,6 +354,8 @@ func get_telemetry_snapshot() -> Dictionary:
         "crystals": int(econ_snapshot.get("crystals", 0)),
         "inventory_count": int(econ_snapshot.get("inventory_count", 0)),
         "home_scene_id": str(world_snapshot.get("home_scene_id", "cozy_starter_room")),
+        "home_mode": str(world_snapshot.get("home_mode", "overlay")),
+        "home_wall_decor": str(world_snapshot.get("home_wall_decor", "")),
         "pending_quest_id": str(world_snapshot.get("pending_quest_id", "")),
         "pending_encounter_id": str(world_snapshot.get("pending_encounter_id", "")),
         "last_world_event_id": str(world_snapshot.get("last_world_event_id", "")),

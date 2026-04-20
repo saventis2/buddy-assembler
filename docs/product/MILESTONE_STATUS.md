@@ -12,6 +12,7 @@ Updated: 2026-04-20 (world-layer stub wiring added)
 - [done] Added `world_service.gd` with pending quest/encounter rotation
 - [done] Added AppState world hooks for prompt ticking + quest/encounter resolution
 - [done] Added overlay controls for world flow (`F12` engage/complete, `Shift+F12` skip encounter)
+- [done] Added home/overlay mode toggle (`F5`) with home-scene/decor telemetry
 - [done] Wired rewards from quest/encounter outcomes into economy service transactions
 
 ## Phase 5 (Visual polish & WZ asset expansion — 2026-04-19)
