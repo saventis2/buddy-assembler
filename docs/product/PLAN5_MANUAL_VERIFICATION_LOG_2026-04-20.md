@@ -16,6 +16,12 @@ One-command gate runner:
 pwsh -NoLogo -File apps/runtime-godot/tests/run_plan5_gate.ps1
 ```
 
+Note:
+- Gate runner now launches both runtime sessions automatically:
+  1) normal runtime window
+  2) vertical-slice window
+- Close each window after completing the corresponding checklist section.
+
 ## Summary
 
 - Automated pre-checks: **PASS**

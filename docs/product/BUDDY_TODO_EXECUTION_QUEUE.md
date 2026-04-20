@@ -99,7 +99,9 @@ Verification:
 
 ## Follow-Up Backlog (Populate During Testing)
 
-- [ ] TBD from Plan 5 manual verification
+- [x] Fix Plan 5 gate runner to auto-launch runtime + vertical-slice sessions
+- [x] Fix default manual log path to repo `docs/product/` root
+- [ ] Re-run Plan 5 after gate-runner fix and capture updated log
 
 ## Verification Gate (Run After Each Plan)
 

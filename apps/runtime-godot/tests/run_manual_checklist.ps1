@@ -63,7 +63,7 @@ function Get-OutputPath {
         return $RequestedPath
     }
 
-    $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+    $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path
     $dateStamp = Get-Date -Format "yyyy-MM-dd"
     return Join-Path $repoRoot ("docs\product\PLAN5_MANUAL_VERIFICATION_LOG_{0}.md" -f $dateStamp)
 }

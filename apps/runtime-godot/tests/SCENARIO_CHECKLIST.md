@@ -26,6 +26,12 @@ One-command Plan 5 gate flow:
 pwsh ./run_plan5_gate.ps1
 ```
 
+Non-interactive tooling smoke mode (skip GUI launches):
+
+```powershell
+pwsh ./run_plan5_gate.ps1 -SkipRuntimeLaunch -UseDefaults -DefaultResult pending
+```
+
 ## Overlay Basics
 
 1. Launch scene and confirm transparent always-on-top window.
