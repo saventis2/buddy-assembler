@@ -80,6 +80,7 @@ godot_console.exe --path apps/runtime-godot -- --vertical-slice
 2. **Jump** — Press Space; character leaves the ground, plays jump animation, lands back at floor.
 3. **Emote** — Press `E`; happy emote plays and holds briefly before returning to idle/walk.
    - Also test `R` (sad), `T` (angry), `Y` (love).
+   - Note: VS checks are for the vertical-slice window, not transparent overlay mode.
 4. **Facing flip** — Walk right; sprite faces right. Walk left; sprite faces left.
 5. **Floor lock** — Jump and land repeatedly; actor must not sink below floor level.
 6. **Text-wrap hint** — Top-of-window hint label is fully readable and wraps within window width.

@@ -70,7 +70,7 @@ function Get-OutputPath {
 
 $items = @(
     (New-ChecklistItem -Id "OB1" -Section "Overlay Basics" -Prompt "Launch transparent always-on-top window."),
-    (New-ChecklistItem -Id "OB2" -Section "Overlay Basics" -Prompt "Left-click drag smooth reposition."),
+    (New-ChecklistItem -Id "OB2" -Section "Overlay Basics" -Prompt "Left-click drag feels smooth while held; release settles back to floor cleanly."),
     (New-ChecklistItem -Id "OB3" -Section "Overlay Basics" -Prompt "Right-click sleep toggle."),
 
     (New-ChecklistItem -Id "MM1" -Section "Multi-Monitor" -Prompt "Drag across monitor edges/displays."),
@@ -87,12 +87,12 @@ $items = @(
     (New-ChecklistItem -Id "PG2" -Section "Progression and Unlocks" -Prompt "Unlock growth appears at expected levels."),
     (New-ChecklistItem -Id "PG3" -Section "Progression and Unlocks" -Prompt "Restart preserves progression state."),
 
-    (New-ChecklistItem -Id "CP1" -Section "Content Packs" -Prompt "F9 pack cycle works in runtime."),
+    (New-ChecklistItem -Id "CP1" -Section "Content Packs" -Prompt "F9 pack cycle works in runtime (validate by pack id/chat telemetry, visuals may be subtle)."),
     (New-ChecklistItem -Id "CP2" -Section "Content Packs" -Prompt "Telemetry reflects active pack."),
 
     (New-ChecklistItem -Id "VS1" -Section "Vertical Slice" -Prompt "Movement left/right is smooth."),
-    (New-ChecklistItem -Id "VS2" -Section "Vertical Slice" -Prompt "Jump leaves and lands correctly."),
-    (New-ChecklistItem -Id "VS3" -Section "Vertical Slice" -Prompt "Emote keys E/R/T/Y work and recover."),
+    (New-ChecklistItem -Id "VS2" -Section "Vertical Slice" -Prompt "Jump leaves and lands correctly (vertical-slice window only)."),
+    (New-ChecklistItem -Id "VS3" -Section "Vertical Slice" -Prompt "Emote keys E/R/T/Y work and recover (vertical-slice window only)."),
     (New-ChecklistItem -Id "VS4" -Section "Vertical Slice" -Prompt "Facing flip matches movement direction."),
     (New-ChecklistItem -Id "VS5" -Section "Vertical Slice" -Prompt "Floor lock remains stable under repeated jumps."),
     (New-ChecklistItem -Id "VS6" -Section "Vertical Slice" -Prompt "Top hint text wraps and stays readable."),
@@ -100,7 +100,7 @@ $items = @(
     (New-ChecklistItem -Id "SB1" -Section "Speech Bubble Timer" -Prompt "Idle bubble appears at expected cadence."),
     (New-ChecklistItem -Id "SB2" -Section "Speech Bubble Timer" -Prompt "Bubble duration timeout works."),
     (New-ChecklistItem -Id "SB3" -Section "Speech Bubble Timer" -Prompt "[ and ] duration controls work."),
-    (New-ChecklistItem -Id "SB4" -Section "Speech Bubble Timer" -Prompt "Updated duration applies to new say event.")
+    (New-ChecklistItem -Id "SB4" -Section "Speech Bubble Timer" -Prompt "After [ or ] and pressing M, updated duration applies to new say event.")
 )
 
 $results = @()

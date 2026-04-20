@@ -18,7 +18,7 @@ const NO_PIVOT := Vector2(-1.0, -1.0)
 # shift, every pose hovers by that amount. Lowering the render by this offset
 # preserves each animation's RELATIVE vertical intent (idle vs walk vs jumping
 # emotes) while landing the shoes on the floor in standing poses.
-const CHARACTER_FLOOR_OFFSET_PX := 15.0
+const CHARACTER_FLOOR_OFFSET_PX := 10.0
 
 # Per-action extra floor offset. Some WZ actions (prone/sleep) are authored
 # with a pivot that leaves the body hovering at our standard offset — add

@@ -13,6 +13,7 @@ const ACTION_EXTRA_FLOOR_OFFSET := {
     "sleep": 15.0,
 }
 const DEFAULT_ROAM_SPEED_PX_PER_SEC := 96.0
+const FLOOR_SETTLE_SPEED_PX_PER_SEC := 720.0
 const DEFAULT_SPRITE_ANCHOR := Vector2(0.5, 1.0)
 const NO_PIVOT := Vector2(-1.0, -1.0)
 const SLEEP_PIVOT_OVERFLOW_BLEND := 1.0
@@ -112,6 +113,7 @@ var _last_face_texture_path := ""
 var _roam_speed_px_per_sec := DEFAULT_ROAM_SPEED_PX_PER_SEC
 var _roam_direction := 1
 var _roam_subpixel_x := 0.0
+var _floor_settle_active := false
 var _bond_phrase_active := false
 var _last_idle_phrase_unix := 0
 var _away_report_shown := false
@@ -228,6 +230,7 @@ func _input(event: InputEvent) -> void:
                     DisplayServer.window_get_current_screen(),
                     DisplayServer.window_get_position()
                 )
+                _floor_settle_active = true
                 _return_to_idle_after_drag()
         elif button_event.button_index == MOUSE_BUTTON_RIGHT and button_event.pressed:
             if _hit_test(button_event.position):
@@ -544,11 +547,21 @@ func _update_window_roam(delta: float) -> void:
     var floor_y := screen_rect.position.y + maxi(0, screen_rect.size.y - window_size.y)
 
     var current_pos := DisplayServer.window_get_position()
-    if current_pos.y != floor_y:
-        current_pos.y = floor_y
 
     if not roam_state:
         var floor_locked := _clamp_window_to_screen(current_pos, current_screen)
+        if floor_locked.y != floor_y and (_floor_settle_active or current_pos.y != floor_y):
+            var dir := 1 if floor_locked.y < floor_y else -1
+            var step := int(round(FLOOR_SETTLE_SPEED_PX_PER_SEC * delta)) * dir
+            if step == 0:
+                step = dir
+            floor_locked.y += step
+            if (dir > 0 and floor_locked.y > floor_y) or (dir < 0 and floor_locked.y < floor_y):
+                floor_locked.y = floor_y
+        else:
+            floor_locked.y = floor_y
+        if floor_locked.y == floor_y:
+            _floor_settle_active = false
         if floor_locked != DisplayServer.window_get_position():
             DisplayServer.window_set_position(floor_locked)
             AppState.set_window_state(current_screen, floor_locked)
