@@ -53,6 +53,7 @@ Tasks:
 - [x] Add settings knobs for reaction intensity and quiet-mode strictness
 - [x] Add user-facing state hints without notification spam
 - [x] Add tests for activity-reaction cadence and quiet-hour suppression
+- [x] Add deterministic scheduler cadence regression (`low < normal < high`)
 
 Done gate:
 - [ ] User activity reactions are visible but non-intrusive (manual desktop confirm)

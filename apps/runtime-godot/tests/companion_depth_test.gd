@@ -21,6 +21,7 @@ func _run_all() -> void:
 	_case("productivity_intensity_thresholds", func(): return _test_productivity_intensity_thresholds())
 	_case("productivity_strict_quiet_suppression", func(): return _test_productivity_strict_quiet_suppression())
 	_case("encounter_quiet_strictness_behavior", func(): return _test_encounter_quiet_strictness_behavior())
+	_case("encounter_frequency_setting_cadence", func(): return _test_encounter_frequency_setting_cadence())
 
 
 func _case(name: String, body: Callable) -> void:
@@ -130,4 +131,42 @@ func _test_encounter_quiet_strictness_behavior() -> Variant:
 			break
 	if not saw_lenient:
 		return "expected at least one encounter under lenient quiet settings"
+	return null
+
+
+func _count_events_for_frequency(frequency: String) -> int:
+	var scheduler := EncounterScheduler.new()
+	scheduler.configure(
+		[
+			{
+				"id": "visitor-hello",
+				"action": "visitor",
+				"weight": 1.0,
+				"cooldownSeconds": 1,
+				"perHour": 9999,
+				"perDay": 9999,
+			}
+		],
+		24680
+	)
+	var context := {
+		"quiet_mode": false,
+		"quiet_strictness": "balanced",
+		"event_frequency": frequency,
+		"interaction_intensity": "balanced",
+		"activity_state": "steady",
+	}
+	var count := 0
+	for i in range(2400):
+		if not scheduler.tick(10000 + i, context).is_empty():
+			count += 1
+	return count
+
+
+func _test_encounter_frequency_setting_cadence() -> Variant:
+	var low_count := _count_events_for_frequency("low")
+	var normal_count := _count_events_for_frequency("normal")
+	var high_count := _count_events_for_frequency("high")
+	if not (low_count < normal_count and normal_count < high_count):
+		return "expected cadence ordering low < normal < high, got %d < %d < %d" % [low_count, normal_count, high_count]
 	return null
