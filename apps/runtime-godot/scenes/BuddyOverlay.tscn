@@ -52,15 +52,63 @@ theme_override_constants/margin_top = 6
 theme_override_constants/margin_right = 6
 theme_override_constants/margin_bottom = 6
 
-[node name="SettingsLabel" type="RichTextLabel" parent="SettingsWindow/MarginContainer"]
+[node name="SettingsVBox" type="VBoxContainer" parent="SettingsWindow/MarginContainer"]
+layout_mode = 2
+
+[node name="SettingsLabel" type="RichTextLabel" parent="SettingsWindow/MarginContainer/SettingsVBox"]
 bbcode_enabled = true
 scroll_active = true
 fit_content = false
+size_flags_vertical = 3
 theme_override_font_sizes/font_size = 13
 theme_override_colors/font_color = Color(0.96, 0.91, 0.81, 0.98)
 theme_override_colors/font_outline_color = Color(0.13, 0.09, 0.05, 0.95)
 theme_override_constants/outline_size = 2
 text = "Settings Menu (F10)"
+
+[node name="ControlsGrid" type="GridContainer" parent="SettingsWindow/MarginContainer/SettingsVBox"]
+layout_mode = 2
+columns = 2
+
+[node name="BtnEventFreq" type="Button" parent="SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid"]
+layout_mode = 2
+text = "Event Frequency"
+
+[node name="BtnPromptFreq" type="Button" parent="SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid"]
+layout_mode = 2
+text = "Prompt Frequency"
+
+[node name="BtnQuietStrict" type="Button" parent="SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid"]
+layout_mode = 2
+text = "Quiet Strictness"
+
+[node name="BtnIntensity" type="Button" parent="SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid"]
+layout_mode = 2
+text = "Interaction Intensity"
+
+[node name="BtnMode" type="Button" parent="SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid"]
+layout_mode = 2
+text = "Home/Overlay Mode"
+
+[node name="BtnPack" type="Button" parent="SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid"]
+layout_mode = 2
+text = "Cycle Content Pack"
+
+[node name="BtnDemoSupport" type="Button" parent="SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid"]
+layout_mode = 2
+text = "Demo Support Prompt"
+
+[node name="BtnDemoWorld" type="Button" parent="SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid"]
+layout_mode = 2
+text = "Demo World Prompt"
+
+[node name="BtnReward" type="Button" parent="SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid"]
+layout_mode = 2
+text = "Open Reward Box"
+
+[node name="BtnTelemetry" type="Button" parent="SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid"]
+layout_mode = 2
+text = "Toggle Telemetry"
 
 [node name="WelcomeLayer" type="CanvasLayer" parent="."]
 

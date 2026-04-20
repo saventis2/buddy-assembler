@@ -58,7 +58,17 @@ const ManualVerificationReport = preload("res://scripts/utility/manual_verificat
 @onready var telemetry_timer: Timer = $TelemetryTimer
 @onready var telemetry_label: Label = $Telemetry/Label
 @onready var settings_window: Window = $SettingsWindow
-@onready var settings_label: RichTextLabel = $SettingsWindow/MarginContainer/SettingsLabel
+@onready var settings_label: RichTextLabel = $SettingsWindow/MarginContainer/SettingsVBox/SettingsLabel
+@onready var settings_btn_event_freq: Button = $SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid/BtnEventFreq
+@onready var settings_btn_prompt_freq: Button = $SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid/BtnPromptFreq
+@onready var settings_btn_quiet: Button = $SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid/BtnQuietStrict
+@onready var settings_btn_intensity: Button = $SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid/BtnIntensity
+@onready var settings_btn_mode: Button = $SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid/BtnMode
+@onready var settings_btn_pack: Button = $SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid/BtnPack
+@onready var settings_btn_demo_support: Button = $SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid/BtnDemoSupport
+@onready var settings_btn_demo_world: Button = $SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid/BtnDemoWorld
+@onready var settings_btn_reward: Button = $SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid/BtnReward
+@onready var settings_btn_telemetry: Button = $SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid/BtnTelemetry
 @onready var chat_balloon: Node2D = $ChatBalloon
 @onready var welcome_label: Label = $WelcomeLayer/WelcomeLabel
 
@@ -293,6 +303,43 @@ func _configure_settings_window() -> void:
     settings_window.close_requested.connect(func() -> void:
         settings_window.hide()
         _settings_menu_open = false
+    )
+    settings_btn_event_freq.pressed.connect(func() -> void:
+        _cycle_event_frequency()
+    )
+    settings_btn_prompt_freq.pressed.connect(func() -> void:
+        _cycle_prompt_frequency()
+    )
+    settings_btn_quiet.pressed.connect(func() -> void:
+        _cycle_quiet_strictness()
+    )
+    settings_btn_intensity.pressed.connect(func() -> void:
+        _cycle_interaction_intensity()
+    )
+    settings_btn_mode.pressed.connect(func() -> void:
+        _cycle_home_mode()
+    )
+    settings_btn_pack.pressed.connect(func() -> void:
+        _cycle_pack()
+    )
+    settings_btn_demo_support.pressed.connect(func() -> void:
+        _show_auto_prompt("Demo support prompt (menu).", "support")
+    )
+    settings_btn_demo_world.pressed.connect(func() -> void:
+        _show_world_prompt(
+            {
+                "type": "encounter",
+                "npcName": "Demo",
+                "text": "Demo world prompt from menu.",
+            }
+        )
+    )
+    settings_btn_reward.pressed.connect(func() -> void:
+        _open_debug_reward_box()
+    )
+    settings_btn_telemetry.pressed.connect(func() -> void:
+        _telemetry_enabled = not _telemetry_enabled
+        _refresh_telemetry()
     )
 
 
@@ -839,6 +886,17 @@ func _refresh_settings_menu() -> void:
     text += "[color=#F4E9CF]1-0:[/color] happy/sad/angry/surprised/love/wink/sleepy/sick/pain/default"
     settings_label.bbcode_enabled = true
     settings_label.text = text
+
+    settings_btn_event_freq.text = "Event Freq (F7): %s" % str(AppState.settings.get("eventFrequency", "normal"))
+    settings_btn_prompt_freq.text = "Prompt Freq (F2): %s" % str(AppState.settings.get("promptFrequency", "normal"))
+    settings_btn_quiet.text = "Quiet (F3): %s" % str(AppState.settings.get("quietModeStrictness", "balanced"))
+    settings_btn_intensity.text = "Intensity (F4): %s" % str(AppState.settings.get("interactionIntensity", "balanced"))
+    settings_btn_mode.text = "Mode (F5): %s" % str(snapshot.get("home_mode", "overlay"))
+    settings_btn_pack.text = "Cycle Pack (F9): %s" % str(snapshot.get("active_pack", "core_pack"))
+    settings_btn_demo_support.text = "Demo Support (Shift+F2)"
+    settings_btn_demo_world.text = "Demo World (Shift+F7)"
+    settings_btn_reward.text = "Open Reward Box (F11)"
+    settings_btn_telemetry.text = "Telemetry (F6): %s" % ("on" if _telemetry_enabled else "off")
 
 
 func _load_visual_assets(pack_id: String, manifest: Dictionary) -> void:
