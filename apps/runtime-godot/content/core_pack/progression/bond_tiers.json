@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "xp_per_level": 25,
+  "xp_per_level": 10,
   "max_level": 10,
   "unlocks": [
     { "level": 2, "id": "unlock-wander",  "type": "action", "value": "wander"  },

@@ -45,9 +45,11 @@ A separate architecture-first slice is available at:
 - `F6`: toggle telemetry overlay
 - `F1`: export manual verification snapshot to `user://manual_verification/`
 - `F2`: cycle prompt frequency (`low`, `normal`, `high`)
+- `Shift+F2`: emit demo support prompt for cadence checks
 - `F3`: cycle quiet strictness (`lenient`, `balanced`, `strict`)
 - `F4`: cycle interaction intensity (`cozy`, `balanced`, `deep`)
 - `F7`: cycle event frequency (`low`, `normal`, `high`)
+- `Shift+F7`: emit demo world prompt for cadence checks
 - `F8`: move companion to next monitor
 - `F9`: cycle available content packs
 

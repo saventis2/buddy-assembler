@@ -7,11 +7,11 @@ const IDLE_SWAY_DISTANCE_X := 0.0
 const IDLE_SWAY_DISTANCE_Y := 0.0
 const FLOOR_PADDING := 14.0
 const SPRITE_VIEW_MARGIN := 4.0
-const DESKTOP_FLOOR_CONTACT_OFFSET_Y := 28.0
+const DESKTOP_FLOOR_CONTACT_OFFSET_Y := 16.0
 const DEFAULT_ROAM_SPEED_PX_PER_SEC := 96.0
 const DEFAULT_SPRITE_ANCHOR := Vector2(0.5, 1.0)
 const NO_PIVOT := Vector2(-1.0, -1.0)
-const SLEEP_PIVOT_OVERFLOW_BLEND := 0.85
+const SLEEP_PIVOT_OVERFLOW_BLEND := 1.0
 const SIT_PIVOT_OVERFLOW_BLEND := 1.0
 const DEFAULT_EMOTE_MANIFEST_PATH := "character/emotes/manifest.json"
 const DEFAULT_STATE_EMOTES := {
@@ -165,11 +165,23 @@ func _input(event: InputEvent) -> void:
             elif key_event.keycode == KEY_F1:
                 _export_manual_verification_snapshot()
             elif key_event.keycode == KEY_F2:
-                _cycle_prompt_frequency()
+                if key_event.shift_pressed:
+                    _show_auto_prompt("Demo support prompt (Shift+F2).", "support")
+                else:
+                    _cycle_prompt_frequency()
             elif key_event.keycode == KEY_F5:
                 _cycle_home_mode()
             elif key_event.keycode == KEY_F7:
-                _cycle_event_frequency()
+                if key_event.shift_pressed:
+                    _show_world_prompt(
+                        {
+                            "type": "encounter",
+                            "npcName": "Demo",
+                            "text": "Demo world prompt for cadence check.",
+                        }
+                    )
+                else:
+                    _cycle_event_frequency()
             elif key_event.keycode == KEY_F4:
                 _cycle_interaction_intensity()
             elif key_event.keycode == KEY_F3:
@@ -455,6 +467,8 @@ func _cycle_event_frequency() -> void:
     index = (index + 1) % values.size()
     AppState.settings["eventFrequency"] = values[index]
     AppState.flush()
+    _update_balloon_position()
+    chat_balloon.show_text("Event frequency: %s (Shift+F7 demo prompt)" % values[index])
     _refresh_telemetry()
 
 
@@ -468,7 +482,7 @@ func _cycle_prompt_frequency() -> void:
     AppState.settings["promptFrequency"] = values[index]
     AppState.flush()
     _update_balloon_position()
-    chat_balloon.show_text("Prompt frequency: %s" % values[index])
+    chat_balloon.show_text("Prompt frequency: %s (Shift+F2 demo prompt)" % values[index])
     _refresh_telemetry()
 
 
@@ -559,10 +573,31 @@ func _update_window_roam(delta: float) -> void:
 
 
 func _cycle_pack() -> void:
-    var ids := ContentLoader.list_pack_ids()
+    var ids := ContentLoader.list_cycleable_pack_ids()
     if ids.is_empty():
         _update_balloon_position()
-        chat_balloon.show_text("No content packs found.")
+        chat_balloon.show_text("No valid content packs found.")
+        return
+    if ids.size() == 1:
+        var only_pack := str(ids[0])
+        var loaded_only := ContentLoader.load_with_fallback(only_pack)
+        var only_manifest_variant = loaded_only.get("manifest", null)
+        if typeof(only_manifest_variant) != TYPE_DICTIONARY:
+            _update_balloon_position()
+            chat_balloon.show_text("Pack load failed: %s" % only_pack)
+            return
+        _active_pack_id = str(loaded_only.get("pack_id", only_pack))
+        _active_manifest = only_manifest_variant as Dictionary
+        _allowed_actions = ContentLoader.gather_action_ids(_active_manifest)
+        _encounters.configure(
+            _active_manifest.get("eventRules", []),
+            int(AppState.profile.get("personality_seed", 0))
+        )
+        _load_visual_assets(_active_pack_id, _active_manifest)
+        AppState.apply_loaded_pack(_active_pack_id, _active_manifest)
+        _update_balloon_position()
+        chat_balloon.show_text("Only valid pack available: %s" % _active_pack_id)
+        _refresh_telemetry()
         return
 
     var current := str(AppState.settings.get("selectedPackId", "core_pack"))
@@ -573,14 +608,15 @@ func _cycle_pack() -> void:
         index = (index + 1) % ids.size()
 
     var next_pack := str(ids[index])
-    var loaded := ContentLoader.load_pack(next_pack)
-    if not bool(loaded.get("ok", false)):
+    var loaded := ContentLoader.load_with_fallback(next_pack)
+    var manifest_variant = loaded.get("manifest", null)
+    if typeof(manifest_variant) != TYPE_DICTIONARY:
         _update_balloon_position()
         chat_balloon.show_text("Pack load failed: %s" % next_pack)
         return
 
-    _active_pack_id = next_pack
-    _active_manifest = loaded.get("manifest", {})
+    _active_pack_id = str(loaded.get("pack_id", next_pack))
+    _active_manifest = manifest_variant as Dictionary
     _allowed_actions = ContentLoader.gather_action_ids(_active_manifest)
     _encounters.configure(
         _active_manifest.get("eventRules", []),
@@ -668,8 +704,9 @@ func _refresh_telemetry() -> void:
         "world event: %s" % str(snapshot.get("last_world_event_id", "")),
         "F1 export snapshot  F2 prompt freq  F3 quiet strict  F4 intensity",
         "F5 mode  F6 telemetry",
-        "F7 freq  F8 monitor",
+        "F7 freq (Shift+F7 demo)  F8 monitor",
         "F9 pack  F10 emotes  F11 reward  F12 world",
+        "Shift+F2 demo support prompt  Shift+F7 demo world prompt",
     ]
     if _debug_emote_panel_enabled:
         var lock_remaining := maxi(0, _manual_emote_until_unix - int(Time.get_unix_time_from_system()))

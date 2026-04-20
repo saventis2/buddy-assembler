@@ -57,6 +57,17 @@ static func list_pack_ids(root_override: String = "") -> Array:
     return ids
 
 
+static func list_cycleable_pack_ids(root_override: String = "") -> Array:
+    var ids := list_pack_ids(root_override)
+    var cycleable: Array = []
+    for pack_id in ids:
+        var loaded := load_pack(str(pack_id), root_override)
+        if bool(loaded.get("ok", false)):
+            cycleable.append(str(pack_id))
+    cycleable.sort()
+    return cycleable
+
+
 static func load_pack(pack_id: String, root_override: String = "") -> Dictionary:
     var root := root_override if root_override != "" else CONTENT_ROOT
     var pack_root := "%s/%s" % [root, pack_id]

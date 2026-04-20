@@ -50,7 +50,9 @@ pwsh ./run_plan5_gate.ps1 -SkipRuntimeLaunch -UseDefaults -DefaultResult pending
 1. Observe idle transitions over several ticks.
 2. Confirm quiet-hours behavior lowers active events.
 3. Press `F7` to cycle event frequency (`low` -> `normal` -> `high`) and verify effect.
+   - Optional immediate check: `Shift+F7` emits a demo world prompt.
 4. Press `F2` to cycle prompt frequency (`low` -> `normal` -> `high`) and verify chat prompt cadence changes.
+   - Optional immediate check: `Shift+F2` emits a demo support prompt.
 5. Confirm event budgets prevent repeated encounter spam in same hour/day.
 
 ## Progression and Unlocks
@@ -84,6 +86,7 @@ godot_console.exe --path apps/runtime-godot -- --vertical-slice
 ## Speech Bubble Timer (vertical slice)
 
 1. Wait for idle speech bubble to appear (default ~8 seconds).
+   - If unsure, press `M` to force a speech bubble test line immediately.
 2. Verify bubble disappears after configured duration (default 1.6 seconds).
 3. Press `]` to increase bubble duration; press `[` to decrease it.
 4. Press `M` to trigger an immediate say event and confirm the new duration is applied.

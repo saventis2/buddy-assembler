@@ -3,7 +3,7 @@ extends RefCounted
 const TIERS_PATH := "res://content/core_pack/progression/bond_tiers.json"
 const BASE_ACTIONS := ["idle", "sit", "sleep"]
 
-const _FALLBACK_XP_PER_LEVEL := 25
+const _FALLBACK_XP_PER_LEVEL := 10
 const _FALLBACK_MAX_LEVEL := 10
 const _FALLBACK_UNLOCKS: Array = [
     {"level": 2, "id": "unlock-wander",  "type": "action", "value": "wander"},
