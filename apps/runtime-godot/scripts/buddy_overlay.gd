@@ -544,6 +544,7 @@ func _refresh_telemetry() -> void:
             int(snapshot.get("crystals", 0)),
             int(snapshot.get("inventory_count", 0)),
         ],
+        "dup recycle crystals: %d" % int(snapshot.get("duplicate_recycle_total", 0)),
         "pack: %s" % str(snapshot.get("active_pack", "core_pack")),
         "freq: %s  quiet: %s" % [
             str(AppState.settings.get("eventFrequency", "normal")),
@@ -1416,7 +1417,11 @@ func _open_debug_reward_box() -> void:
     _update_balloon_position()
     if bool(result.get("ok", false)):
         var item_name := str(result.get("item_name", "item"))
-        chat_balloon.show_text("Opened %s: %s" % [preferred, item_name])
+        if bool(result.get("duplicate", false)):
+            var recycle := int(result.get("recycle_crystals", 0))
+            chat_balloon.show_text("Opened %s: %s (duplicate +%d crystals)" % [preferred, item_name, recycle])
+        else:
+            chat_balloon.show_text("Opened %s: %s" % [preferred, item_name])
     else:
         var reason := str(result.get("reason", "unavailable"))
         chat_balloon.show_text("Could not open %s (%s)" % [preferred, reason])

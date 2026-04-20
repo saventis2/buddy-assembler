@@ -253,6 +253,8 @@ func open_reward_box(box_id: String) -> Dictionary:
             "reason": "",
             "item_id": str(result.get("item", {}).get("id", "")),
             "item_name": str(result.get("item", {}).get("name", "")),
+            "duplicate": bool(result.get("duplicate", false)),
+            "recycle_crystals": int(result.get("recycleCrystals", 0)),
         }
     return {"ok": false, "reason": str(result.get("reason", "unknown"))}
 
@@ -353,6 +355,7 @@ func get_telemetry_snapshot() -> Dictionary:
         "unlock_count": unlock_count,
         "crystals": int(econ_snapshot.get("crystals", 0)),
         "inventory_count": int(econ_snapshot.get("inventory_count", 0)),
+        "duplicate_recycle_total": int(econ_snapshot.get("duplicate_recycle_total", 0)),
         "home_scene_id": str(world_snapshot.get("home_scene_id", "cozy_starter_room")),
         "home_mode": str(world_snapshot.get("home_mode", "overlay")),
         "home_wall_decor": str(world_snapshot.get("home_wall_decor", "")),

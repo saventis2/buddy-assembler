@@ -35,6 +35,8 @@ func ensure_world_state(world_state: Dictionary) -> Dictionary:
         merged["reward_boxes"] = DEFAULT_BOXES.duplicate(true)
     if typeof(merged.get("item_catalog", null)) != TYPE_DICTIONARY:
         merged["item_catalog"] = {}
+    if typeof(merged.get("duplicate_recycles", null)) != TYPE_ARRAY:
+        merged["duplicate_recycles"] = []
     return merged
 
 
@@ -123,14 +125,24 @@ func open_reward_box(world_state: Dictionary, box_id: String, seed: int) -> Dict
     var rng := RandomNumberGenerator.new()
     rng.seed = seed if seed != 0 else int(Time.get_unix_time_from_system())
     var selected := _pick_weighted(table, rng)
+    var selected_id := str(selected.get("id", ""))
+    var was_duplicate := _inventory_has_item_id(merged.get("inventory", []), selected_id)
+    var recycle_crystals := 0
+    if was_duplicate:
+        recycle_crystals = _duplicate_recycle_crystals_for(selected)
 
     wallet["crystals"] = crystals - cost
+    if recycle_crystals > 0:
+        wallet["crystals"] = int(wallet.get("crystals", 0)) + recycle_crystals
+        _record_duplicate_recycle(merged, selected_id, recycle_crystals)
     merged["wallet"] = wallet
     merged = grant_item(merged, "reward_box:%s" % box_id, selected)
     return {
         "ok": true,
         "reason": "",
         "item": selected,
+        "duplicate": was_duplicate,
+        "recycleCrystals": recycle_crystals,
         "world_state": merged,
     }
 
@@ -139,9 +151,17 @@ func get_snapshot(world_state: Dictionary) -> Dictionary:
     var merged := ensure_world_state(world_state)
     var wallet: Dictionary = merged.get("wallet", {})
     var inventory: Array = merged.get("inventory", [])
+    var recycle_total := 0
+    var recycles_variant = merged.get("duplicate_recycles", [])
+    if typeof(recycles_variant) == TYPE_ARRAY:
+        for row_variant in (recycles_variant as Array):
+            if typeof(row_variant) != TYPE_DICTIONARY:
+                continue
+            recycle_total += int((row_variant as Dictionary).get("crystals", 0))
     return {
         "crystals": int(wallet.get("crystals", 0)),
         "inventory_count": inventory.size(),
+        "duplicate_recycle_total": recycle_total,
     }
 
 
@@ -204,3 +224,43 @@ func _build_table_from_manifest_catalog(world_state: Dictionary, box: Dictionary
         item["weight"] = maxf(0.1, weight)
         table.append(item)
     return table
+
+
+func _inventory_has_item_id(inventory_variant: Variant, item_id: String) -> bool:
+    if item_id == "" or typeof(inventory_variant) != TYPE_ARRAY:
+        return false
+    for row_variant in (inventory_variant as Array):
+        if typeof(row_variant) != TYPE_DICTIONARY:
+            continue
+        if str((row_variant as Dictionary).get("id", "")) == item_id:
+            return true
+    return false
+
+
+func _duplicate_recycle_crystals_for(item: Dictionary) -> int:
+    var rarity := str(item.get("rarity", "common")).to_lower()
+    if rarity == "legendary":
+        return 12
+    if rarity == "epic":
+        return 7
+    if rarity == "rare":
+        return 4
+    if rarity == "uncommon":
+        return 2
+    return 1
+
+
+func _record_duplicate_recycle(world_state: Dictionary, item_id: String, crystals: int) -> void:
+    if crystals <= 0:
+        return
+    var rows: Array = world_state.get("duplicate_recycles", [])
+    rows.append(
+        {
+            "itemId": item_id,
+            "crystals": crystals,
+            "timestamp": Time.get_unix_time_from_system(),
+        }
+    )
+    if rows.size() > 50:
+        rows = rows.slice(rows.size() - 50, rows.size())
+    world_state["duplicate_recycles"] = rows

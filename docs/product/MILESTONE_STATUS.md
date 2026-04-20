@@ -16,6 +16,12 @@ Updated: 2026-04-20 (world-layer stub wiring added)
 - [done] Wired rewards from quest/encounter outcomes into economy service transactions
 - [done] Added recent-prompt anti-repeat guard for world quest/encounter rotation
 
+## Buddy Milestone 4 (Tuning Pass — 2026-04-20)
+
+- [done] Added short-history anti-repeat weighting in `BehaviorEngine` action picks
+- [done] Added duplicate reward-box recycle crystals by rarity tier
+- [done] Exposed duplicate recycle totals in runtime telemetry/debug output
+
 ## Phase 5 (Visual polish & WZ asset expansion — 2026-04-19)
 
 - [done] Per-frame hand tracking for held-prop overlays (renderer parses

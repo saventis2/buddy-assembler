@@ -3,18 +3,21 @@ extends RefCounted
 var _rng := RandomNumberGenerator.new()
 var _cooldowns := {}
 var _last_action := "idle"
+var _recent_actions: Array = []
 
 
 func configure(seed_val: int) -> void:
 	if seed_val == 0:
 		seed_val = int(Time.get_unix_time_from_system())
 	_rng.seed = seed_val
+	_recent_actions.clear()
 
 
 func tick(now_unix: int, context: Dictionary) -> Dictionary:
 	var forced_action := str(context.get("forced_action", ""))
 	if forced_action != "":
 		_last_action = forced_action
+		_push_recent_action(forced_action)
 		_cooldowns[forced_action] = now_unix + 3
 		return {"id": forced_action, "weight": 1000.0, "cooldown": 3}
 
@@ -56,6 +59,8 @@ func tick(now_unix: int, context: Dictionary) -> Dictionary:
 		var weight := float(option["weight"])
 		if action_id == _last_action:
 			weight *= 0.45
+		if _recent_actions.has(action_id):
+			weight *= 0.35 if action_id != "idle" else 0.7
 		if context.get("is_night", false) and action_id == "sleep":
 			weight *= 2.6
 		if int(context.get("bond_level", 1)) > 3 and action_id == "happy":
@@ -105,6 +110,7 @@ func tick(now_unix: int, context: Dictionary) -> Dictionary:
 	var picked_id := str(picked.get("id", "idle"))
 	_cooldowns[picked_id] = now_unix + int(picked.get("cooldown", 3))
 	_last_action = picked_id
+	_push_recent_action(picked_id)
 	return picked
 
 
@@ -137,3 +143,11 @@ func _index_map(values: Variant) -> Dictionary:
 			continue
 		map[key] = true
 	return map
+
+
+func _push_recent_action(action_id: String) -> void:
+	if action_id == "":
+		return
+	_recent_actions.append(action_id)
+	if _recent_actions.size() > 4:
+		_recent_actions = _recent_actions.slice(_recent_actions.size() - 4, _recent_actions.size())
