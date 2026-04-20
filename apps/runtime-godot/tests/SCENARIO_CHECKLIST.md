@@ -31,6 +31,7 @@ pwsh ./run_plan5_gate.ps1
 1. Launch scene and confirm transparent always-on-top window.
 2. Left-click and drag buddy; ensure smooth repositioning.
 3. Right-click buddy; verify sleep toggle.
+4. Press `F1` and verify a manual snapshot JSON is written under `user://manual_verification/`.
 
 ## Multi-Monitor
 

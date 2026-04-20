@@ -112,6 +112,16 @@ if ($promptCadenceCode -ne 0) {
 }
 Write-Host "Prompt cadence test PASSED."
 
+# --- Manual verification report test ---
+Write-Host ""
+Write-Host "=== Manual verification report test ==="
+$manualReportCode = Invoke-GodotHeadless -ExtraArgs @("--scene", "res://tests/ManualVerificationReportTest.tscn") -Label "manual-verification-report"
+if ($manualReportCode -ne 0) {
+    Write-Host "Manual verification report test FAILED (exit $manualReportCode)"
+    exit $manualReportCode
+}
+Write-Host "Manual verification report test PASSED."
+
 # --- Optional: frame-time profiling ---
 if ($Profile) {
     Write-Host ""

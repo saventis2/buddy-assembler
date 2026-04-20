@@ -31,6 +31,7 @@ Tasks:
 - [x] Run automated pre-check and create manual verification log
 - [x] Add guided manual checklist logger (`run_manual_checklist.ps1`)
 - [x] Add one-command gate runner (`run_plan5_gate.ps1`)
+- [x] Add runtime snapshot export (`F1`) with prompt-cadence evidence metrics
 - [ ] Run interactive desktop checklist from `tests/SCENARIO_CHECKLIST.md`
 - [ ] Verify monitor drag/clamp behavior in multi-monitor setup
 - [ ] Verify no intrusive prompt cadence in low/normal/high frequencies
@@ -117,3 +118,4 @@ Must pass:
 - CompanionDepthTest
 - EconomyTuningTest
 - PromptCadenceTest
+- ManualVerificationReportTest

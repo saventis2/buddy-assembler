@@ -35,6 +35,8 @@ Updated: 2026-04-20 (world variety + prompt cadence guard)
   `apps/runtime-godot/tests/run_manual_checklist.ps1`
 - [done] Added one-command Plan 5 gate runner:
   `apps/runtime-godot/tests/run_plan5_gate.ps1`
+- [done] Added in-runtime manual snapshot export (`F1`) with prompt-cadence evidence counters
+- [done] Added `ManualVerificationReportTest` and wired it into headless checks
 - [pending] Interactive desktop confirmation items in `SCENARIO_CHECKLIST.md`
 
 ## Plan 6 (Companion Depth Foundation — 2026-04-20)

@@ -43,6 +43,7 @@ A separate architecture-first slice is available at:
 - Left click + drag: move companion
 - Right click: sleep toggle
 - `F6`: toggle telemetry overlay
+- `F1`: export manual verification snapshot to `user://manual_verification/`
 - `F2`: cycle prompt frequency (`low`, `normal`, `high`)
 - `F3`: cycle quiet strictness (`lenient`, `balanced`, `strict`)
 - `F4`: cycle interaction intensity (`cozy`, `balanced`, `deep`)

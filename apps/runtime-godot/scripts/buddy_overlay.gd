@@ -44,6 +44,7 @@ const ContentLoader = preload("res://scripts/content/content_loader.gd")
 const EncounterScheduler = preload("res://scripts/encounters/encounter_scheduler.gd")
 const ProductivityTracker = preload("res://scripts/utility/productivity_tracker.gd")
 const PromptCadence = preload("res://scripts/utility/prompt_cadence.gd")
+const ManualVerificationReport = preload("res://scripts/utility/manual_verification_report.gd")
 
 @onready var tick_timer: Timer = $TickTimer
 @onready var telemetry_timer: Timer = $TelemetryTimer
@@ -55,6 +56,7 @@ var _engine := BehaviorEngine.new()
 var _encounters := EncounterScheduler.new()
 var _productivity := ProductivityTracker.new()
 var _prompt_cadence := PromptCadence.new()
+var _manual_verification_report := ManualVerificationReport.new()
 var _state := "idle"
 var _dragging := false
 var _drag_offset := Vector2i.ZERO
@@ -160,6 +162,8 @@ func _input(event: InputEvent) -> void:
             if key_event.keycode == KEY_F6:
                 _telemetry_enabled = not _telemetry_enabled
                 _refresh_telemetry()
+            elif key_event.keycode == KEY_F1:
+                _export_manual_verification_snapshot()
             elif key_event.keycode == KEY_F2:
                 _cycle_prompt_frequency()
             elif key_event.keycode == KEY_F5:
@@ -357,6 +361,7 @@ func _on_tick_timer_timeout() -> void:
     if not world_prompt.is_empty():
         if not _show_world_prompt(world_prompt):
             _deferred_world_prompt = world_prompt.duplicate(true)
+            _manual_verification_report.record_prompt_metric("world", "deferred")
     _refresh_telemetry()
     if _state == "idle":
         _maybe_show_bond_phrase()
@@ -598,6 +603,7 @@ func _refresh_telemetry() -> void:
             cozy_open_count = int((box_stats["cozy"] as Dictionary).get("opens", 0))
         if box_stats.has("heroic") and typeof(box_stats["heroic"]) == TYPE_DICTIONARY:
             heroic_open_count = int((box_stats["heroic"] as Dictionary).get("opens", 0))
+    var prompt_metrics := _manual_verification_report.get_prompt_metrics()
     var lines: Array[String] = [
         "state: %s" % _state,
         "emote: %s -> %s" % [_active_emote_semantic, _active_face_variant],
@@ -620,6 +626,13 @@ func _refresh_telemetry() -> void:
             "on" if AppState.is_quiet_hours_now() else "off"
         ],
         "prompt freq: %s" % str(AppState.settings.get("promptFrequency", "normal")),
+        "prompt metrics: s+%d s-%d w+%d w-%d wd%d" % [
+            int(prompt_metrics.get("support_shown", 0)),
+            int(prompt_metrics.get("support_suppressed", 0)),
+            int(prompt_metrics.get("world_shown", 0)),
+            int(prompt_metrics.get("world_suppressed", 0)),
+            int(prompt_metrics.get("world_deferred", 0)),
+        ],
         "intensity: %s  quiet strict: %s" % [
             str(snapshot.get("interaction_intensity", "balanced")),
             str(snapshot.get("quiet_strictness", "balanced")),
@@ -642,7 +655,8 @@ func _refresh_telemetry() -> void:
         "pending quest: %s" % str(snapshot.get("pending_quest_id", "")),
         "pending encounter: %s" % str(snapshot.get("pending_encounter_id", "")),
         "world event: %s" % str(snapshot.get("last_world_event_id", "")),
-        "F2 prompt freq  F3 quiet strict  F4 intensity  F5 mode  F6 telemetry",
+        "F1 export snapshot  F2 prompt freq  F3 quiet strict  F4 intensity",
+        "F5 mode  F6 telemetry",
         "F7 freq  F8 monitor",
         "F9 pack  F10 emotes  F11 reward  F12 world",
     ]
@@ -1621,10 +1635,12 @@ func _show_auto_prompt(line: String, source_kind: String) -> bool:
         quiet_mode,
         source_kind
     ):
+        _manual_verification_report.record_prompt_metric(source_kind, "suppressed")
         return false
     _update_balloon_position()
     chat_balloon.show_text(line)
     _last_auto_prompt_unix = now_unix
+    _manual_verification_report.record_prompt_metric(source_kind, "shown")
     return true
 
 
@@ -1642,3 +1658,41 @@ func _flush_deferred_world_prompt(now_unix: int) -> void:
         var queued: Dictionary = _deferred_world_prompt.duplicate(true)
         _deferred_world_prompt.clear()
         _show_world_prompt(queued)
+
+
+func _export_manual_verification_snapshot() -> void:
+    var now_unix := int(Time.get_unix_time_from_system())
+    var snapshot := _manual_verification_report.build_snapshot(
+        AppState.settings,
+        AppState.get_telemetry_snapshot(),
+        AppState.get_world_snapshot(),
+        now_unix,
+        _last_auto_prompt_unix,
+        not _deferred_world_prompt.is_empty()
+    )
+    var user_dir := "user://manual_verification"
+    var absolute_dir := ProjectSettings.globalize_path(user_dir)
+    var mkdir_code := DirAccess.make_dir_recursive_absolute(absolute_dir)
+    if mkdir_code != OK:
+        _update_balloon_position()
+        chat_balloon.show_text("Snapshot export failed (mkdir).")
+        return
+    var dt := Time.get_datetime_dict_from_unix_time(now_unix)
+    var filename := "plan5_snapshot_%04d%02d%02d_%02d%02d%02d.json" % [
+        int(dt.get("year", 1970)),
+        int(dt.get("month", 1)),
+        int(dt.get("day", 1)),
+        int(dt.get("hour", 0)),
+        int(dt.get("minute", 0)),
+        int(dt.get("second", 0)),
+    ]
+    var user_path := "%s/%s" % [user_dir, filename]
+    var file := FileAccess.open(user_path, FileAccess.WRITE)
+    if file == null:
+        _update_balloon_position()
+        chat_balloon.show_text("Snapshot export failed (write).")
+        return
+    file.store_string(JSON.stringify(snapshot, "\t"))
+    file.close()
+    _update_balloon_position()
+    chat_balloon.show_text("Manual snapshot exported: %s" % user_path)
