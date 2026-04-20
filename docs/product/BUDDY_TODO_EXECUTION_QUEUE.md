@@ -25,9 +25,10 @@ Source of truth: `BUDDY_V1_BUILD_PLAN_MILESTONE_EXECUTION_2026-04-20.md`
 
 ### Plan 5: Manual Desktop Verification Gate (Required Before Deeper Features)
 
-Status: `next`
+Status: `in_progress`
 
 Tasks:
+- [x] Run automated pre-check and create manual verification log
 - [ ] Run interactive desktop checklist from `tests/SCENARIO_CHECKLIST.md`
 - [ ] Verify monitor drag/clamp behavior in multi-monitor setup
 - [ ] Verify no intrusive prompt cadence in low/normal/high frequencies
@@ -38,6 +39,9 @@ Tasks:
 Done gate:
 - [ ] Checklist completed and logged with pass/fail notes
 - [ ] Any blocking UX bugs are either fixed or explicitly deferred
+
+Current log:
+- `PLAN5_MANUAL_VERIFICATION_LOG_2026-04-20.md`
 
 ### Plan 6: Companion Depth Foundation (Milestone 5 from V1 plan)
 

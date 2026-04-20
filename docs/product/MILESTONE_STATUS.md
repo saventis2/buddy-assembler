@@ -26,6 +26,13 @@ Updated: 2026-04-20 (world-layer stub wiring added)
 - [done] Exposed duplicate recycle totals in runtime telemetry/debug output
 - [done] Added `WorldEconomyFlowTest` coverage for quest/encounter/recycle loops
 
+## Plan 5 (Manual Desktop Verification Gate — 2026-04-20)
+
+- [in_progress] Automated pre-check gate passed via `run_headless_checks.ps1`
+- [in_progress] Manual checklist runbook/log created:
+  `PLAN5_MANUAL_VERIFICATION_LOG_2026-04-20.md`
+- [pending] Interactive desktop confirmation items in `SCENARIO_CHECKLIST.md`
+
 ## Phase 5 (Visual polish & WZ asset expansion — 2026-04-19)
 
 - [done] Per-frame hand tracking for held-prop overlays (renderer parses
