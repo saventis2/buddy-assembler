@@ -61,7 +61,7 @@ Done gate:
 
 ### Plan 7: Economy Tuning Pass 2 (Drop Feel and Pacing)
 
-Status: `in_progress`
+Status: `done`
 
 Tasks:
 - [x] Tune rarity tables to preserve high-rarity excitement (kept high-rarity pulls rare; no inflation)
@@ -76,17 +76,20 @@ Done gate:
 
 ### Plan 8: World Variety Expansion (Low-Risk Content Growth)
 
-Status: `next`
+Status: `done`
 
 Tasks:
-- [ ] Add 2-3 more NPCs with distinct quest flavor
-- [ ] Add additional quest categories (home upkeep, training, social)
-- [ ] Add optional encounter variants with different reward profiles
-- [ ] Add anti-repeat weighting across category groups, not only IDs
+- [x] Add 2-3 more NPCs with distinct quest flavor
+- [x] Add additional quest categories (home upkeep, training, social)
+- [x] Add optional encounter variants with different reward profiles
+- [x] Add anti-repeat weighting across category groups, not only IDs
 
 Done gate:
-- [ ] Short repeated sessions show visible content variety
-- [ ] Encounter skip path remains valid and non-punitive
+- [x] Short repeated sessions show visible content variety
+- [x] Encounter skip path remains valid and non-punitive
+
+Verification:
+- [x] Added `WorldVarietyTest` and wired it into `run_headless_checks.ps1`
 
 ## Follow-Up Backlog (Populate During Testing)
 

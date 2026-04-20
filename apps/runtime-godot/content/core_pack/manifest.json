@@ -247,6 +247,39 @@
         "Challenge when you are ready.",
         "Skipping is fine too."
       ]
+    },
+    {
+      "id": "tala",
+      "name": "Tala",
+      "role": "caretaker",
+      "affinity": 0,
+      "availability": "always",
+      "dialoguePool": [
+        "A tidy space helps calm moods.",
+        "Let us refresh one corner of home."
+      ]
+    },
+    {
+      "id": "quill",
+      "name": "Quill",
+      "role": "scribe",
+      "affinity": 0,
+      "availability": "evening",
+      "dialoguePool": [
+        "Small notes become strong routines.",
+        "Want a social errand for the village board?"
+      ]
+    },
+    {
+      "id": "fenn",
+      "name": "Fenn",
+      "role": "scout",
+      "affinity": 0,
+      "availability": "daytime",
+      "dialoguePool": [
+        "I found a side trail if you want an encounter.",
+        "Skip is valid. We can regroup."
+      ]
     }
   ],
   "quests": [
@@ -277,6 +310,34 @@
       },
       "repeatability": "daily",
       "narrativeText": "Mira suggests a short training drill."
+    },
+    {
+      "id": "quest-home-tidy-pass",
+      "type": "home_upkeep",
+      "npcId": "tala",
+      "requirements": {
+        "kind": "home_toggle_or_rest"
+      },
+      "rewards": {
+        "crystals": 5,
+        "itemId": "wz-rocky-mask-doll"
+      },
+      "repeatability": "daily",
+      "narrativeText": "Tala asks for a quick home tidy pass."
+    },
+    {
+      "id": "quest-village-greeting-run",
+      "type": "social",
+      "npcId": "quill",
+      "requirements": {
+        "kind": "checkin_or_pet"
+      },
+      "rewards": {
+        "crystals": 6,
+        "itemId": "wz-fruity-candy"
+      },
+      "repeatability": "daily",
+      "narrativeText": "Quill posts a social greeting errand."
     }
   ],
   "encounters": [
@@ -292,6 +353,34 @@
       },
       "rewardsSkip": {
         "crystals": 1
+      }
+    },
+    {
+      "id": "encounter-scouted-cache",
+      "type": "optional",
+      "action": "scout",
+      "npcId": "fenn",
+      "narrativeText": "Fenn points out a hidden cache trail.",
+      "rewardsEngage": {
+        "crystals": 5,
+        "itemId": "wz-tri-colored-dango"
+      },
+      "rewardsSkip": {
+        "crystals": 2
+      }
+    },
+    {
+      "id": "encounter-late-lantern",
+      "type": "optional",
+      "action": "support",
+      "npcId": "quill",
+      "narrativeText": "Quill offers a calm late-session challenge.",
+      "rewardsEngage": {
+        "crystals": 6,
+        "itemId": "wz-green-halloween-stick-candy"
+      },
+      "rewardsSkip": {
+        "crystals": 2
       }
     }
   ]

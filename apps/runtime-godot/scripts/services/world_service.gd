@@ -34,6 +34,39 @@ const DEFAULT_NPCS := [
 			"No pressure. Skip if you want a quiet loop.",
 		],
 	},
+	{
+		"id": "tala",
+		"name": "Tala",
+		"role": "caretaker",
+		"affinity": 0,
+		"availability": "always",
+		"dialoguePool": [
+			"A tidy space helps calm moods.",
+			"Let us refresh one corner of home.",
+		],
+	},
+	{
+		"id": "quill",
+		"name": "Quill",
+		"role": "scribe",
+		"affinity": 0,
+		"availability": "evening",
+		"dialoguePool": [
+			"Small notes become strong routines.",
+			"Want a social errand for the village board?",
+		],
+	},
+	{
+		"id": "fenn",
+		"name": "Fenn",
+		"role": "scout",
+		"affinity": 0,
+		"availability": "daytime",
+		"dialoguePool": [
+			"I found a side trail if you want an encounter.",
+			"Skip is valid. We can regroup.",
+		],
+	},
 ]
 
 const DEFAULT_QUESTS := [
@@ -55,6 +88,24 @@ const DEFAULT_QUESTS := [
 		"repeatability": "daily",
 		"narrativeText": "Mira suggests a short training drill.",
 	},
+	{
+		"id": "quest-home-tidy-pass",
+		"type": "home_upkeep",
+		"npcId": "tala",
+		"requirements": {"kind": "home_toggle_or_rest"},
+		"rewards": {"crystals": 5, "itemId": "wz-rocky-mask-doll"},
+		"repeatability": "daily",
+		"narrativeText": "Tala asks for a quick home tidy pass.",
+	},
+	{
+		"id": "quest-village-greeting-run",
+		"type": "social",
+		"npcId": "quill",
+		"requirements": {"kind": "checkin_or_pet"},
+		"rewards": {"crystals": 6, "itemId": "wz-fruity-candy"},
+		"repeatability": "daily",
+		"narrativeText": "Quill posts a social greeting errand.",
+	},
 ]
 
 const DEFAULT_ENCOUNTERS := [
@@ -66,6 +117,24 @@ const DEFAULT_ENCOUNTERS := [
 		"narrativeText": "Rook spots a wild challenge nearby.",
 		"rewardsEngage": {"crystals": 7, "itemId": "wz-stone-golem-rubble"},
 		"rewardsSkip": {"crystals": 1},
+	},
+	{
+		"id": "encounter-scouted-cache",
+		"type": "optional",
+		"action": "scout",
+		"npcId": "fenn",
+		"narrativeText": "Fenn points out a hidden cache trail.",
+		"rewardsEngage": {"crystals": 5, "itemId": "wz-tri-colored-dango"},
+		"rewardsSkip": {"crystals": 2},
+	},
+	{
+		"id": "encounter-late-lantern",
+		"type": "optional",
+		"action": "support",
+		"npcId": "quill",
+		"narrativeText": "Quill offers a calm late-session challenge.",
+		"rewardsEngage": {"crystals": 6, "itemId": "wz-green-halloween-stick-candy"},
+		"rewardsSkip": {"crystals": 2},
 	}
 ]
 
@@ -88,6 +157,7 @@ const WORLD_DEFAULTS := {
 	"quest_rotation_index": 0,
 	"encounter_rotation_index": 0,
 	"recent_prompt_ids": [],
+	"recent_prompt_groups": [],
 	"last_world_event_id": "",
 	"last_world_event_unix": 0,
 }
@@ -120,6 +190,8 @@ func ensure_world_state(world_state: Dictionary) -> Dictionary:
 		world["recent_encounters"] = []
 	if typeof(world.get("recent_prompt_ids", null)) != TYPE_ARRAY:
 		world["recent_prompt_ids"] = []
+	if typeof(world.get("recent_prompt_groups", null)) != TYPE_ARRAY:
+		world["recent_prompt_groups"] = []
 
 	merged["world"] = world
 	return merged
@@ -182,19 +254,26 @@ func tick_world(world_state: Dictionary, profile: Dictionary, now_unix: int) -> 
 	var prompt := {}
 	var mood := str(profile.get("dominant_mood", "calm"))
 	var recent_prompt_ids: Array = world.get("recent_prompt_ids", [])
+	var recent_prompt_groups: Array = world.get("recent_prompt_groups", [])
 
 	if str(world.get("pending_quest_id", "")) == "":
 		var next_quest_unix := int(world.get("next_quest_unix", 0))
 		if now_unix >= next_quest_unix:
 			var quests: Array = world.get("quests", [])
 			if not quests.is_empty():
-				var quest := _rotating_pick_non_recent(quests, int(world.get("quest_rotation_index", 0)), recent_prompt_ids)
+				var quest := _rotating_pick_non_recent_group(
+					quests,
+					int(world.get("quest_rotation_index", 0)),
+					recent_prompt_ids,
+					recent_prompt_groups,
+					"type"
+				)
 				world["quest_rotation_index"] = int(world.get("quest_rotation_index", 0)) + 1
 				world["pending_quest_id"] = str(quest.get("id", ""))
 				world["next_quest_unix"] = now_unix + 900
 				world["last_world_event_id"] = str(quest.get("id", ""))
 				world["last_world_event_unix"] = now_unix
-				_push_recent_prompt(world, str(quest.get("id", "")))
+				_push_recent_prompt(world, str(quest.get("id", "")), _row_group(quest, "type"))
 				changed = true
 				prompt = {
 					"type": "quest",
@@ -208,13 +287,19 @@ func tick_world(world_state: Dictionary, profile: Dictionary, now_unix: int) -> 
 		if now_unix >= next_encounter_unix and mood != "sleepy":
 			var encounters: Array = world.get("encounters", [])
 			if not encounters.is_empty():
-				var encounter := _rotating_pick_non_recent(encounters, int(world.get("encounter_rotation_index", 0)), recent_prompt_ids)
+				var encounter := _rotating_pick_non_recent_group(
+					encounters,
+					int(world.get("encounter_rotation_index", 0)),
+					recent_prompt_ids,
+					recent_prompt_groups,
+					"action"
+				)
 				world["encounter_rotation_index"] = int(world.get("encounter_rotation_index", 0)) + 1
 				world["pending_encounter_id"] = str(encounter.get("id", ""))
 				world["next_encounter_unix"] = now_unix + 1200
 				world["last_world_event_id"] = str(encounter.get("id", ""))
 				world["last_world_event_unix"] = now_unix
-				_push_recent_prompt(world, str(encounter.get("id", "")))
+				_push_recent_prompt(world, str(encounter.get("id", "")), _row_group(encounter, "action"))
 				changed = true
 				if prompt.is_empty():
 					prompt = {
@@ -413,24 +498,48 @@ func _rotating_pick(rows: Array, index: int) -> Dictionary:
 	return (candidate as Dictionary).duplicate(true)
 
 
-func _rotating_pick_non_recent(rows: Array, index: int, recent_prompt_ids: Array) -> Dictionary:
+func _rotating_pick_non_recent_group(
+	rows: Array,
+	index: int,
+	recent_prompt_ids: Array,
+	recent_prompt_groups: Array,
+	group_key: String
+) -> Dictionary:
 	if rows.is_empty():
 		return {}
 	if rows.size() == 1:
 		return _rotating_pick(rows, index)
 	var candidate := _rotating_pick(rows, index)
 	var candidate_id := str(candidate.get("id", ""))
-	if candidate_id == "" or not recent_prompt_ids.has(candidate_id):
+	var candidate_group := _row_group(candidate, group_key)
+	var recent_group_is_used := candidate_group != "" and recent_prompt_groups.has(candidate_group)
+	var candidate_is_fresh := candidate_id == "" or not recent_prompt_ids.has(candidate_id)
+	var group_is_fresh := candidate_group == "" or not recent_group_is_used
+	if candidate_is_fresh and group_is_fresh:
 		return candidate
+
+	var fallback_non_repeat_id := {}
 	for offset in range(1, rows.size()):
 		var alt = _rotating_pick(rows, index + offset)
 		var alt_id := str(alt.get("id", ""))
+		var alt_group := _row_group(alt, group_key)
+		var alt_group_fresh := alt_group == "" or not recent_prompt_groups.has(alt_group)
 		if alt_id != "" and not recent_prompt_ids.has(alt_id):
+			if alt_group_fresh:
+				return alt
+			if fallback_non_repeat_id.is_empty():
+				fallback_non_repeat_id = alt
+	if not fallback_non_repeat_id.is_empty():
+		return fallback_non_repeat_id
+	for offset in range(1, rows.size()):
+		var alt = _rotating_pick(rows, index + offset)
+		var alt_group := _row_group(alt, group_key)
+		if alt_group != "" and not recent_prompt_groups.has(alt_group):
 			return alt
 	return candidate
 
 
-func _push_recent_prompt(world: Dictionary, prompt_id: String) -> void:
+func _push_recent_prompt(world: Dictionary, prompt_id: String, prompt_group: String = "") -> void:
 	if prompt_id == "":
 		return
 	var recent_ids: Array = world.get("recent_prompt_ids", [])
@@ -438,6 +547,18 @@ func _push_recent_prompt(world: Dictionary, prompt_id: String) -> void:
 	if recent_ids.size() > 6:
 		recent_ids = recent_ids.slice(recent_ids.size() - 6, recent_ids.size())
 	world["recent_prompt_ids"] = recent_ids
+	if prompt_group != "":
+		var groups: Array = world.get("recent_prompt_groups", [])
+		groups.append(prompt_group)
+		if groups.size() > 4:
+			groups = groups.slice(groups.size() - 4, groups.size())
+		world["recent_prompt_groups"] = groups
+
+
+func _row_group(row: Dictionary, group_key: String) -> String:
+	if group_key == "":
+		return ""
+	return str(row.get(group_key, ""))
 
 
 func _find_row(rows_variant: Variant, wanted_id: String) -> Dictionary:

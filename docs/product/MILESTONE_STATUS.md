@@ -1,6 +1,6 @@
 # Milestone Status
 
-Updated: 2026-04-20 (world-layer stub wiring added)
+Updated: 2026-04-20 (world variety expansion + regression coverage)
 
 > Update (2026-04-20): buddy-system milestone tracking is now coordinated with
 > `BUDDY_V1_BUILD_PLAN_MILESTONE_EXECUTION_2026-04-20.md` for identity/economy/world
@@ -49,6 +49,14 @@ Updated: 2026-04-20 (world-layer stub wiring added)
 - [done] Added per-theme reward-box open telemetry (`box_open_stats`)
 - [done] Surfaced theme-open telemetry + pulled rarity in overlay debug readout
 - [done] Added `EconomyTuningTest` and wired it into headless checks
+
+## Plan 8 (World Variety Expansion — 2026-04-20)
+
+- [done] Expanded manifest/world defaults with additional NPC cast (Tala, Quill, Fenn)
+- [done] Added home-upkeep and social quest categories to world content rotation
+- [done] Added optional encounter variants with distinct reward profiles
+- [done] Upgraded anti-repeat picker to avoid recent category-group reuse (not only ID reuse)
+- [done] Added `WorldVarietyTest` and wired it into `run_headless_checks.ps1`
 
 ## Phase 5 (Visual polish & WZ asset expansion — 2026-04-19)
 

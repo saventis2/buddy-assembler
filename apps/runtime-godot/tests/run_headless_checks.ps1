@@ -92,6 +92,16 @@ if ($economyCode -ne 0) {
 }
 Write-Host "Economy tuning test PASSED."
 
+# --- World variety test ---
+Write-Host ""
+Write-Host "=== World variety test ==="
+$varietyCode = Invoke-GodotHeadless -ExtraArgs @("--scene", "res://tests/WorldVarietyTest.tscn") -Label "world-variety"
+if ($varietyCode -ne 0) {
+    Write-Host "World variety test FAILED (exit $varietyCode)"
+    exit $varietyCode
+}
+Write-Host "World variety test PASSED."
+
 # --- Optional: frame-time profiling ---
 if ($Profile) {
     Write-Host ""
