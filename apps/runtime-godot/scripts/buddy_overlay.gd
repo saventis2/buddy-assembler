@@ -8,6 +8,10 @@ const IDLE_SWAY_DISTANCE_Y := 0.0
 const FLOOR_PADDING := 14.0
 const SPRITE_VIEW_MARGIN := 4.0
 const DESKTOP_FLOOR_CONTACT_OFFSET_Y := 16.0
+const CHARACTER_FLOOR_OFFSET_PX := 15.0
+const ACTION_EXTRA_FLOOR_OFFSET := {
+    "sleep": 15.0,
+}
 const DEFAULT_ROAM_SPEED_PX_PER_SEC := 96.0
 const DEFAULT_SPRITE_ANCHOR := Vector2(0.5, 1.0)
 const NO_PIVOT := Vector2(-1.0, -1.0)
@@ -109,6 +113,7 @@ var _roam_speed_px_per_sec := DEFAULT_ROAM_SPEED_PX_PER_SEC
 var _roam_direction := 1
 var _roam_subpixel_x := 0.0
 var _bond_phrase_active := false
+var _last_idle_phrase_unix := 0
 var _away_report_shown := false
 var _continuity_hint_shown := false
 var _last_auto_prompt_unix := 0
@@ -626,7 +631,7 @@ func _cycle_pack() -> void:
     AppState.apply_loaded_pack(_active_pack_id, _active_manifest)
     _update_balloon_position()
     chat_balloon.show_text(
-        "Active pack: %s (%d available)" % [_active_pack_id, ids.size()]
+        "Active pack: %s (%d available; visual deltas can be subtle)" % [_active_pack_id, ids.size()]
     )
     _refresh_telemetry()
 
@@ -1210,13 +1215,25 @@ func _sprite_rect_for_texture(center: Vector2, texture: Texture2D) -> Rect2:
     var draw_size: Vector2 = tex_size * scale
     var use_pivot := _current_frame_pivot_px.y >= 0.0
     var top_left := Vector2.ZERO
+    var effective_pivot_y := tex_size.y
     if use_pivot:
         var pivot_to_use := _current_frame_pivot_px
         if pivot_to_use.y > tex_size.y:
             var overflow := pivot_to_use.y - tex_size.y
             var overflow_blend := _pivot_overflow_blend_for_action(_current_visual_action)
             pivot_to_use.y = tex_size.y + (overflow * overflow_blend)
-        top_left = center - (pivot_to_use * scale)
+        var extra_offset := float(ACTION_EXTRA_FLOOR_OFFSET.get(_current_visual_action, 0.0))
+        effective_pivot_y = clampf(
+            pivot_to_use.y - CHARACTER_FLOOR_OFFSET_PX - extra_offset,
+            0.0,
+            tex_size.y
+        )
+        var effective_pivot := Vector2(pivot_to_use.x, effective_pivot_y)
+        top_left = center - (effective_pivot * scale)
+        # Keep floor contact exact across state/animation changes to prevent
+        # cumulative visible drift on the desktop overlay.
+        var contact_y := top_left.y + (effective_pivot_y * scale)
+        top_left.y += center.y - contact_y
     else:
         var anchor := _current_frame_anchor
         anchor.x = clampf(anchor.x, -3.0, 3.0)
@@ -1493,7 +1510,10 @@ func _load_core_character_sprite_fallbacks() -> void:
 
 
 func _maybe_show_bond_phrase() -> void:
-    if _bond_phrase_active or randi() % 6 != 0:
+    var now_unix := int(Time.get_unix_time_from_system())
+    if _bond_phrase_active:
+        return
+    if now_unix - _last_idle_phrase_unix < 18:
         return
     var tier := AppState.get_bond_tier()
     var phrases: Variant = tier.get("idle_phrases", null)
@@ -1503,6 +1523,7 @@ func _maybe_show_bond_phrase() -> void:
     if phrase == "" or phrase == "...":
         return
     _bond_phrase_active = true
+    _last_idle_phrase_unix = now_unix
     _update_balloon_position()
     chat_balloon.show_text(phrase)
     await get_tree().create_timer(4.0).timeout

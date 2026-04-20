@@ -66,6 +66,7 @@ pwsh ./run_plan5_gate.ps1 -SkipRuntimeLaunch -UseDefaults -DefaultResult pending
 
 1. Validate both manifests using validator CLI.
 2. Press `F9` to cycle available packs.
+   - Validate pass/fail from chat + telemetry pack id; visual deltas can be subtle depending on installed packs.
 3. Verify runtime reports active pack in telemetry and chat feedback.
 
 ## Vertical Slice (requires desktop run with `--vertical-slice` flag)

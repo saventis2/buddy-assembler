@@ -61,8 +61,7 @@ func _apply_level(profile: Dictionary, xp_per_level: int, max_level: int) -> voi
     var safe_xp_per_level: int = max(1, xp_per_level)
     var safe_max: int = max(1, max_level)
     var xp: int = int(profile.get("bond_xp", 0))
-    var xp_cap: int = safe_xp_per_level * safe_max
-    xp = min(xp, xp_cap)
+    xp = max(0, xp)
     profile["bond_xp"] = xp
     var level: int = 1 + int(xp / safe_xp_per_level)
     profile["bond_level"] = clamp(level, 1, safe_max)
