@@ -1,6 +1,6 @@
 # Project Status
 
-Snapshot date: 2026-04-19. Authoritative: `docs/product/MILESTONE_STATUS.md`.
+Snapshot date: 2026-04-20. Authoritative: `docs/product/MILESTONE_STATUS.md`.
 
 ## Identity
 
@@ -20,43 +20,31 @@ the runtime does **not** depend on WZ/NX schemas at runtime.
   plan, decision register, Windows release checklist, PR architecture
   checklist, next 10 actions).
 
-## What is NOT yet landed
+## PR queue status
 
-- Buddy-first mainline identity (this PR, PR-00).
-- Repo rails: PR template, CODEOWNERS, labels, review checklist (PR-01).
-- CI import/export smoke + artifact retention (PR-02).
-- ~~Save/settings versioning and corruption recovery (PR-03).~~ **Landed in PR-03.**
-- ~~Pack validation + runtime fallback (PR-04).~~ **Landed in PR-04.**
-- ~~RC scenario suite (PR-05).~~ **Landed in PR-05** —
-  `docs/product/RC_SCENARIO_SUITE.md`.
-- ~~Perf instrumentation + burn-in (PR-06).~~ **Landed in PR-06** —
-  `docs/product/PERF_BASELINE.md` + `tests/IdleProfile.tscn`. Baseline
-  table populated at release rehearsal.
-- ~~Final Windows packaging + release smoke (PR-07).~~ **Landed in PR-07** —
-  `docs/product/PACKAGING.md`, export preset metadata finalized,
-  SHA256SUMS generated in CI, V1 unsigned with SmartScreen path
-  documented.
-- ~~First-run onboarding (PR-08).~~ **Landed in PR-08** —
-  `docs/product/FIRST_RUN_ONBOARDING.md`, `firstRunSeen` flag in
-  settings, 6-second welcome tooltip on first launch.
-- ~~Bond cadence (PR-09).~~ **Landed in PR-09** — `bond_tiers.json`, data-driven
-  unlock table, idle phrase cadence per bond tier.
-- ~~Transition polish (PR-10).~~ **Landed in PR-10** — sleep immunity from
-  tick, drag-release idle return, bond phrase overlap guard.
-- ~~Shipped companion pack (PR-11).~~ **Landed in PR-11** — `core_pack` bumped
-  to 1.0.0; `docs/product/COMPANION_PACK_AUDIT.md`; all 7 actions audited.
-- ~~Schema freeze + importer boundary cleanup (PR-12).~~ **Landed in PR-12** —
-  `docs/product/CONTENT_SCHEMA.md`; `CONTENT_SCHEMA_VERSION = 1` in
-  ContentLoader; max-version rejection; runtime has no WZ/NX awareness.
-- ~~Provenance manifest + snapshot promotion (PR-13).~~ **Landed in PR-13** —
-  `content/core_pack/PROVENANCE.md`; asset categories approved; promotion
-  procedure documented.
-- ~~Non-Maple content lane proof (PR-14).~~ **Landed in PR-14** —
-  `content/sample_pack/` (zero Maple assets, schema-valid); adapter seam
-  proven; `docs/product/NON_MAPLE_CONTENT_PROOF.md`.
-- ~~Launch docs + V1 exit criteria (PR-15).~~ **Landed in PR-15** —
-  `docs/product/V1_LAUNCH_DOCS.md`; all exit criteria checked; known issues
-  and deferred roadmap documented; sign-off checklist.
+- PR-00 through PR-15 are merged.
+- Remaining work is **release rehearsal and evidence capture**, not major
+  feature implementation. Source of truth: `RELEASE_CHECKLIST.md`.
+
+## Temporary Maple83 dependency contract (current phase)
+
+- Current runtime/content workflow intentionally uses MapleStory v83-derived
+  references and assets from local extracted folders while V1 stabilizes.
+- This is currently an accepted delivery constraint and should **not** be
+  broken by cleanup PRs.
+- Runtime must still consume project-native internal content structures;
+  importer/provenance metadata may carry Maple-origin references for now.
+- Replacement/hardening of this dependency is post-V1 roadmap work and must
+  be done with explicit migration planning.
+
+## What remains before tag
+
+- Execute `docs/product/RC_SCENARIO_SUITE.md` against exported Windows
+  artifact and record results.
+- Populate `docs/product/PERF_BASELINE.md` release table (10-min and
+  multi-hour runs).
+- Verify final release artifact + `SHA256SUMS` and record previous-good tag
+  rollback pointer.
 
 ## Truth checks
 
@@ -74,6 +62,17 @@ the runtime does **not** depend on WZ/NX schemas at runtime.
   naming/state reference, and validation cases only.
 - Derived internal resources must record provenance and transformation
   notes (formalized in PR-13).
+
+## Lessons learned (2026-04-20)
+
+- Keep one release-truth source. If launch docs and release checklist diverge,
+  treat checklist as authoritative until reconciled.
+- Avoid false-green sign-off language before export-based rehearsal evidence
+  is attached.
+- Keep generated editor/import files out of review scope to preserve PR
+  signal and reduce merge friction.
+- Preserve temporary dependencies explicitly in docs so cleanup does not
+  accidentally break the current delivery path.
 
 ## Pointers
 

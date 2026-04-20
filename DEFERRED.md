@@ -28,6 +28,9 @@ unless the V1 exit criteria in `PR_PLAN.md` are signed off.
 - Auto-update channel.
 - Telemetry beyond opt-in local perf metrics.
 - Cloud save.
+- Replacement of current Maple83 folder/asset dependency with a fully
+  independent default content lane (must be planned as an explicit migration,
+  not an incidental cleanup).
 
 ## Re-entry rule
 
