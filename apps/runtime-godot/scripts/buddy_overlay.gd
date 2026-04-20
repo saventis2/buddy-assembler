@@ -194,12 +194,15 @@ func _input(event: InputEvent) -> void:
         var button_event := event as InputEventMouseButton
         if button_event.button_index == MOUSE_BUTTON_LEFT:
             if button_event.pressed and _hit_test(button_event.position):
+                var before := AppState.get_telemetry_snapshot()
                 _dragging = true
                 _drag_offset = DisplayServer.mouse_get_position() - DisplayServer.window_get_position()
                 _state = "happy"
                 _set_emote_from_state(_state)
                 _set_visual_for_state(_state)
                 AppState.record_interaction("pet")
+                var after := AppState.get_telemetry_snapshot()
+                _show_progress_feedback(before, after)
                 _productivity.note_user_activity(int(Time.get_unix_time_from_system()))
                 queue_redraw()
             elif not button_event.pressed:
@@ -558,6 +561,8 @@ func _update_window_roam(delta: float) -> void:
 func _cycle_pack() -> void:
     var ids := ContentLoader.list_pack_ids()
     if ids.is_empty():
+        _update_balloon_position()
+        chat_balloon.show_text("No content packs found.")
         return
 
     var current := str(AppState.settings.get("selectedPackId", "core_pack"))
@@ -570,6 +575,8 @@ func _cycle_pack() -> void:
     var next_pack := str(ids[index])
     var loaded := ContentLoader.load_pack(next_pack)
     if not bool(loaded.get("ok", false)):
+        _update_balloon_position()
+        chat_balloon.show_text("Pack load failed: %s" % next_pack)
         return
 
     _active_pack_id = next_pack
@@ -581,6 +588,10 @@ func _cycle_pack() -> void:
     )
     _load_visual_assets(_active_pack_id, _active_manifest)
     AppState.apply_loaded_pack(_active_pack_id, _active_manifest)
+    _update_balloon_position()
+    chat_balloon.show_text(
+        "Active pack: %s (%d available)" % [_active_pack_id, ids.size()]
+    )
     _refresh_telemetry()
 
 
@@ -1621,6 +1632,24 @@ func _show_support_hint(productivity_event: Dictionary) -> void:
     if line == "":
         return
     _show_auto_prompt(line, "support")
+
+
+func _show_progress_feedback(before: Dictionary, after: Dictionary) -> void:
+    if typeof(before) != TYPE_DICTIONARY or typeof(after) != TYPE_DICTIONARY:
+        return
+    var before_xp := int(before.get("bond_xp", 0))
+    var after_xp := int(after.get("bond_xp", 0))
+    var before_level := int(before.get("bond_level", 1))
+    var after_level := int(after.get("bond_level", 1))
+    var before_unlocks := int(before.get("unlock_count", 0))
+    var after_unlocks := int(after.get("unlock_count", 0))
+    var msg := "Bond XP: %d -> %d (Lv %d)" % [before_xp, after_xp, after_level]
+    if after_level > before_level:
+        msg += " level up!"
+    if after_unlocks > before_unlocks:
+        msg += " unlock +%d" % (after_unlocks - before_unlocks)
+    _update_balloon_position()
+    chat_balloon.show_text(msg)
 
 
 func _show_auto_prompt(line: String, source_kind: String) -> bool:

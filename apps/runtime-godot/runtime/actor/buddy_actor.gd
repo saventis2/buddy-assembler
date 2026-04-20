@@ -77,6 +77,10 @@ func command_play_emote(emote_name: String) -> void:
 	buddy_brain.play_emote(emote_name)
 
 
+func command_say(text: String) -> void:
+	buddy_brain.say(text)
+
+
 func set_floor_lock_y(world_y: float) -> void:
 	_floor_lock_y = world_y
 

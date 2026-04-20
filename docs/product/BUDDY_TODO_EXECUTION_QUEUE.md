@@ -101,6 +101,10 @@ Verification:
 
 - [x] Fix Plan 5 gate runner to auto-launch runtime + vertical-slice sessions
 - [x] Fix default manual log path to repo `docs/product/` root
+- [x] Add visible progression feedback on pet interactions (XP/level/unlock delta)
+- [x] Add explicit `F9` pack-cycle chat feedback to confirm pack switching
+- [x] Improve vertical-slice manual checks: `M` speech trigger + bracket-duration immediate validation
+- [x] Improve vertical-slice key capture reliability for emote hotkeys
 - [ ] Re-run Plan 5 after gate-runner fix and capture updated log
 
 ## Verification Gate (Run After Each Plan)

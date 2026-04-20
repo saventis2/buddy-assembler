@@ -39,6 +39,10 @@ Updated: 2026-04-20 (world variety + prompt cadence guard)
 - [done] Added `ManualVerificationReportTest` and wired it into headless checks
 - [done] Fixed gate-runner gap: now auto-launches runtime + vertical-slice sessions for manual checks
 - [done] Fixed default manual checklist log output path to repo `docs/product/`
+- [done] Added pet interaction progression feedback text (bond XP/level/unlock delta)
+- [done] Added explicit pack-cycle feedback text for `F9` actions
+- [done] Added vertical-slice `M` speech trigger and immediate bracket-duration validation path
+- [done] Switched vertical-slice key handling to `_input` for stronger hotkey reliability
 - [pending] Interactive desktop confirmation items in `SCENARIO_CHECKLIST.md`
 
 ## Plan 6 (Companion Depth Foundation — 2026-04-20)

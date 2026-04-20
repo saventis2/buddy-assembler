@@ -56,14 +56,15 @@ pwsh ./run_plan5_gate.ps1 -SkipRuntimeLaunch -UseDefaults -DefaultResult pending
 ## Progression and Unlocks
 
 1. Repeated pet interactions increase bond XP and level.
-2. Unlock list grows at expected levels (wander/happy/gift/visitor).
-3. Restart app and verify progression persists.
+2. Confirm pet interaction shows bond feedback text (XP/level/unlock delta).
+3. Unlock list grows at expected levels (wander/happy/gift/visitor).
+4. Restart app and verify progression persists.
 
 ## Content Packs
 
 1. Validate both manifests using validator CLI.
 2. Press `F9` to cycle available packs.
-3. Verify runtime reports active pack in telemetry.
+3. Verify runtime reports active pack in telemetry and chat feedback.
 
 ## Vertical Slice (requires desktop run with `--vertical-slice` flag)
 
@@ -85,4 +86,4 @@ godot_console.exe --path apps/runtime-godot -- --vertical-slice
 1. Wait for idle speech bubble to appear (default ~8 seconds).
 2. Verify bubble disappears after configured duration (default 1.6 seconds).
 3. Press `]` to increase bubble duration; press `[` to decrease it.
-4. Trigger a say event and confirm the new duration is applied.
+4. Press `M` to trigger an immediate say event and confirm the new duration is applied.

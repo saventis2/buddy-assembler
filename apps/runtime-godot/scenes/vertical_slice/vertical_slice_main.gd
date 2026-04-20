@@ -147,12 +147,17 @@ func _update_hint_label() -> void:
 		"U: stunned  I: proud  O: embarrassed  P: sparkle  H: humming  K: kiss  B: bow\n" +
 		"S: sit  Z: sleep  G: gift  (body, 2.5s)\n" +
 		"F: fly  C: climb  1: swing  2: stab  4: alt_idle  (body, 2.5s)\n" +
+		"M: force speech bubble test line\n" +
 		"V: visitor (second buddy walks in, waves, leaves)\n" +
 		"[/]: speech bubble %.1fs  |  actor.y=%.0f" % [actor.speech_bubble_visible_seconds, actor.global_position.y]
 	)
 
 
-func _unhandled_input(event: InputEvent) -> void:
+func _input(event: InputEvent) -> void:
+	_handle_key_input(event)
+
+
+func _handle_key_input(event: InputEvent) -> void:
 	if event is InputEventKey:
 		var key_event := event as InputEventKey
 		if key_event.pressed and not key_event.echo:
@@ -198,15 +203,19 @@ func _unhandled_input(event: InputEvent) -> void:
 				command_bridge.play_emote("kiss")
 			elif key_event.keycode == KEY_B:
 				command_bridge.play_emote("bow")
+			elif key_event.keycode == KEY_M:
+				command_bridge.say("Bubble duration %.1fs" % actor.speech_bubble_visible_seconds)
 			elif key_event.keycode == KEY_BRACKETLEFT:
 				actor.speech_bubble_visible_seconds = maxf(
 					SPEECH_BUBBLE_DURATION_MIN,
 					actor.speech_bubble_visible_seconds - SPEECH_BUBBLE_DURATION_STEP
 				)
+				command_bridge.say("Bubble duration %.1fs" % actor.speech_bubble_visible_seconds)
 				_update_hint_label()
 			elif key_event.keycode == KEY_BRACKETRIGHT:
 				actor.speech_bubble_visible_seconds = minf(
 					SPEECH_BUBBLE_DURATION_MAX,
 					actor.speech_bubble_visible_seconds + SPEECH_BUBBLE_DURATION_STEP
 				)
+				command_bridge.say("Bubble duration %.1fs" % actor.speech_bubble_visible_seconds)
 				_update_hint_label()

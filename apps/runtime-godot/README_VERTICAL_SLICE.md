@@ -36,6 +36,8 @@ This slice proves the architecture rule:
    - `R`: `play_emote("sad")`
    - `T`: `play_emote("angry")`
    - `Y`: `play_emote("love")`
+   - `[` / `]`: decrease/increase speech-bubble duration
+   - `M`: immediate speech-bubble test line with current duration
 
 If `godot` is not found, use:
 `& "C:\Users\GGPC\AppData\Local\Microsoft\WinGet\Links\godot.exe" --path apps/runtime-godot -- --vertical-slice`
