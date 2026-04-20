@@ -87,6 +87,7 @@ const WORLD_DEFAULTS := {
 	"next_encounter_unix": 0,
 	"quest_rotation_index": 0,
 	"encounter_rotation_index": 0,
+	"recent_prompt_ids": [],
 	"last_world_event_id": "",
 	"last_world_event_unix": 0,
 }
@@ -117,6 +118,8 @@ func ensure_world_state(world_state: Dictionary) -> Dictionary:
 		world["completed_quests"] = []
 	if typeof(world.get("recent_encounters", null)) != TYPE_ARRAY:
 		world["recent_encounters"] = []
+	if typeof(world.get("recent_prompt_ids", null)) != TYPE_ARRAY:
+		world["recent_prompt_ids"] = []
 
 	merged["world"] = world
 	return merged
@@ -178,18 +181,20 @@ func tick_world(world_state: Dictionary, profile: Dictionary, now_unix: int) -> 
 	var changed := false
 	var prompt := {}
 	var mood := str(profile.get("dominant_mood", "calm"))
+	var recent_prompt_ids: Array = world.get("recent_prompt_ids", [])
 
 	if str(world.get("pending_quest_id", "")) == "":
 		var next_quest_unix := int(world.get("next_quest_unix", 0))
 		if now_unix >= next_quest_unix:
 			var quests: Array = world.get("quests", [])
 			if not quests.is_empty():
-				var quest := _rotating_pick(quests, int(world.get("quest_rotation_index", 0)))
+				var quest := _rotating_pick_non_recent(quests, int(world.get("quest_rotation_index", 0)), recent_prompt_ids)
 				world["quest_rotation_index"] = int(world.get("quest_rotation_index", 0)) + 1
 				world["pending_quest_id"] = str(quest.get("id", ""))
 				world["next_quest_unix"] = now_unix + 900
 				world["last_world_event_id"] = str(quest.get("id", ""))
 				world["last_world_event_unix"] = now_unix
+				_push_recent_prompt(world, str(quest.get("id", "")))
 				changed = true
 				prompt = {
 					"type": "quest",
@@ -203,12 +208,13 @@ func tick_world(world_state: Dictionary, profile: Dictionary, now_unix: int) -> 
 		if now_unix >= next_encounter_unix and mood != "sleepy":
 			var encounters: Array = world.get("encounters", [])
 			if not encounters.is_empty():
-				var encounter := _rotating_pick(encounters, int(world.get("encounter_rotation_index", 0)))
+				var encounter := _rotating_pick_non_recent(encounters, int(world.get("encounter_rotation_index", 0)), recent_prompt_ids)
 				world["encounter_rotation_index"] = int(world.get("encounter_rotation_index", 0)) + 1
 				world["pending_encounter_id"] = str(encounter.get("id", ""))
 				world["next_encounter_unix"] = now_unix + 1200
 				world["last_world_event_id"] = str(encounter.get("id", ""))
 				world["last_world_event_unix"] = now_unix
+				_push_recent_prompt(world, str(encounter.get("id", "")))
 				changed = true
 				if prompt.is_empty():
 					prompt = {
@@ -405,6 +411,33 @@ func _rotating_pick(rows: Array, index: int) -> Dictionary:
 	if typeof(candidate) != TYPE_DICTIONARY:
 		return {}
 	return (candidate as Dictionary).duplicate(true)
+
+
+func _rotating_pick_non_recent(rows: Array, index: int, recent_prompt_ids: Array) -> Dictionary:
+	if rows.is_empty():
+		return {}
+	if rows.size() == 1:
+		return _rotating_pick(rows, index)
+	var candidate := _rotating_pick(rows, index)
+	var candidate_id := str(candidate.get("id", ""))
+	if candidate_id == "" or not recent_prompt_ids.has(candidate_id):
+		return candidate
+	for offset in range(1, rows.size()):
+		var alt = _rotating_pick(rows, index + offset)
+		var alt_id := str(alt.get("id", ""))
+		if alt_id != "" and not recent_prompt_ids.has(alt_id):
+			return alt
+	return candidate
+
+
+func _push_recent_prompt(world: Dictionary, prompt_id: String) -> void:
+	if prompt_id == "":
+		return
+	var recent_ids: Array = world.get("recent_prompt_ids", [])
+	recent_ids.append(prompt_id)
+	if recent_ids.size() > 6:
+		recent_ids = recent_ids.slice(recent_ids.size() - 6, recent_ids.size())
+	world["recent_prompt_ids"] = recent_ids
 
 
 func _find_row(rows_variant: Variant, wanted_id: String) -> Dictionary:
