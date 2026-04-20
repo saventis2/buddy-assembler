@@ -29,6 +29,7 @@ Status: `in_progress`
 
 Tasks:
 - [x] Run automated pre-check and create manual verification log
+- [x] Add guided manual checklist logger (`run_manual_checklist.ps1`)
 - [ ] Run interactive desktop checklist from `tests/SCENARIO_CHECKLIST.md`
 - [ ] Verify monitor drag/clamp behavior in multi-monitor setup
 - [ ] Verify no intrusive prompt cadence in low/normal/high frequencies

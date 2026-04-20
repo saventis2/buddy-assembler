@@ -8,6 +8,18 @@ Optional pre-check:
 pwsh ./run_headless_checks.ps1
 ```
 
+Optional guided log generator:
+
+```powershell
+pwsh ./run_manual_checklist.ps1
+```
+
+For non-interactive template generation:
+
+```powershell
+pwsh ./run_manual_checklist.ps1 -UseDefaults -DefaultResult pending
+```
+
 ## Overlay Basics
 
 1. Launch scene and confirm transparent always-on-top window.

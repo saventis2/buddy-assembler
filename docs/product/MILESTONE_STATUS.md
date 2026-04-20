@@ -31,6 +31,8 @@ Updated: 2026-04-20 (world variety + prompt cadence guard)
 - [in_progress] Automated pre-check gate passed via `run_headless_checks.ps1`
 - [in_progress] Manual checklist runbook/log created:
   `PLAN5_MANUAL_VERIFICATION_LOG_2026-04-20.md`
+- [done] Added guided manual checklist logger:
+  `apps/runtime-godot/tests/run_manual_checklist.ps1`
 - [pending] Interactive desktop confirmation items in `SCENARIO_CHECKLIST.md`
 
 ## Plan 6 (Companion Depth Foundation — 2026-04-20)

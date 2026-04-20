@@ -4,6 +4,12 @@ Date: 2026-04-20
 Plan: `Plan 5: Manual Desktop Verification Gate`  
 Checklist source: `apps/runtime-godot/tests/SCENARIO_CHECKLIST.md`
 
+Guided log helper:
+
+```powershell
+pwsh -NoLogo -File apps/runtime-godot/tests/run_manual_checklist.ps1
+```
+
 ## Summary
 
 - Automated pre-checks: **PASS**
