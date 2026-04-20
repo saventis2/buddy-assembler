@@ -1,0 +1,432 @@
+extends RefCounted
+
+const DEFAULT_NPCS := [
+	{
+		"id": "mira",
+		"name": "Mira",
+		"role": "mentor",
+		"affinity": 0,
+		"availability": "always",
+		"dialoguePool": [
+			"Steady practice builds a steady buddy.",
+			"Small routines beat heroic bursts.",
+		],
+	},
+	{
+		"id": "pip",
+		"name": "Pip",
+		"role": "friend",
+		"affinity": 0,
+		"availability": "always",
+		"dialoguePool": [
+			"Want to do a cozy errand together?",
+			"You and Buddy look synced today.",
+		],
+	},
+	{
+		"id": "rook",
+		"name": "Rook",
+		"role": "rival",
+		"affinity": 0,
+		"availability": "daytime",
+		"dialoguePool": [
+			"Try this challenge if you are ready.",
+			"No pressure. Skip if you want a quiet loop.",
+		],
+	},
+]
+
+const DEFAULT_QUESTS := [
+	{
+		"id": "quest-cozy-checkin",
+		"type": "bond",
+		"npcId": "pip",
+		"requirements": {"kind": "pet_once"},
+		"rewards": {"crystals": 5, "itemId": "wz-tri-colored-dango"},
+		"repeatability": "daily",
+		"narrativeText": "Pip asks for a cozy check-in with Buddy.",
+	},
+	{
+		"id": "quest-training-nudge",
+		"type": "training",
+		"npcId": "mira",
+		"requirements": {"kind": "happy_or_wander"},
+		"rewards": {"crystals": 6, "itemId": "wz-stone-golem-rubble"},
+		"repeatability": "daily",
+		"narrativeText": "Mira suggests a short training drill.",
+	},
+]
+
+const DEFAULT_ENCOUNTERS := [
+	{
+		"id": "encounter-curious-visitor",
+		"type": "optional",
+		"action": "visitor",
+		"npcId": "rook",
+		"narrativeText": "Rook spots a wild challenge nearby.",
+		"rewardsEngage": {"crystals": 7, "itemId": "wz-stone-golem-rubble"},
+		"rewardsSkip": {"crystals": 1},
+	}
+]
+
+const WORLD_DEFAULTS := {
+	"home_mode": "overlay",
+	"home_layout": {
+		"sceneId": "cozy_starter_room",
+		"decorSlots": {"wall": "", "floor": "", "display": ""},
+	},
+	"npcs": [],
+	"quests": [],
+	"encounters": [],
+	"npc_affinity": {},
+	"completed_quests": [],
+	"recent_encounters": [],
+	"pending_quest_id": "",
+	"pending_encounter_id": "",
+	"next_quest_unix": 0,
+	"next_encounter_unix": 0,
+	"quest_rotation_index": 0,
+	"encounter_rotation_index": 0,
+	"last_world_event_id": "",
+	"last_world_event_unix": 0,
+}
+
+
+func ensure_world_state(world_state: Dictionary) -> Dictionary:
+	var merged := world_state.duplicate(true)
+	var world_variant = merged.get("world", null)
+	if typeof(world_variant) != TYPE_DICTIONARY:
+		merged["world"] = WORLD_DEFAULTS.duplicate(true)
+	var world: Dictionary = merged.get("world", {}).duplicate(true)
+
+	for key in WORLD_DEFAULTS.keys():
+		if not world.has(key):
+			world[key] = WORLD_DEFAULTS[key]
+
+	if typeof(world.get("home_layout", null)) != TYPE_DICTIONARY:
+		world["home_layout"] = WORLD_DEFAULTS["home_layout"].duplicate(true)
+	if typeof(world.get("npcs", null)) != TYPE_ARRAY:
+		world["npcs"] = []
+	if typeof(world.get("quests", null)) != TYPE_ARRAY:
+		world["quests"] = []
+	if typeof(world.get("encounters", null)) != TYPE_ARRAY:
+		world["encounters"] = []
+	if typeof(world.get("npc_affinity", null)) != TYPE_DICTIONARY:
+		world["npc_affinity"] = {}
+	if typeof(world.get("completed_quests", null)) != TYPE_ARRAY:
+		world["completed_quests"] = []
+	if typeof(world.get("recent_encounters", null)) != TYPE_ARRAY:
+		world["recent_encounters"] = []
+
+	merged["world"] = world
+	return merged
+
+
+func configure_from_manifest(world_state: Dictionary, manifest: Dictionary) -> Dictionary:
+	var merged := ensure_world_state(world_state)
+	var world: Dictionary = merged.get("world", {}).duplicate(true)
+
+	var npcs := _normalize_npcs(manifest.get("npcs", []))
+	if npcs.is_empty():
+		npcs = DEFAULT_NPCS.duplicate(true)
+	world["npcs"] = npcs
+
+	var quests := _normalize_quests(manifest.get("quests", []))
+	if quests.is_empty():
+		quests = DEFAULT_QUESTS.duplicate(true)
+	world["quests"] = quests
+
+	var encounters := _normalize_encounters(manifest.get("encounters", []))
+	if encounters.is_empty():
+		encounters = DEFAULT_ENCOUNTERS.duplicate(true)
+	world["encounters"] = encounters
+
+	var home_variant = manifest.get("home", null)
+	if typeof(home_variant) == TYPE_DICTIONARY:
+		var home: Dictionary = home_variant
+		var next_home: Dictionary = (world.get("home_layout", {}) as Dictionary).duplicate(true)
+		next_home["sceneId"] = str(home.get("sceneId", next_home.get("sceneId", "cozy_starter_room")))
+		var slots_variant = home.get("decorSlots", null)
+		if typeof(slots_variant) == TYPE_DICTIONARY:
+			next_home["decorSlots"] = (slots_variant as Dictionary).duplicate(true)
+		world["home_layout"] = next_home
+
+	var affinity: Dictionary = world.get("npc_affinity", {}).duplicate(true)
+	for npc_variant in npcs:
+		if typeof(npc_variant) != TYPE_DICTIONARY:
+			continue
+		var npc: Dictionary = npc_variant
+		var npc_id := str(npc.get("id", ""))
+		if npc_id == "":
+			continue
+		if not affinity.has(npc_id):
+			affinity[npc_id] = int(npc.get("affinity", 0))
+	world["npc_affinity"] = affinity
+
+	if not _id_in_rows(world.get("pending_quest_id", ""), quests):
+		world["pending_quest_id"] = ""
+	if not _id_in_rows(world.get("pending_encounter_id", ""), encounters):
+		world["pending_encounter_id"] = ""
+
+	merged["world"] = world
+	return merged
+
+
+func tick_world(world_state: Dictionary, profile: Dictionary, now_unix: int) -> Dictionary:
+	var merged := ensure_world_state(world_state)
+	var world: Dictionary = merged.get("world", {}).duplicate(true)
+	var changed := false
+	var prompt := {}
+	var mood := str(profile.get("dominant_mood", "calm"))
+
+	if str(world.get("pending_quest_id", "")) == "":
+		var next_quest_unix := int(world.get("next_quest_unix", 0))
+		if now_unix >= next_quest_unix:
+			var quests: Array = world.get("quests", [])
+			if not quests.is_empty():
+				var quest := _rotating_pick(quests, int(world.get("quest_rotation_index", 0)))
+				world["quest_rotation_index"] = int(world.get("quest_rotation_index", 0)) + 1
+				world["pending_quest_id"] = str(quest.get("id", ""))
+				world["next_quest_unix"] = now_unix + 900
+				world["last_world_event_id"] = str(quest.get("id", ""))
+				world["last_world_event_unix"] = now_unix
+				changed = true
+				prompt = {
+					"type": "quest",
+					"id": str(quest.get("id", "")),
+					"npcName": _npc_name(world, str(quest.get("npcId", ""))),
+					"text": str(quest.get("narrativeText", "A village quest is available.")),
+				}
+
+	if str(world.get("pending_encounter_id", "")) == "":
+		var next_encounter_unix := int(world.get("next_encounter_unix", 0))
+		if now_unix >= next_encounter_unix and mood != "sleepy":
+			var encounters: Array = world.get("encounters", [])
+			if not encounters.is_empty():
+				var encounter := _rotating_pick(encounters, int(world.get("encounter_rotation_index", 0)))
+				world["encounter_rotation_index"] = int(world.get("encounter_rotation_index", 0)) + 1
+				world["pending_encounter_id"] = str(encounter.get("id", ""))
+				world["next_encounter_unix"] = now_unix + 1200
+				world["last_world_event_id"] = str(encounter.get("id", ""))
+				world["last_world_event_unix"] = now_unix
+				changed = true
+				if prompt.is_empty():
+					prompt = {
+						"type": "encounter",
+						"id": str(encounter.get("id", "")),
+						"npcName": _npc_name(world, str(encounter.get("npcId", ""))),
+						"text": str(encounter.get("narrativeText", "An optional encounter appears.")),
+					}
+
+	merged["world"] = world
+	return {
+		"changed": changed,
+		"prompt": prompt,
+		"world_state": merged,
+	}
+
+
+func complete_pending_quest(world_state: Dictionary) -> Dictionary:
+	var merged := ensure_world_state(world_state)
+	var world: Dictionary = merged.get("world", {}).duplicate(true)
+	var quest_id := str(world.get("pending_quest_id", ""))
+	if quest_id == "":
+		return {"ok": false, "reason": "no_pending_quest", "world_state": merged}
+
+	var quest := _find_row(world.get("quests", []), quest_id)
+	if quest.is_empty():
+		world["pending_quest_id"] = ""
+		merged["world"] = world
+		return {"ok": false, "reason": "unknown_quest", "world_state": merged}
+
+	var completed: Array = world.get("completed_quests", [])
+	completed.append(quest_id)
+	if completed.size() > 40:
+		completed = completed.slice(completed.size() - 40, completed.size())
+	world["completed_quests"] = completed
+	world["pending_quest_id"] = ""
+	var npc_id := str(quest.get("npcId", ""))
+	if npc_id != "":
+		var affinity: Dictionary = world.get("npc_affinity", {}).duplicate(true)
+		affinity[npc_id] = int(affinity.get(npc_id, 0)) + 1
+		world["npc_affinity"] = affinity
+
+	merged["world"] = world
+	return {
+		"ok": true,
+		"reason": "",
+		"quest": quest,
+		"npcName": _npc_name(world, npc_id),
+		"rewards": quest.get("rewards", {}),
+		"world_state": merged,
+	}
+
+
+func resolve_pending_encounter(world_state: Dictionary, engage: bool) -> Dictionary:
+	var merged := ensure_world_state(world_state)
+	var world: Dictionary = merged.get("world", {}).duplicate(true)
+	var encounter_id := str(world.get("pending_encounter_id", ""))
+	if encounter_id == "":
+		return {"ok": false, "reason": "no_pending_encounter", "world_state": merged}
+
+	var encounter := _find_row(world.get("encounters", []), encounter_id)
+	if encounter.is_empty():
+		world["pending_encounter_id"] = ""
+		merged["world"] = world
+		return {"ok": false, "reason": "unknown_encounter", "world_state": merged}
+
+	var history: Array = world.get("recent_encounters", [])
+	history.append({"id": encounter_id, "engage": engage, "ts": Time.get_unix_time_from_system()})
+	if history.size() > 30:
+		history = history.slice(history.size() - 30, history.size())
+	world["recent_encounters"] = history
+	world["pending_encounter_id"] = ""
+
+	merged["world"] = world
+	var reward_key := "rewardsEngage" if engage else "rewardsSkip"
+	return {
+		"ok": true,
+		"reason": "",
+		"encounter": encounter,
+		"engaged": engage,
+		"npcName": _npc_name(world, str(encounter.get("npcId", ""))),
+		"rewards": encounter.get(reward_key, {}),
+		"world_state": merged,
+	}
+
+
+func get_snapshot(world_state: Dictionary) -> Dictionary:
+	var merged := ensure_world_state(world_state)
+	var world: Dictionary = merged.get("world", {})
+	return {
+		"home_scene_id": str(world.get("home_layout", {}).get("sceneId", "cozy_starter_room")),
+		"pending_quest_id": str(world.get("pending_quest_id", "")),
+		"pending_encounter_id": str(world.get("pending_encounter_id", "")),
+		"npc_count": (world.get("npcs", []) as Array).size(),
+		"quest_count": (world.get("quests", []) as Array).size(),
+		"encounter_count": (world.get("encounters", []) as Array).size(),
+		"last_world_event_id": str(world.get("last_world_event_id", "")),
+	}
+
+
+func _normalize_npcs(value: Variant) -> Array:
+	if typeof(value) != TYPE_ARRAY:
+		return []
+	var rows: Array = []
+	for row_variant in (value as Array):
+		if typeof(row_variant) != TYPE_DICTIONARY:
+			continue
+		var row: Dictionary = row_variant
+		var npc_id := str(row.get("id", ""))
+		var name := str(row.get("name", ""))
+		if npc_id == "" or name == "":
+			continue
+		rows.append(
+			{
+				"id": npc_id,
+				"name": name,
+				"role": str(row.get("role", "villager")),
+				"affinity": int(row.get("affinity", 0)),
+				"availability": str(row.get("availability", "always")),
+				"dialoguePool": row.get("dialoguePool", []),
+			}
+		)
+	return rows
+
+
+func _normalize_quests(value: Variant) -> Array:
+	if typeof(value) != TYPE_ARRAY:
+		return []
+	var rows: Array = []
+	for row_variant in (value as Array):
+		if typeof(row_variant) != TYPE_DICTIONARY:
+			continue
+		var row: Dictionary = row_variant
+		var quest_id := str(row.get("id", ""))
+		if quest_id == "":
+			continue
+		rows.append(
+			{
+				"id": quest_id,
+				"type": str(row.get("type", "daily")),
+				"npcId": str(row.get("npcId", "")),
+				"requirements": row.get("requirements", {}),
+				"rewards": row.get("rewards", {}),
+				"repeatability": str(row.get("repeatability", "daily")),
+				"narrativeText": str(row.get("narrativeText", "A buddy quest is available.")),
+			}
+		)
+	return rows
+
+
+func _normalize_encounters(value: Variant) -> Array:
+	if typeof(value) != TYPE_ARRAY:
+		return []
+	var rows: Array = []
+	for row_variant in (value as Array):
+		if typeof(row_variant) != TYPE_DICTIONARY:
+			continue
+		var row: Dictionary = row_variant
+		var encounter_id := str(row.get("id", ""))
+		if encounter_id == "":
+			continue
+		rows.append(
+			{
+				"id": encounter_id,
+				"type": str(row.get("type", "optional")),
+				"action": str(row.get("action", "visitor")),
+				"npcId": str(row.get("npcId", "")),
+				"narrativeText": str(row.get("narrativeText", "An encounter appears.")),
+				"rewardsEngage": row.get("rewardsEngage", {}),
+				"rewardsSkip": row.get("rewardsSkip", {}),
+			}
+		)
+	return rows
+
+
+func _rotating_pick(rows: Array, index: int) -> Dictionary:
+	if rows.is_empty():
+		return {}
+	var i := posmod(index, rows.size())
+	var candidate = rows[i]
+	if typeof(candidate) != TYPE_DICTIONARY:
+		return {}
+	return (candidate as Dictionary).duplicate(true)
+
+
+func _find_row(rows_variant: Variant, wanted_id: String) -> Dictionary:
+	if typeof(rows_variant) != TYPE_ARRAY:
+		return {}
+	for row_variant in (rows_variant as Array):
+		if typeof(row_variant) != TYPE_DICTIONARY:
+			continue
+		var row: Dictionary = row_variant
+		if str(row.get("id", "")) == wanted_id:
+			return row.duplicate(true)
+	return {}
+
+
+func _id_in_rows(wanted_id: String, rows_variant: Variant) -> bool:
+	if wanted_id == "" or typeof(rows_variant) != TYPE_ARRAY:
+		return false
+	for row_variant in (rows_variant as Array):
+		if typeof(row_variant) != TYPE_DICTIONARY:
+			continue
+		if str((row_variant as Dictionary).get("id", "")) == wanted_id:
+			return true
+	return false
+
+
+func _npc_name(world: Dictionary, npc_id: String) -> String:
+	if npc_id == "":
+		return "Villager"
+	var rows_variant = world.get("npcs", [])
+	if typeof(rows_variant) != TYPE_ARRAY:
+		return "Villager"
+	for row_variant in (rows_variant as Array):
+		if typeof(row_variant) != TYPE_DICTIONARY:
+			continue
+		var row: Dictionary = row_variant
+		if str(row.get("id", "")) == npc_id:
+			return str(row.get("name", "Villager"))
+	return "Villager"

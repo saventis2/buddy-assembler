@@ -99,6 +99,10 @@ content/<pack_id>/
 | `items` | array | Optional runtime item definitions (id, category, rarity, theme) |
 | `currencies` | object | Optional currency defaults (for V1, usually `crystals`) |
 | `rewardBoxes` | array | Optional themed reward-box definitions |
+| `home` | object | Optional home scene + decor slot defaults |
+| `npcs` | array | Optional NPC cast (`id`, `name`, `role`, `dialoguePool`) |
+| `quests` | array | Optional quest pool with `rewards` payload |
+| `encounters` | array | Optional encounter pool with engage/skip rewards |
 
 ### Curated WZ whitelist note (V1)
 

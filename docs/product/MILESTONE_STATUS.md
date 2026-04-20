@@ -1,10 +1,18 @@
 # Milestone Status
 
-Updated: 2026-04-19 (gift-pipeline + face-emote-rotation complete)
+Updated: 2026-04-20 (world-layer stub wiring added)
 
 > Update (2026-04-20): buddy-system milestone tracking is now coordinated with
 > `BUDDY_V1_BUILD_PLAN_MILESTONE_EXECUTION_2026-04-20.md` for identity/economy/world
 > sequencing beyond vertical-slice runtime polish.
+
+## Buddy Milestone 3 (World Layer Stub — 2026-04-20)
+
+- [done] Added manifest-driven world contract fields (`home`, `npcs`, `quests`, `encounters`)
+- [done] Added `world_service.gd` with pending quest/encounter rotation
+- [done] Added AppState world hooks for prompt ticking + quest/encounter resolution
+- [done] Added overlay controls for world flow (`F12` engage/complete, `Shift+F12` skip encounter)
+- [done] Wired rewards from quest/encounter outcomes into economy service transactions
 
 ## Phase 5 (Visual polish & WZ asset expansion — 2026-04-19)
 

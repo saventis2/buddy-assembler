@@ -26,6 +26,8 @@ func _ready() -> void:
 
 func _run_all() -> void:
     _case("valid_manifest_passes", func(): return _test_valid_manifest_passes())
+    _case("world_contract_optional_valid", func(): return _test_world_contract_optional_valid())
+    _case("world_contract_invalid_npc_fails", func(): return _test_world_contract_invalid_npc_fails())
     _case("missing_required_key_fails", func(): return _test_missing_required_key_fails())
     _case("malformed_json_fails", func(): return _test_malformed_json_fails())
     _case("missing_manifest_file_fails", func(): return _test_missing_manifest_file_fails())
@@ -108,6 +110,33 @@ func _test_valid_manifest_passes() -> Variant:
     if not bool(r.get("ok", false)):
         return "load_pack errors=%s" % [r.get("errors", [])]
     return null
+
+
+func _test_world_contract_optional_valid() -> Variant:
+    var m := _valid_manifest_dict("world-ok")
+    m["home"] = {"sceneId": "cozy_starter_room", "decorSlots": {"wall": "item"}}
+    m["npcs"] = [{"id": "mira", "name": "Mira", "role": "mentor", "dialoguePool": ["Hi"]}]
+    m["quests"] = [{"id": "quest-a", "type": "bond", "rewards": {"crystals": 1}}]
+    m["encounters"] = [{"id": "encounter-a", "action": "visitor"}]
+    _write_pack("world-ok", m)
+    var r := ContentLoader.load_pack("world-ok", ROOT)
+    if not bool(r.get("ok", false)):
+        return "expected optional world fields to pass, got %s" % [r.get("errors", [])]
+    return null
+
+
+func _test_world_contract_invalid_npc_fails() -> Variant:
+    var m := _valid_manifest_dict("world-bad")
+    m["npcs"] = [{"id": "mira"}]
+    _write_pack("world-bad", m)
+    var r := ContentLoader.load_pack("world-bad", ROOT)
+    if bool(r.get("ok", false)):
+        return "expected failure for npc without name"
+    var errors: Array = r.get("errors", [])
+    for e in errors:
+        if String(e).find("npcs.name") != -1:
+            return null
+    return "expected npcs.name validation error, got %s" % [errors]
 
 
 func _test_missing_required_key_fails() -> Variant:

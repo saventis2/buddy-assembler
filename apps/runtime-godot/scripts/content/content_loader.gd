@@ -318,6 +318,59 @@ static func validate_manifest(manifest: Dictionary) -> Array:
                 elif int(cost) <= 0:
                     errors.append("rewardBoxes.cost must be > 0")
 
+    var npcs_variant = manifest.get("npcs", null)
+    if npcs_variant != null:
+        if typeof(npcs_variant) != TYPE_ARRAY:
+            errors.append("npcs must be array when set")
+        else:
+            for npc_variant in (npcs_variant as Array):
+                if typeof(npc_variant) != TYPE_DICTIONARY:
+                    errors.append("npcs entries must be objects")
+                    continue
+                var npc: Dictionary = npc_variant
+                if _is_blank(npc.get("id", "")):
+                    errors.append("npcs.id must be non-empty string")
+                if _is_blank(npc.get("name", "")):
+                    errors.append("npcs.name must be non-empty string")
+                if npc.has("dialoguePool") and typeof(npc.get("dialoguePool")) != TYPE_ARRAY:
+                    errors.append("npcs.dialoguePool must be array when set")
+
+    var quests_variant = manifest.get("quests", null)
+    if quests_variant != null:
+        if typeof(quests_variant) != TYPE_ARRAY:
+            errors.append("quests must be array when set")
+        else:
+            for quest_variant in (quests_variant as Array):
+                if typeof(quest_variant) != TYPE_DICTIONARY:
+                    errors.append("quests entries must be objects")
+                    continue
+                var quest: Dictionary = quest_variant
+                if _is_blank(quest.get("id", "")):
+                    errors.append("quests.id must be non-empty string")
+                if _is_blank(quest.get("type", "")):
+                    errors.append("quests.type must be non-empty string")
+                if quest.has("rewards") and typeof(quest.get("rewards")) != TYPE_DICTIONARY:
+                    errors.append("quests.rewards must be object when set")
+
+    var encounters_variant = manifest.get("encounters", null)
+    if encounters_variant != null:
+        if typeof(encounters_variant) != TYPE_ARRAY:
+            errors.append("encounters must be array when set")
+        else:
+            for encounter_variant in (encounters_variant as Array):
+                if typeof(encounter_variant) != TYPE_DICTIONARY:
+                    errors.append("encounters entries must be objects")
+                    continue
+                var encounter: Dictionary = encounter_variant
+                if _is_blank(encounter.get("id", "")):
+                    errors.append("encounters.id must be non-empty string")
+                if _is_blank(encounter.get("action", "")):
+                    errors.append("encounters.action must be non-empty string")
+
+    var home_variant = manifest.get("home", null)
+    if home_variant != null and typeof(home_variant) != TYPE_DICTIONARY:
+        errors.append("home must be object when set")
+
     return errors
 
 

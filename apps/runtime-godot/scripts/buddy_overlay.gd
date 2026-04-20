@@ -166,6 +166,8 @@ func _input(event: InputEvent) -> void:
                 _refresh_telemetry()
             elif key_event.keycode == KEY_F11:
                 _open_debug_reward_box()
+            elif key_event.keycode == KEY_F12:
+                _resolve_world_prompt(not key_event.shift_pressed)
             elif DEBUG_EMOTE_KEYS.has(key_event.keycode):
                 var semantic := str(DEBUG_EMOTE_KEYS[key_event.keycode])
                 _set_emote_from_semantic(semantic, true, 12.0)
@@ -331,6 +333,9 @@ func _on_tick_timer_timeout() -> void:
     _set_emote_from_state(_state)
     _set_visual_for_state(_state)
     AppState.apply_behavior(_state)
+    var world_prompt := AppState.tick_world_events(int(now_unix))
+    if not world_prompt.is_empty():
+        _show_world_prompt(world_prompt)
     _refresh_telemetry()
     if _state == "idle":
         _maybe_show_bond_phrase()
@@ -549,7 +554,11 @@ func _refresh_telemetry() -> void:
         "sprite: %s" % _sprite_debug_label(),
         "ground: disabled",
         "last event: %s" % _last_event_id,
-        "F6 telemetry  F7 freq  F8 monitor  F9 pack  F10 emotes  F11 reward",
+        "home: %s" % str(snapshot.get("home_scene_id", "cozy_starter_room")),
+        "pending quest: %s" % str(snapshot.get("pending_quest_id", "")),
+        "pending encounter: %s" % str(snapshot.get("pending_encounter_id", "")),
+        "world event: %s" % str(snapshot.get("last_world_event_id", "")),
+        "F6 telemetry  F7 freq  F8 monitor  F9 pack  F10 emotes  F11 reward  F12 world",
     ]
     if _debug_emote_panel_enabled:
         var lock_remaining := maxi(0, _manual_emote_until_unix - int(Time.get_unix_time_from_system()))
@@ -1403,3 +1412,55 @@ func _open_debug_reward_box() -> void:
     else:
         var reason := str(result.get("reason", "unavailable"))
         chat_balloon.show_text("Could not open %s (%s)" % [preferred, reason])
+
+
+func _show_world_prompt(prompt: Dictionary) -> void:
+    var prompt_type := str(prompt.get("type", ""))
+    var npc_name := str(prompt.get("npcName", "Villager"))
+    var text := str(prompt.get("text", ""))
+    if text == "":
+        return
+    _update_balloon_position()
+    if prompt_type == "encounter":
+        chat_balloon.show_text("%s: %s (F12 engage / Shift+F12 skip)" % [npc_name, text])
+    else:
+        chat_balloon.show_text("%s: %s (F12 complete)" % [npc_name, text])
+
+
+func _resolve_world_prompt(engage_encounter: bool) -> void:
+    var world_snapshot := AppState.get_world_snapshot()
+    var pending_encounter := str(world_snapshot.get("pending_encounter_id", ""))
+    var pending_quest := str(world_snapshot.get("pending_quest_id", ""))
+    _update_balloon_position()
+    if pending_encounter != "":
+        var encounter_result := AppState.resolve_pending_encounter(engage_encounter)
+        if bool(encounter_result.get("ok", false)):
+            var npc := str(encounter_result.get("npc_name", "Villager"))
+            var crystals := int(encounter_result.get("crystals", 0))
+            var item_name := str(encounter_result.get("item_name", ""))
+            var action_word := "engaged" if engage_encounter else "skipped"
+            var reward_text := "+%d crystals" % crystals
+            if item_name != "":
+                reward_text += " + %s" % item_name
+            chat_balloon.show_text("%s encounter %s: %s" % [npc, action_word, reward_text])
+        else:
+            chat_balloon.show_text("No encounter to resolve.")
+        _refresh_telemetry()
+        return
+
+    if pending_quest != "":
+        var quest_result := AppState.complete_pending_quest()
+        if bool(quest_result.get("ok", false)):
+            var npc_name := str(quest_result.get("npc_name", "Villager"))
+            var crystals_value := int(quest_result.get("crystals", 0))
+            var reward_line := "+%d crystals" % crystals_value
+            var item := str(quest_result.get("item_name", ""))
+            if item != "":
+                reward_line += " + %s" % item
+            chat_balloon.show_text("%s quest complete: %s" % [npc_name, reward_line])
+        else:
+            chat_balloon.show_text("No quest to complete.")
+        _refresh_telemetry()
+        return
+
+    chat_balloon.show_text("No pending world prompt.")

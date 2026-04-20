@@ -14,6 +14,7 @@ const SERVICE_PATHS := {
     "bond": "res://scripts/services/bond_service.gd",
     "growth": "res://scripts/services/growth_service.gd",
     "economy": "res://scripts/services/economy_service.gd",
+    "world": "res://scripts/services/world_service.gd",
     "report": "res://scripts/services/report_service.gd",
 }
 
@@ -123,6 +124,7 @@ func apply_loaded_pack(pack_id: String, manifest: Dictionary) -> void:
     settings["selectedPackId"] = pack_id
     world_state["activePackId"] = pack_id
     world_state["activePackManifestVersion"] = str(manifest.get("version", ""))
+    world_state = _call_world_service("world", "configure_from_manifest", [world_state, manifest], false)
     world_state = _call_world_service("economy", "configure_from_manifest", [world_state, manifest], false)
     flush()
 
@@ -258,12 +260,78 @@ func get_reward_box_ids() -> Array:
     return ids if typeof(ids) == TYPE_ARRAY else []
 
 
+func tick_world_events(now_unix: int) -> Dictionary:
+    var result = _call_service_with_fallback("world", "tick_world", [world_state, profile, now_unix], {})
+    if typeof(result) != TYPE_DICTIONARY:
+        return {}
+    var next_world = result.get("world_state", {})
+    if typeof(next_world) == TYPE_DICTIONARY:
+        world_state = next_world
+    if bool(result.get("changed", false)):
+        flush()
+    var prompt = result.get("prompt", {})
+    return prompt if typeof(prompt) == TYPE_DICTIONARY else {}
+
+
+func get_world_snapshot() -> Dictionary:
+    var snapshot = _call_service_with_fallback("world", "get_snapshot", [world_state], {})
+    return snapshot if typeof(snapshot) == TYPE_DICTIONARY else {}
+
+
+func complete_pending_quest() -> Dictionary:
+    var result = _call_service_with_fallback("world", "complete_pending_quest", [world_state], {})
+    if typeof(result) != TYPE_DICTIONARY:
+        return {"ok": false, "reason": "service_failure"}
+    if not bool(result.get("ok", false)):
+        return {"ok": false, "reason": str(result.get("reason", "unknown"))}
+
+    var next_world = result.get("world_state", {})
+    if typeof(next_world) == TYPE_DICTIONARY:
+        world_state = next_world
+
+    _apply_reward_payload("quest:%s" % str(result.get("quest", {}).get("id", "")), result.get("rewards", {}))
+    flush()
+    return {
+        "ok": true,
+        "quest_id": str(result.get("quest", {}).get("id", "")),
+        "npc_name": str(result.get("npcName", "Villager")),
+        "crystals": int(result.get("rewards", {}).get("crystals", 0)),
+        "item_name": str(_resolve_reward_item_name(result.get("rewards", {}).get("itemId", ""))),
+    }
+
+
+func resolve_pending_encounter(engage: bool) -> Dictionary:
+    var result = _call_service_with_fallback("world", "resolve_pending_encounter", [world_state, engage], {})
+    if typeof(result) != TYPE_DICTIONARY:
+        return {"ok": false, "reason": "service_failure"}
+    if not bool(result.get("ok", false)):
+        return {"ok": false, "reason": str(result.get("reason", "unknown"))}
+
+    var next_world = result.get("world_state", {})
+    if typeof(next_world) == TYPE_DICTIONARY:
+        world_state = next_world
+
+    var encounter_id := str(result.get("encounter", {}).get("id", ""))
+    var source := "encounter:%s:%s" % [encounter_id, "engage" if engage else "skip"]
+    _apply_reward_payload(source, result.get("rewards", {}))
+    flush()
+    return {
+        "ok": true,
+        "encounter_id": encounter_id,
+        "engaged": engage,
+        "npc_name": str(result.get("npcName", "Villager")),
+        "crystals": int(result.get("rewards", {}).get("crystals", 0)),
+        "item_name": str(_resolve_reward_item_name(result.get("rewards", {}).get("itemId", ""))),
+    }
+
+
 func get_telemetry_snapshot() -> Dictionary:
     var unlock_count := 0
     var unlocks = profile.get("unlocks", [])
     if typeof(unlocks) == TYPE_ARRAY:
         unlock_count = (unlocks as Array).size()
     var econ_snapshot: Dictionary = _call_service_with_fallback("economy", "get_snapshot", [world_state], {})
+    var world_snapshot: Dictionary = _call_service_with_fallback("world", "get_snapshot", [world_state], {})
     return {
         "bond_level": int(profile.get("bond_level", 1)),
         "bond_xp": int(profile.get("bond_xp", 0)),
@@ -278,6 +346,10 @@ func get_telemetry_snapshot() -> Dictionary:
         "unlock_count": unlock_count,
         "crystals": int(econ_snapshot.get("crystals", 0)),
         "inventory_count": int(econ_snapshot.get("inventory_count", 0)),
+        "home_scene_id": str(world_snapshot.get("home_scene_id", "cozy_starter_room")),
+        "pending_quest_id": str(world_snapshot.get("pending_quest_id", "")),
+        "pending_encounter_id": str(world_snapshot.get("pending_encounter_id", "")),
+        "last_world_event_id": str(world_snapshot.get("last_world_event_id", "")),
     }
 
 
@@ -327,8 +399,47 @@ func _ensure_profile_modules(input_profile: Dictionary) -> Dictionary:
 
 func _ensure_world_modules(input_world: Dictionary) -> Dictionary:
     var merged := input_world.duplicate(true)
+    merged = _call_world_service("world", "ensure_world_state", [merged], false)
     merged = _call_world_service("economy", "ensure_world_state", [merged], false)
     return merged
+
+
+func _apply_reward_payload(source_type: String, rewards_variant: Variant) -> void:
+    if typeof(rewards_variant) != TYPE_DICTIONARY:
+        return
+    var rewards: Dictionary = rewards_variant
+    var crystals := int(rewards.get("crystals", 0))
+    if crystals > 0:
+        world_state = _call_world_service("economy", "grant_crystals", [world_state, source_type, crystals], false)
+
+    var item_id := str(rewards.get("itemId", ""))
+    if item_id == "":
+        return
+    var item := _resolve_reward_item(item_id)
+    world_state = _call_world_service("economy", "grant_item", [world_state, source_type, item], false)
+
+
+func _resolve_reward_item(item_id: String) -> Dictionary:
+    var catalog_variant = world_state.get("item_catalog", {})
+    if typeof(catalog_variant) == TYPE_DICTIONARY:
+        var catalog: Dictionary = catalog_variant
+        if catalog.has(item_id) and typeof(catalog[item_id]) == TYPE_DICTIONARY:
+            return (catalog[item_id] as Dictionary).duplicate(true)
+    return {
+        "id": item_id,
+        "name": item_id.capitalize(),
+        "category": "quest_items",
+        "rarity": "common",
+        "primaryTheme": "cozy",
+        "sourceType": "world_fallback",
+    }
+
+
+func _resolve_reward_item_name(item_id: String) -> String:
+    if item_id == "":
+        return ""
+    var item := _resolve_reward_item(item_id)
+    return str(item.get("name", item_id))
 
 
 func _refresh_while_away_report() -> void:
@@ -478,6 +589,8 @@ func _default_world_state() -> Dictionary:
         "inventory": [],
         "reward_transactions": [],
         "reward_boxes": {},
+        "item_catalog": {},
+        "world": {},
     }
 
 

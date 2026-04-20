@@ -205,5 +205,94 @@
         "legendary": 3
       }
     }
+  ],
+  "home": {
+    "sceneId": "cozy_starter_room",
+    "decorSlots": {
+      "wall": "wz-rocky-mask-doll",
+      "floor": "",
+      "display": ""
+    }
+  },
+  "npcs": [
+    {
+      "id": "mira",
+      "name": "Mira",
+      "role": "mentor",
+      "affinity": 0,
+      "availability": "always",
+      "dialoguePool": [
+        "Steady training grows confidence.",
+        "One routine at a time."
+      ]
+    },
+    {
+      "id": "pip",
+      "name": "Pip",
+      "role": "friend",
+      "affinity": 0,
+      "availability": "always",
+      "dialoguePool": [
+        "Let us make the room cozier.",
+        "A quick check-in can still be meaningful."
+      ]
+    },
+    {
+      "id": "rook",
+      "name": "Rook",
+      "role": "rival",
+      "affinity": 0,
+      "availability": "daytime",
+      "dialoguePool": [
+        "Challenge when you are ready.",
+        "Skipping is fine too."
+      ]
+    }
+  ],
+  "quests": [
+    {
+      "id": "quest-cozy-checkin",
+      "type": "bond",
+      "npcId": "pip",
+      "requirements": {
+        "kind": "pet_once"
+      },
+      "rewards": {
+        "crystals": 5,
+        "itemId": "wz-tri-colored-dango"
+      },
+      "repeatability": "daily",
+      "narrativeText": "Pip asks for a cozy check-in with Buddy."
+    },
+    {
+      "id": "quest-training-nudge",
+      "type": "training",
+      "npcId": "mira",
+      "requirements": {
+        "kind": "happy_or_wander"
+      },
+      "rewards": {
+        "crystals": 6,
+        "itemId": "wz-stone-golem-rubble"
+      },
+      "repeatability": "daily",
+      "narrativeText": "Mira suggests a short training drill."
+    }
+  ],
+  "encounters": [
+    {
+      "id": "encounter-curious-visitor",
+      "type": "optional",
+      "action": "visitor",
+      "npcId": "rook",
+      "narrativeText": "Rook spots a wild challenge nearby.",
+      "rewardsEngage": {
+        "crystals": 7,
+        "itemId": "wz-stone-golem-rubble"
+      },
+      "rewardsSkip": {
+        "crystals": 1
+      }
+    }
   ]
 }

@@ -210,6 +210,66 @@
           }
         }
       }
+    },
+    "home": {
+      "type": "object",
+      "properties": {
+        "sceneId": { "type": "string", "minLength": 1 },
+        "decorSlots": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    },
+    "npcs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "name": { "type": "string", "minLength": 1 },
+          "role": { "type": "string", "minLength": 1 },
+          "affinity": { "type": "integer" },
+          "availability": { "type": "string", "minLength": 1 },
+          "dialoguePool": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "quests": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "type"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "type": { "type": "string", "minLength": 1 },
+          "npcId": { "type": "string", "minLength": 1 },
+          "requirements": { "type": "object" },
+          "rewards": { "type": "object" },
+          "repeatability": { "type": "string", "minLength": 1 },
+          "narrativeText": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "encounters": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "action"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "type": { "type": "string", "minLength": 1 },
+          "action": { "type": "string", "minLength": 1 },
+          "npcId": { "type": "string", "minLength": 1 },
+          "narrativeText": { "type": "string", "minLength": 1 },
+          "rewardsEngage": { "type": "object" },
+          "rewardsSkip": { "type": "object" }
+        }
+      }
     }
   }
 }
