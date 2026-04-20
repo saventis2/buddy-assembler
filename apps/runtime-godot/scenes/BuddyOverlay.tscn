@@ -27,6 +27,26 @@ theme_override_colors/font_outline_color = Color(0, 0, 0, 0.85)
 theme_override_constants/outline_size = 3
 text = "telemetry"
 
+[node name="SettingsLayer" type="CanvasLayer" parent="."]
+
+[node name="SettingsPanel" type="Panel" parent="SettingsLayer"]
+offset_left = 980.0
+offset_top = 12.0
+offset_right = 1360.0
+offset_bottom = 552.0
+
+[node name="SettingsLabel" type="Label" parent="SettingsLayer/SettingsPanel"]
+offset_left = 12.0
+offset_top = 10.0
+offset_right = 366.0
+offset_bottom = 528.0
+theme_override_font_sizes/font_size = 13
+theme_override_colors/font_color = Color(1, 1, 1, 0.95)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.85)
+theme_override_constants/outline_size = 2
+text = "Settings Menu (F10)"
+autowrap_mode = 3
+
 [node name="WelcomeLayer" type="CanvasLayer" parent="."]
 
 [node name="WelcomeLabel" type="Label" parent="WelcomeLayer"]

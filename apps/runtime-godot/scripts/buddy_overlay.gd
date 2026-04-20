@@ -14,6 +14,8 @@ const ACTION_EXTRA_FLOOR_OFFSET := {
 }
 const DEFAULT_ROAM_SPEED_PX_PER_SEC := 96.0
 const FLOOR_SETTLE_SPEED_PX_PER_SEC := 720.0
+const SETTINGS_PANEL_MARGIN := 12.0
+const SETTINGS_PANEL_ANIM_SECONDS := 0.22
 const DEFAULT_SPRITE_ANCHOR := Vector2(0.5, 1.0)
 const NO_PIVOT := Vector2(-1.0, -1.0)
 const SLEEP_PIVOT_OVERFLOW_BLEND := 1.0
@@ -54,6 +56,8 @@ const ManualVerificationReport = preload("res://scripts/utility/manual_verificat
 @onready var tick_timer: Timer = $TickTimer
 @onready var telemetry_timer: Timer = $TelemetryTimer
 @onready var telemetry_label: Label = $Telemetry/Label
+@onready var settings_panel: Panel = $SettingsLayer/SettingsPanel
+@onready var settings_label: Label = $SettingsLayer/SettingsPanel/SettingsLabel
 @onready var chat_balloon: Node2D = $ChatBalloon
 @onready var welcome_label: Label = $WelcomeLayer/WelcomeLabel
 
@@ -107,7 +111,8 @@ var _face_overlay_frames: Array = []
 var _face_texture_cache: Dictionary = {}
 var _active_emote_semantic := "default"
 var _active_face_variant := "default"
-var _debug_emote_panel_enabled := false
+var _settings_menu_open := false
+var _settings_menu_tween: Tween = null
 var _manual_emote_until_unix := 0
 var _last_face_texture_path := ""
 var _roam_speed_px_per_sec := DEFAULT_ROAM_SPEED_PX_PER_SEC
@@ -141,6 +146,8 @@ func _ready() -> void:
     set_process_input(true)
     _productivity.note_session_reset(int(Time.get_unix_time_from_system()))
     telemetry_label.visible = false
+    settings_panel.visible = true
+    _layout_settings_panel(false)
     _refresh_telemetry()
     if AppState.is_first_run():
         _show_welcome_once()
@@ -198,8 +205,7 @@ func _input(event: InputEvent) -> void:
             elif key_event.keycode == KEY_F9:
                 _cycle_pack()
             elif key_event.keycode == KEY_F10:
-                _debug_emote_panel_enabled = not _debug_emote_panel_enabled
-                _refresh_telemetry()
+                _toggle_settings_menu()
             elif key_event.keycode == KEY_F11:
                 _open_debug_reward_box()
             elif key_event.keycode == KEY_F12:
@@ -267,6 +273,11 @@ func _process(delta: float) -> void:
         _draw_center = base_center
     _advance_animation(delta)
     queue_redraw()
+
+
+func _notification(what: int) -> void:
+    if what == NOTIFICATION_WM_SIZE_CHANGED:
+        _layout_settings_panel(false)
 
 
 func _draw() -> void:
@@ -654,8 +665,9 @@ func _on_telemetry_timer_timeout() -> void:
 
 
 func _refresh_telemetry() -> void:
-    telemetry_label.visible = _telemetry_enabled or _debug_emote_panel_enabled
+    telemetry_label.visible = _telemetry_enabled
     if not telemetry_label.visible:
+        _refresh_settings_menu()
         return
 
     var snapshot := AppState.get_telemetry_snapshot()
@@ -723,15 +735,113 @@ func _refresh_telemetry() -> void:
         "F1 export snapshot  F2 prompt freq  F3 quiet strict  F4 intensity",
         "F5 mode  F6 telemetry",
         "F7 freq (Shift+F7 demo)  F8 monitor",
-        "F9 pack  F10 emotes  F11 reward  F12 world",
+        "F9 pack  F10 settings  F11 reward  F12 world",
         "Shift+F2 demo support prompt  Shift+F7 demo world prompt",
     ]
-    if _debug_emote_panel_enabled:
-        var lock_remaining := maxi(0, _manual_emote_until_unix - int(Time.get_unix_time_from_system()))
-        lines.append("manual emote lock: %ds" % lock_remaining)
-        lines.append("emote hotkeys: 1 happy 2 sad 3 angry 4 surprised 5 love")
-        lines.append("6 wink 7 sleepy 8 sick 9 pain 0 default")
     telemetry_label.text = "\n".join(lines)
+    _refresh_settings_menu()
+
+
+func _toggle_settings_menu() -> void:
+    _settings_menu_open = not _settings_menu_open
+    _layout_settings_panel(true)
+    _refresh_settings_menu()
+
+
+func _layout_settings_panel(animated: bool) -> void:
+    if settings_panel == null:
+        return
+
+    var viewport_size: Vector2 = get_viewport_rect().size
+    var panel_size: Vector2 = settings_panel.size
+    if panel_size.x <= 0.0 or panel_size.y <= 0.0:
+        panel_size = Vector2(380.0, 540.0)
+
+    var open_pos := Vector2(
+        maxf(SETTINGS_PANEL_MARGIN, viewport_size.x - panel_size.x - SETTINGS_PANEL_MARGIN),
+        SETTINGS_PANEL_MARGIN
+    )
+    var closed_pos := Vector2(viewport_size.x + SETTINGS_PANEL_MARGIN, SETTINGS_PANEL_MARGIN)
+    var target := open_pos if _settings_menu_open else closed_pos
+
+    if _settings_menu_tween != null:
+        _settings_menu_tween.kill()
+        _settings_menu_tween = null
+
+    if animated:
+        settings_panel.visible = true
+        _settings_menu_tween = create_tween()
+        _settings_menu_tween.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+        _settings_menu_tween.tween_property(
+            settings_panel,
+            "position",
+            target,
+            SETTINGS_PANEL_ANIM_SECONDS
+        )
+        if not _settings_menu_open:
+            _settings_menu_tween.tween_callback(func() -> void:
+                settings_panel.visible = false
+            )
+    else:
+        settings_panel.position = target
+        settings_panel.visible = _settings_menu_open
+
+
+func _refresh_settings_menu() -> void:
+    if settings_label == null:
+        return
+
+    var snapshot := AppState.get_telemetry_snapshot()
+    var prompt_metrics := _manual_verification_report.get_prompt_metrics()
+    var lock_remaining := maxi(0, _manual_emote_until_unix - int(Time.get_unix_time_from_system()))
+
+    var lines: Array[String] = [
+        "Settings Menu (F10)",
+        "",
+        "[Status]",
+        "state: %s  mood: %s  growth: %d" % [
+            _state,
+            str(snapshot.get("mood", "calm")),
+            int(snapshot.get("growth_stage", 1)),
+        ],
+        "bond: Lv %d  xp %d  trust %.2f" % [
+            int(snapshot.get("bond_level", 1)),
+            int(snapshot.get("bond_xp", 0)),
+            float(snapshot.get("trust_value", 0.2)),
+        ],
+        "pack: %s  mode: %s" % [
+            str(snapshot.get("active_pack", "core_pack")),
+            str(snapshot.get("home_mode", "overlay")),
+        ],
+        "",
+        "[Cadence]",
+        "event freq: %s" % str(AppState.settings.get("eventFrequency", "normal")),
+        "prompt freq: %s" % str(AppState.settings.get("promptFrequency", "normal")),
+        "quiet strict: %s  quiet now: %s" % [
+            str(AppState.settings.get("quietModeStrictness", "balanced")),
+            "on" if AppState.is_quiet_hours_now() else "off",
+        ],
+        "prompts: s+%d s-%d w+%d w-%d wd%d" % [
+            int(prompt_metrics.get("support_shown", 0)),
+            int(prompt_metrics.get("support_suppressed", 0)),
+            int(prompt_metrics.get("world_shown", 0)),
+            int(prompt_metrics.get("world_suppressed", 0)),
+            int(prompt_metrics.get("world_deferred", 0)),
+        ],
+        "",
+        "[Controls]",
+        "F2 prompt freq  Shift+F2 demo support",
+        "F3 quiet strict  F4 intensity",
+        "F5 home/overlay  F7 event freq",
+        "Shift+F7 demo world  F8 monitor",
+        "F9 pack  F11 reward box  F12 resolve world",
+        "",
+        "[Emote Debug]",
+        "lock: %ds" % lock_remaining,
+        "1 happy 2 sad 3 angry 4 surprised 5 love",
+        "6 wink 7 sleepy 8 sick 9 pain 0 default",
+    ]
+    settings_label.text = "\n".join(lines)
 
 
 func _load_visual_assets(pack_id: String, manifest: Dictionary) -> void:
