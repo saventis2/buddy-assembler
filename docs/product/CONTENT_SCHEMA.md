@@ -100,6 +100,12 @@ content/<pack_id>/
 | `currencies` | object | Optional currency defaults (for V1, usually `crystals`) |
 | `rewardBoxes` | array | Optional themed reward-box definitions |
 
+### Curated WZ whitelist note (V1)
+
+- Runtime can consume curated item rows through `items` in the pack manifest.
+- For V1, use a controlled shortlist (`sourceType: "wz_whitelist_v1"`) and avoid broad ingest.
+- `rewardBoxes[].possibleItems` should reference these curated IDs.
+
 ---
 
 ## Animation JSON format

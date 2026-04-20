@@ -164,6 +164,8 @@ func _input(event: InputEvent) -> void:
             elif key_event.keycode == KEY_F10:
                 _debug_emote_panel_enabled = not _debug_emote_panel_enabled
                 _refresh_telemetry()
+            elif key_event.keycode == KEY_F11:
+                _open_debug_reward_box()
             elif DEBUG_EMOTE_KEYS.has(key_event.keycode):
                 var semantic := str(DEBUG_EMOTE_KEYS[key_event.keycode])
                 _set_emote_from_semantic(semantic, true, 12.0)
@@ -547,7 +549,7 @@ func _refresh_telemetry() -> void:
         "sprite: %s" % _sprite_debug_label(),
         "ground: disabled",
         "last event: %s" % _last_event_id,
-        "F6 telemetry  F7 freq  F8 monitor  F9 pack  F10 emotes",
+        "F6 telemetry  F7 freq  F8 monitor  F9 pack  F10 emotes  F11 reward",
     ]
     if _debug_emote_panel_enabled:
         var lock_remaining := maxi(0, _manual_emote_until_unix - int(Time.get_unix_time_from_system()))
@@ -1384,3 +1386,20 @@ func _show_while_away_report_once() -> void:
     await get_tree().create_timer(5.0).timeout
     chat_balloon.hide_bubble()
     AppState.clear_last_active_summary()
+
+
+func _open_debug_reward_box() -> void:
+    var box_ids := AppState.get_reward_box_ids()
+    if box_ids.is_empty():
+        _update_balloon_position()
+        chat_balloon.show_text("No reward boxes configured.")
+        return
+    var preferred := "cozy_box" if box_ids.has("cozy_box") else str(box_ids[0])
+    var result := AppState.open_reward_box(preferred)
+    _update_balloon_position()
+    if bool(result.get("ok", false)):
+        var item_name := str(result.get("item_name", "item"))
+        chat_balloon.show_text("Opened %s: %s" % [preferred, item_name])
+    else:
+        var reason := str(result.get("reason", "unavailable"))
+        chat_balloon.show_text("Could not open %s (%s)" % [preferred, reason])

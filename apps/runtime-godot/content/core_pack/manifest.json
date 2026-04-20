@@ -90,5 +90,120 @@
       "perHour": 1,
       "perDay": 3
     }
+  ],
+  "currencies": {
+    "crystals": 25
+  },
+  "items": [
+    {
+      "id": "wz-tri-colored-dango",
+      "name": "Tri-colored Dango",
+      "category": "food",
+      "rarity": "common",
+      "primaryTheme": "cozy",
+      "secondaryThemes": ["nostalgic_fantasy"],
+      "sourceType": "wz_whitelist_v1",
+      "effectProfile": {
+        "mood": "happy",
+        "comfort": 0.1
+      }
+    },
+    {
+      "id": "wz-fruity-candy",
+      "name": "Fruity Candy",
+      "category": "food",
+      "rarity": "uncommon",
+      "primaryTheme": "silly",
+      "secondaryThemes": ["cozy"],
+      "sourceType": "wz_whitelist_v1",
+      "effectProfile": {
+        "mood": "excited",
+        "energy": 0.15
+      }
+    },
+    {
+      "id": "wz-green-halloween-stick-candy",
+      "name": "Green Halloween Stick Candy",
+      "category": "gifts",
+      "rarity": "rare",
+      "primaryTheme": "spooky",
+      "secondaryThemes": ["silly"],
+      "sourceType": "wz_whitelist_v1",
+      "effectProfile": {
+        "bond": 3
+      }
+    },
+    {
+      "id": "wz-stone-golem-rubble",
+      "name": "Stone Golem Rubble",
+      "category": "materials",
+      "rarity": "common",
+      "primaryTheme": "heroic",
+      "secondaryThemes": ["natural"],
+      "sourceType": "wz_whitelist_v1",
+      "effectProfile": {
+        "crafting": 1
+      }
+    },
+    {
+      "id": "wz-ridleys-stone",
+      "name": "Ridley's Stone",
+      "category": "materials",
+      "rarity": "epic",
+      "primaryTheme": "magical",
+      "secondaryThemes": ["heroic"],
+      "sourceType": "wz_whitelist_v1",
+      "effectProfile": {
+        "evolutionHint": 1
+      }
+    },
+    {
+      "id": "wz-rocky-mask-doll",
+      "name": "Rocky Mask Doll",
+      "category": "decor",
+      "rarity": "rare",
+      "primaryTheme": "cozy",
+      "secondaryThemes": ["nostalgic_fantasy"],
+      "sourceType": "wz_whitelist_v1",
+      "effectProfile": {
+        "homeComfort": 0.2
+      }
+    }
+  ],
+  "rewardBoxes": [
+    {
+      "id": "cozy_box",
+      "theme": "cozy",
+      "cost": 15,
+      "possibleItems": [
+        "wz-tri-colored-dango",
+        "wz-fruity-candy",
+        "wz-rocky-mask-doll"
+      ],
+      "rarityTable": {
+        "common": 70,
+        "uncommon": 50,
+        "rare": 20,
+        "epic": 8,
+        "legendary": 2
+      }
+    },
+    {
+      "id": "heroic_box",
+      "theme": "heroic",
+      "cost": 20,
+      "possibleItems": [
+        "wz-stone-golem-rubble",
+        "wz-ridleys-stone",
+        "wz-green-halloween-stick-candy"
+      ],
+      "rarityTable": {
+        "common": 65,
+        "uncommon": 45,
+        "rare": 22,
+        "epic": 10,
+        "legendary": 3
+      }
+    }
   ]
 }

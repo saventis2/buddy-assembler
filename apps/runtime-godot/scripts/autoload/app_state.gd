@@ -123,6 +123,7 @@ func apply_loaded_pack(pack_id: String, manifest: Dictionary) -> void:
     settings["selectedPackId"] = pack_id
     world_state["activePackId"] = pack_id
     world_state["activePackManifestVersion"] = str(manifest.get("version", ""))
+    world_state = _call_world_service("economy", "configure_from_manifest", [world_state, manifest], false)
     flush()
 
 
@@ -231,6 +232,30 @@ func get_last_active_summary() -> String:
 func clear_last_active_summary() -> void:
     profile["last_active_summary"] = ""
     SaveStore.write_json(PROFILE_PATH, profile)
+
+
+func open_reward_box(box_id: String) -> Dictionary:
+    var seed := int(profile.get("personality_seed", 0)) + int(Time.get_unix_time_from_system())
+    var result = _call_service_with_fallback("economy", "open_reward_box", [world_state, box_id, seed], {})
+    if typeof(result) != TYPE_DICTIONARY:
+        return {"ok": false, "reason": "service_failure"}
+    if bool(result.get("ok", false)):
+        var next_world = result.get("world_state", {})
+        if typeof(next_world) == TYPE_DICTIONARY:
+            world_state = next_world
+            flush()
+        return {
+            "ok": true,
+            "reason": "",
+            "item_id": str(result.get("item", {}).get("id", "")),
+            "item_name": str(result.get("item", {}).get("name", "")),
+        }
+    return {"ok": false, "reason": str(result.get("reason", "unknown"))}
+
+
+func get_reward_box_ids() -> Array:
+    var ids = _call_service_with_fallback("economy", "list_reward_box_ids", [world_state], [])
+    return ids if typeof(ids) == TYPE_ARRAY else []
 
 
 func get_telemetry_snapshot() -> Dictionary:

@@ -33,6 +33,53 @@ func ensure_world_state(world_state: Dictionary) -> Dictionary:
         merged["reward_transactions"] = []
     if typeof(merged.get("reward_boxes", null)) != TYPE_DICTIONARY:
         merged["reward_boxes"] = DEFAULT_BOXES.duplicate(true)
+    if typeof(merged.get("item_catalog", null)) != TYPE_DICTIONARY:
+        merged["item_catalog"] = {}
+    return merged
+
+
+func configure_from_manifest(world_state: Dictionary, manifest: Dictionary) -> Dictionary:
+    var merged := ensure_world_state(world_state)
+    var catalog: Dictionary = {}
+    var items_variant = manifest.get("items", [])
+    if typeof(items_variant) == TYPE_ARRAY:
+        for row_variant in items_variant:
+            if typeof(row_variant) != TYPE_DICTIONARY:
+                continue
+            var row: Dictionary = row_variant
+            var item_id := str(row.get("id", ""))
+            if item_id == "":
+                continue
+            catalog[item_id] = row.duplicate(true)
+    merged["item_catalog"] = catalog
+
+    var boxes := DEFAULT_BOXES.duplicate(true)
+    var reward_boxes_variant = manifest.get("rewardBoxes", [])
+    if typeof(reward_boxes_variant) == TYPE_ARRAY:
+        for box_variant in reward_boxes_variant:
+            if typeof(box_variant) != TYPE_DICTIONARY:
+                continue
+            var box: Dictionary = box_variant
+            var box_id := str(box.get("id", ""))
+            if box_id == "":
+                continue
+            var normalized := {
+                "theme": str(box.get("theme", "cozy")),
+                "cost": int(box.get("cost", 15)),
+                "possibleItems": box.get("possibleItems", []),
+                "categoryBias": box.get("categoryBias", {}),
+                "rarityTable": box.get("rarityTable", {}),
+            }
+            boxes[box_id] = normalized
+    merged["reward_boxes"] = boxes
+
+    var currencies_variant = manifest.get("currencies", {})
+    if typeof(currencies_variant) == TYPE_DICTIONARY:
+        var currencies: Dictionary = currencies_variant
+        var wallet: Dictionary = merged.get("wallet", {}).duplicate(true)
+        if not wallet.has("crystals"):
+            wallet["crystals"] = int(currencies.get("crystals", 0))
+        merged["wallet"] = wallet
     return merged
 
 
@@ -69,6 +116,8 @@ func open_reward_box(world_state: Dictionary, box_id: String, seed: int) -> Dict
 
     var table: Array = box.get("table", [])
     if table.is_empty():
+        table = _build_table_from_manifest_catalog(merged, box)
+    if table.is_empty():
         return {"ok": false, "reason": "empty_box", "world_state": merged}
 
     var rng := RandomNumberGenerator.new()
@@ -94,6 +143,12 @@ func get_snapshot(world_state: Dictionary) -> Dictionary:
         "crystals": int(wallet.get("crystals", 0)),
         "inventory_count": inventory.size(),
     }
+
+
+func list_reward_box_ids(world_state: Dictionary) -> Array:
+    var merged := ensure_world_state(world_state)
+    var boxes: Dictionary = merged.get("reward_boxes", {})
+    return boxes.keys()
 
 
 func _pick_weighted(rows: Array, rng: RandomNumberGenerator) -> Dictionary:
@@ -130,3 +185,22 @@ func _record_tx(world_state: Dictionary, source_type: String, item_rewards: Arra
     if txs.size() > 50:
         txs = txs.slice(txs.size() - 50, txs.size())
     world_state["reward_transactions"] = txs
+
+
+func _build_table_from_manifest_catalog(world_state: Dictionary, box: Dictionary) -> Array:
+    var table: Array = []
+    var catalog: Dictionary = world_state.get("item_catalog", {})
+    var item_ids_variant = box.get("possibleItems", [])
+    var item_ids: Array = item_ids_variant if typeof(item_ids_variant) == TYPE_ARRAY else []
+    var rarity_table_variant = box.get("rarityTable", {})
+    var rarity_table: Dictionary = rarity_table_variant if typeof(rarity_table_variant) == TYPE_DICTIONARY else {}
+    for item_id_variant in item_ids:
+        var item_id := str(item_id_variant)
+        if item_id == "" or not catalog.has(item_id):
+            continue
+        var item: Dictionary = (catalog[item_id] as Dictionary).duplicate(true)
+        var rarity := str(item.get("rarity", "common")).to_lower()
+        var weight := float(rarity_table.get(rarity, 10.0))
+        item["weight"] = maxf(0.1, weight)
+        table.append(item)
+    return table
