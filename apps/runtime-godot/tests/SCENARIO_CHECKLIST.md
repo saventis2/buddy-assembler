@@ -20,6 +20,12 @@ For non-interactive template generation:
 pwsh ./run_manual_checklist.ps1 -UseDefaults -DefaultResult pending
 ```
 
+One-command Plan 5 gate flow:
+
+```powershell
+pwsh ./run_plan5_gate.ps1
+```
+
 ## Overlay Basics
 
 1. Launch scene and confirm transparent always-on-top window.

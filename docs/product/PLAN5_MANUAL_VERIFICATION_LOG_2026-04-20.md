@@ -10,6 +10,12 @@ Guided log helper:
 pwsh -NoLogo -File apps/runtime-godot/tests/run_manual_checklist.ps1
 ```
 
+One-command gate runner:
+
+```powershell
+pwsh -NoLogo -File apps/runtime-godot/tests/run_plan5_gate.ps1
+```
+
 ## Summary
 
 - Automated pre-checks: **PASS**
