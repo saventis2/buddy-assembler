@@ -55,6 +55,7 @@ Tasks:
 - [x] Add tests for activity-reaction cadence and quiet-hour suppression
 - [x] Add deterministic scheduler cadence regression (`low < normal < high`)
 - [x] Add configurable prompt-frequency cadence guard with deferred world prompt surfacing
+- [x] Add hourly productivity-hint caps by interaction intensity (`cozy/balanced/deep`)
 
 Done gate:
 - [ ] User activity reactions are visible but non-intrusive (manual desktop confirm)

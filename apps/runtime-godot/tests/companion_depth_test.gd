@@ -22,6 +22,7 @@ func _run_all() -> void:
 	_case("productivity_strict_quiet_suppression", func(): return _test_productivity_strict_quiet_suppression())
 	_case("encounter_quiet_strictness_behavior", func(): return _test_encounter_quiet_strictness_behavior())
 	_case("encounter_frequency_setting_cadence", func(): return _test_encounter_frequency_setting_cadence())
+	_case("productivity_hourly_hint_caps", func(): return _test_productivity_hourly_hint_caps())
 
 
 func _case(name: String, body: Callable) -> void:
@@ -169,4 +170,36 @@ func _test_encounter_frequency_setting_cadence() -> Variant:
 	var high_count := _count_events_for_frequency("high")
 	if not (low_count < normal_count and normal_count < high_count):
 		return "expected cadence ordering low < normal < high, got %d < %d < %d" % [low_count, normal_count, high_count]
+	return null
+
+
+func _collect_productivity_events(settings: Dictionary, start_unix: int, samples: int) -> Array:
+	var tracker := ProductivityTracker.new()
+	tracker.note_session_reset(start_unix)
+	var ids: Array = []
+	for i in range(samples):
+		var now := start_unix + (i * 180)
+		var event := tracker.tick(now, settings)
+		if not event.is_empty():
+			ids.append(str(event.get("id", "")))
+	return ids
+
+
+func _test_productivity_hourly_hint_caps() -> Variant:
+	var balanced := _base_settings()
+	balanced["focusCelebrateMinutes"] = 1
+	balanced["breakSuggestMinutes"] = 2
+	balanced["lateSessionHourStart"] = 0
+	balanced["interactionIntensity"] = "balanced"
+	var start_unix := int(Time.get_unix_time_from_system())
+	start_unix -= start_unix % 3600
+	var balanced_ids := _collect_productivity_events(balanced, start_unix, 10)
+	if balanced_ids.size() > 2:
+		return "balanced intensity should cap hints to 2 per hour, got %d (%s)" % [balanced_ids.size(), balanced_ids]
+
+	var deep := balanced.duplicate(true)
+	deep["interactionIntensity"] = "deep"
+	var deep_ids := _collect_productivity_events(deep, start_unix, 10)
+	if deep_ids.size() < 3:
+		return "deep intensity should allow up to 3 hints per hour, got %d (%s)" % [deep_ids.size(), deep_ids]
 	return null

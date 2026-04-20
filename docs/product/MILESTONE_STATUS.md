@@ -43,6 +43,7 @@ Updated: 2026-04-20 (world variety + prompt cadence guard)
 - [done] Added cadence ordering regression for `eventFrequency` (`low < normal < high`)
 - [done] Added prompt-frequency setting + auto-prompt cadence guard with deferred world prompt display
 - [done] Added `PromptCadenceTest` and wired it into headless checks
+- [done] Added hourly productivity-hint cap and regression coverage for non-intrusive cadence
 - [pending] Final manual UX pass to confirm hint cadence is non-intrusive in desktop usage
 
 ## Plan 7 (Economy Tuning Pass 2 — 2026-04-20)

@@ -3,6 +3,8 @@ extends RefCounted
 var _focus_start_unix := 0
 var _last_user_activity_unix := 0
 var _last_event_unix := 0
+var _event_hour_key := ""
+var _event_hour_count := 0
 var _celebrate_sent := false
 var _break_sent := false
 var _late_hint_sent := false
@@ -23,6 +25,9 @@ func tick(now_unix: int, settings: Dictionary) -> Dictionary:
     var quiet_now := _is_quiet_now(settings)
     if quiet_now and quiet_strictness == "strict":
         return {}
+    _roll_hour_window(now_unix)
+    if _event_hour_count >= _max_events_per_hour(interaction_intensity, quiet_now, quiet_strictness):
+        return {}
 
     var focus_seconds: int = maxi(0, now_unix - _focus_start_unix)
     var intensity_scale := _intensity_threshold_scale(interaction_intensity)
@@ -42,6 +47,7 @@ func tick(now_unix: int, settings: Dictionary) -> Dictionary:
     if not _celebrate_sent and focus_seconds >= celebrate_threshold:
         _celebrate_sent = true
         _last_event_unix = now_unix
+        _event_hour_count += 1
         return {
             "id": "focus-celebration",
             "action": "happy",
@@ -51,6 +57,7 @@ func tick(now_unix: int, settings: Dictionary) -> Dictionary:
     if not _break_sent and focus_seconds >= break_threshold:
         _break_sent = true
         _last_event_unix = now_unix
+        _event_hour_count += 1
         return {
             "id": "break-suggestion",
             "action": "sit",
@@ -60,6 +67,7 @@ func tick(now_unix: int, settings: Dictionary) -> Dictionary:
     if not _late_hint_sent and _is_late_session(now_unix, late_hour_start):
         _late_hint_sent = true
         _last_event_unix = now_unix
+        _event_hour_count += 1
         return {
             "id": "late-session-checkin",
             "action": "sleep",
@@ -116,6 +124,8 @@ func _reset(now_unix: int) -> void:
     _focus_start_unix = now_unix
     _last_user_activity_unix = now_unix
     _last_event_unix = 0
+    _event_hour_key = ""
+    _event_hour_count = 0
     _celebrate_sent = false
     _break_sent = false
     _late_hint_sent = false
@@ -147,3 +157,33 @@ func _is_late_session(now_unix: int, late_hour_start: int) -> bool:
     var dt := Time.get_datetime_dict_from_unix_time(now_unix)
     var hour := int(dt.get("hour", 12))
     return hour >= late_hour_start
+
+
+func _hour_key(now_unix: int) -> String:
+    var dt := Time.get_datetime_dict_from_unix_time(now_unix)
+    return "%04d-%02d-%02dT%02d" % [
+        int(dt.get("year", 1970)),
+        int(dt.get("month", 1)),
+        int(dt.get("day", 1)),
+        int(dt.get("hour", 0)),
+    ]
+
+
+func _roll_hour_window(now_unix: int) -> void:
+    var key := _hour_key(now_unix)
+    if key != _event_hour_key:
+        _event_hour_key = key
+        _event_hour_count = 0
+
+
+func _max_events_per_hour(interaction_intensity: String, quiet_now: bool, quiet_strictness: String) -> int:
+    var cap := 2
+    if interaction_intensity == "cozy":
+        cap = 1
+    elif interaction_intensity == "deep":
+        cap = 3
+    if quiet_now and quiet_strictness == "balanced":
+        cap = mini(cap, 1)
+    elif quiet_now and quiet_strictness == "lenient":
+        cap = mini(cap, 2)
+    return clampi(cap, 1, 4)
