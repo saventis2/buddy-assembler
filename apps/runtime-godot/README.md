@@ -52,7 +52,7 @@ A separate architecture-first slice is available at:
 - `Shift+F7`: emit demo world prompt for cadence checks
 - `F8`: move companion to next monitor
 - `F9`: cycle available content packs
-- `F10`: toggle slide-out settings menu (categorized runtime settings + debug shortcuts)
+- `F10`: toggle separate movable settings popout window (categorized runtime settings + debug shortcuts)
 
 ## Character Sprite + Animation Export
 

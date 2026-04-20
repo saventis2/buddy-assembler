@@ -14,8 +14,8 @@ const ACTION_EXTRA_FLOOR_OFFSET := {
 }
 const DEFAULT_ROAM_SPEED_PX_PER_SEC := 96.0
 const FLOOR_SETTLE_SPEED_PX_PER_SEC := 720.0
-const SETTINGS_PANEL_MARGIN := 12.0
-const SETTINGS_PANEL_ANIM_SECONDS := 0.22
+const SETTINGS_WINDOW_OFFSET := Vector2i(56, 56)
+const SETTINGS_WINDOW_MIN_SIZE := Vector2i(420, 560)
 const DEFAULT_SPRITE_ANCHOR := Vector2(0.5, 1.0)
 const NO_PIVOT := Vector2(-1.0, -1.0)
 const SLEEP_PIVOT_OVERFLOW_BLEND := 1.0
@@ -56,8 +56,8 @@ const ManualVerificationReport = preload("res://scripts/utility/manual_verificat
 @onready var tick_timer: Timer = $TickTimer
 @onready var telemetry_timer: Timer = $TelemetryTimer
 @onready var telemetry_label: Label = $Telemetry/Label
-@onready var settings_panel: Panel = $SettingsLayer/SettingsPanel
-@onready var settings_label: Label = $SettingsLayer/SettingsPanel/SettingsLabel
+@onready var settings_window: Window = $SettingsWindow
+@onready var settings_label: Label = $SettingsWindow/MarginContainer/SettingsLabel
 @onready var chat_balloon: Node2D = $ChatBalloon
 @onready var welcome_label: Label = $WelcomeLayer/WelcomeLabel
 
@@ -112,7 +112,6 @@ var _face_texture_cache: Dictionary = {}
 var _active_emote_semantic := "default"
 var _active_face_variant := "default"
 var _settings_menu_open := false
-var _settings_menu_tween: Tween = null
 var _manual_emote_until_unix := 0
 var _last_face_texture_path := ""
 var _roam_speed_px_per_sec := DEFAULT_ROAM_SPEED_PX_PER_SEC
@@ -146,8 +145,7 @@ func _ready() -> void:
     set_process_input(true)
     _productivity.note_session_reset(int(Time.get_unix_time_from_system()))
     telemetry_label.visible = false
-    settings_panel.visible = true
-    _layout_settings_panel(false)
+    _configure_settings_window()
     _refresh_telemetry()
     if AppState.is_first_run():
         _show_welcome_once()
@@ -275,9 +273,19 @@ func _process(delta: float) -> void:
     queue_redraw()
 
 
-func _notification(what: int) -> void:
-    if what == NOTIFICATION_WM_SIZE_CHANGED:
-        _layout_settings_panel(false)
+func _configure_settings_window() -> void:
+    if settings_window == null:
+        return
+    settings_window.visible = false
+    settings_window.unresizable = false
+    settings_window.min_size = SETTINGS_WINDOW_MIN_SIZE
+    settings_window.title = "Buddy Settings"
+    settings_window.wrap_controls = true
+    settings_window.always_on_top = true
+    settings_window.close_requested.connect(func() -> void:
+        settings_window.hide()
+        _settings_menu_open = false
+    )
 
 
 func _draw() -> void:
@@ -744,47 +752,21 @@ func _refresh_telemetry() -> void:
 
 func _toggle_settings_menu() -> void:
     _settings_menu_open = not _settings_menu_open
-    _layout_settings_panel(true)
+    _layout_settings_window()
     _refresh_settings_menu()
 
 
-func _layout_settings_panel(animated: bool) -> void:
-    if settings_panel == null:
+func _layout_settings_window() -> void:
+    if settings_window == null:
         return
-
-    var viewport_size: Vector2 = get_viewport_rect().size
-    var panel_size: Vector2 = settings_panel.size
-    if panel_size.x <= 0.0 or panel_size.y <= 0.0:
-        panel_size = Vector2(380.0, 540.0)
-
-    var open_pos := Vector2(
-        maxf(SETTINGS_PANEL_MARGIN, viewport_size.x - panel_size.x - SETTINGS_PANEL_MARGIN),
-        SETTINGS_PANEL_MARGIN
-    )
-    var closed_pos := Vector2(viewport_size.x + SETTINGS_PANEL_MARGIN, SETTINGS_PANEL_MARGIN)
-    var target := open_pos if _settings_menu_open else closed_pos
-
-    if _settings_menu_tween != null:
-        _settings_menu_tween.kill()
-        _settings_menu_tween = null
-
-    if animated:
-        settings_panel.visible = true
-        _settings_menu_tween = create_tween()
-        _settings_menu_tween.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-        _settings_menu_tween.tween_property(
-            settings_panel,
-            "position",
-            target,
-            SETTINGS_PANEL_ANIM_SECONDS
-        )
-        if not _settings_menu_open:
-            _settings_menu_tween.tween_callback(func() -> void:
-                settings_panel.visible = false
-            )
+    if _settings_menu_open:
+        var main_pos: Vector2i = DisplayServer.window_get_position()
+        var target_pos := main_pos + SETTINGS_WINDOW_OFFSET
+        settings_window.position = target_pos
+        settings_window.popup()
+        settings_window.grab_focus()
     else:
-        settings_panel.position = target
-        settings_panel.visible = _settings_menu_open
+        settings_window.hide()
 
 
 func _refresh_settings_menu() -> void:
@@ -797,6 +779,7 @@ func _refresh_settings_menu() -> void:
 
     var lines: Array[String] = [
         "Settings Menu (F10)",
+        "Separate movable popout window",
         "",
         "[Status]",
         "state: %s  mood: %s  growth: %d" % [
