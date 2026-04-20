@@ -1,6 +1,6 @@
 # Milestone Status
 
-Updated: 2026-04-20 (world variety expansion + regression coverage)
+Updated: 2026-04-20 (world variety + prompt cadence guard)
 
 > Update (2026-04-20): buddy-system milestone tracking is now coordinated with
 > `BUDDY_V1_BUILD_PLAN_MILESTONE_EXECUTION_2026-04-20.md` for identity/economy/world
@@ -41,6 +41,8 @@ Updated: 2026-04-20 (world variety expansion + regression coverage)
 - [done] Added continuity digest memory in profile + continuity hint line on resume
 - [done] Added `CompanionDepthTest` coverage and wired it into headless checks
 - [done] Added cadence ordering regression for `eventFrequency` (`low < normal < high`)
+- [done] Added prompt-frequency setting + auto-prompt cadence guard with deferred world prompt display
+- [done] Added `PromptCadenceTest` and wired it into headless checks
 - [pending] Final manual UX pass to confirm hint cadence is non-intrusive in desktop usage
 
 ## Plan 7 (Economy Tuning Pass 2 — 2026-04-20)

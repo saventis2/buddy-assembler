@@ -25,7 +25,8 @@ pwsh ./run_headless_checks.ps1
 1. Observe idle transitions over several ticks.
 2. Confirm quiet-hours behavior lowers active events.
 3. Press `F7` to cycle event frequency (`low` -> `normal` -> `high`) and verify effect.
-4. Confirm event budgets prevent repeated encounter spam in same hour/day.
+4. Press `F2` to cycle prompt frequency (`low` -> `normal` -> `high`) and verify chat prompt cadence changes.
+5. Confirm event budgets prevent repeated encounter spam in same hour/day.
 
 ## Progression and Unlocks
 

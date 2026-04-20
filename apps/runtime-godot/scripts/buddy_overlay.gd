@@ -43,6 +43,7 @@ const BehaviorEngine = preload("res://scripts/behavior/behavior_engine.gd")
 const ContentLoader = preload("res://scripts/content/content_loader.gd")
 const EncounterScheduler = preload("res://scripts/encounters/encounter_scheduler.gd")
 const ProductivityTracker = preload("res://scripts/utility/productivity_tracker.gd")
+const PromptCadence = preload("res://scripts/utility/prompt_cadence.gd")
 
 @onready var tick_timer: Timer = $TickTimer
 @onready var telemetry_timer: Timer = $TelemetryTimer
@@ -53,6 +54,7 @@ const ProductivityTracker = preload("res://scripts/utility/productivity_tracker.
 var _engine := BehaviorEngine.new()
 var _encounters := EncounterScheduler.new()
 var _productivity := ProductivityTracker.new()
+var _prompt_cadence := PromptCadence.new()
 var _state := "idle"
 var _dragging := false
 var _drag_offset := Vector2i.ZERO
@@ -107,6 +109,8 @@ var _roam_subpixel_x := 0.0
 var _bond_phrase_active := false
 var _away_report_shown := false
 var _continuity_hint_shown := false
+var _last_auto_prompt_unix := 0
+var _deferred_world_prompt := {}
 
 
 func _ready() -> void:
@@ -156,6 +160,8 @@ func _input(event: InputEvent) -> void:
             if key_event.keycode == KEY_F6:
                 _telemetry_enabled = not _telemetry_enabled
                 _refresh_telemetry()
+            elif key_event.keycode == KEY_F2:
+                _cycle_prompt_frequency()
             elif key_event.keycode == KEY_F5:
                 _cycle_home_mode()
             elif key_event.keycode == KEY_F7:
@@ -310,6 +316,7 @@ func _hit_test(point: Vector2) -> bool:
 
 func _on_tick_timer_timeout() -> void:
     var now_unix := Time.get_unix_time_from_system()
+    _flush_deferred_world_prompt(int(now_unix))
     var context := AppState.get_behavior_context(_allowed_actions)
     var activity_context := _productivity.get_context(now_unix, AppState.settings)
     for key in activity_context.keys():
@@ -348,7 +355,8 @@ func _on_tick_timer_timeout() -> void:
     AppState.apply_behavior(_state)
     var world_prompt := AppState.tick_world_events(int(now_unix))
     if not world_prompt.is_empty():
-        _show_world_prompt(world_prompt)
+        if not _show_world_prompt(world_prompt):
+            _deferred_world_prompt = world_prompt.duplicate(true)
     _refresh_telemetry()
     if _state == "idle":
         _maybe_show_bond_phrase()
@@ -439,6 +447,20 @@ func _cycle_event_frequency() -> void:
     index = (index + 1) % values.size()
     AppState.settings["eventFrequency"] = values[index]
     AppState.flush()
+    _refresh_telemetry()
+
+
+func _cycle_prompt_frequency() -> void:
+    var current := str(AppState.settings.get("promptFrequency", "normal"))
+    var values := ["low", "normal", "high"]
+    var index := values.find(current)
+    if index < 0:
+        index = 1
+    index = (index + 1) % values.size()
+    AppState.settings["promptFrequency"] = values[index]
+    AppState.flush()
+    _update_balloon_position()
+    chat_balloon.show_text("Prompt frequency: %s" % values[index])
     _refresh_telemetry()
 
 
@@ -597,6 +619,7 @@ func _refresh_telemetry() -> void:
             str(AppState.settings.get("eventFrequency", "normal")),
             "on" if AppState.is_quiet_hours_now() else "off"
         ],
+        "prompt freq: %s" % str(AppState.settings.get("promptFrequency", "normal")),
         "intensity: %s  quiet strict: %s" % [
             str(snapshot.get("interaction_intensity", "balanced")),
             str(snapshot.get("quiet_strictness", "balanced")),
@@ -619,7 +642,8 @@ func _refresh_telemetry() -> void:
         "pending quest: %s" % str(snapshot.get("pending_quest_id", "")),
         "pending encounter: %s" % str(snapshot.get("pending_encounter_id", "")),
         "world event: %s" % str(snapshot.get("last_world_event_id", "")),
-        "F3 quiet strict  F4 intensity  F5 mode  F6 telemetry  F7 freq  F8 monitor",
+        "F2 prompt freq  F3 quiet strict  F4 intensity  F5 mode  F6 telemetry",
+        "F7 freq  F8 monitor",
         "F9 pack  F10 emotes  F11 reward  F12 world",
     ]
     if _debug_emote_panel_enabled:
@@ -1498,17 +1522,18 @@ func _open_debug_reward_box() -> void:
         chat_balloon.show_text("Could not open %s (%s)" % [preferred, reason])
 
 
-func _show_world_prompt(prompt: Dictionary) -> void:
+func _show_world_prompt(prompt: Dictionary) -> bool:
     var prompt_type := str(prompt.get("type", ""))
     var npc_name := str(prompt.get("npcName", "Villager"))
     var text := str(prompt.get("text", ""))
     if text == "":
-        return
-    _update_balloon_position()
+        return false
+    var line := ""
     if prompt_type == "encounter":
-        chat_balloon.show_text("%s: %s (F12 engage / Shift+F12 skip)" % [npc_name, text])
+        line = "%s: %s (F12 engage / Shift+F12 skip)" % [npc_name, text]
     else:
-        chat_balloon.show_text("%s: %s (F12 complete)" % [npc_name, text])
+        line = "%s: %s (F12 complete)" % [npc_name, text]
+    return _show_auto_prompt(line, "world")
 
 
 func _resolve_world_prompt(engage_encounter: bool) -> void:
@@ -1581,5 +1606,39 @@ func _show_support_hint(productivity_event: Dictionary) -> void:
         line = "It is getting late. Want to wind down?"
     if line == "":
         return
+    _show_auto_prompt(line, "support")
+
+
+func _show_auto_prompt(line: String, source_kind: String) -> bool:
+    if line == "":
+        return false
+    var now_unix := int(Time.get_unix_time_from_system())
+    var quiet_mode := AppState.is_quiet_hours_now()
+    if not _prompt_cadence.can_emit(
+        _last_auto_prompt_unix,
+        now_unix,
+        AppState.settings,
+        quiet_mode,
+        source_kind
+    ):
+        return false
     _update_balloon_position()
     chat_balloon.show_text(line)
+    _last_auto_prompt_unix = now_unix
+    return true
+
+
+func _flush_deferred_world_prompt(now_unix: int) -> void:
+    if _deferred_world_prompt.is_empty():
+        return
+    var quiet_mode := AppState.is_quiet_hours_now()
+    if _prompt_cadence.can_emit(
+        _last_auto_prompt_unix,
+        now_unix,
+        AppState.settings,
+        quiet_mode,
+        "world"
+    ):
+        var queued: Dictionary = _deferred_world_prompt.duplicate(true)
+        _deferred_world_prompt.clear()
+        _show_world_prompt(queued)

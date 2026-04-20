@@ -575,6 +575,7 @@ func _default_settings() -> Dictionary:
         "quietHoursStart": 22,
         "quietHoursEnd": 7,
         "eventFrequency": "normal",
+        "promptFrequency": "normal",
         "interactionIntensity": "balanced",
         "quietModeStrictness": "balanced",
         "continuityDigestEnabled": true,

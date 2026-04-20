@@ -102,6 +102,16 @@ if ($varietyCode -ne 0) {
 }
 Write-Host "World variety test PASSED."
 
+# --- Prompt cadence test ---
+Write-Host ""
+Write-Host "=== Prompt cadence test ==="
+$promptCadenceCode = Invoke-GodotHeadless -ExtraArgs @("--scene", "res://tests/PromptCadenceTest.tscn") -Label "prompt-cadence"
+if ($promptCadenceCode -ne 0) {
+    Write-Host "Prompt cadence test FAILED (exit $promptCadenceCode)"
+    exit $promptCadenceCode
+}
+Write-Host "Prompt cadence test PASSED."
+
 # --- Optional: frame-time profiling ---
 if ($Profile) {
     Write-Host ""
