@@ -154,6 +154,9 @@ func _ready() -> void:
 
 
 func _configure_window() -> void:
+    # Force subwindows (like F10 settings) to become real OS windows,
+    # not embedded UI panels inside the transparent overlay viewport.
+    get_viewport().gui_embed_subwindows = false
     get_viewport().transparent_bg = true
     DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_BORDERLESS, true)
     DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_ALWAYS_ON_TOP, true)
@@ -276,6 +279,8 @@ func _process(delta: float) -> void:
 func _configure_settings_window() -> void:
     if settings_window == null:
         return
+    settings_window.transient = false
+    settings_window.exclusive = false
     settings_window.visible = false
     settings_window.unresizable = false
     settings_window.min_size = SETTINGS_WINDOW_MIN_SIZE
