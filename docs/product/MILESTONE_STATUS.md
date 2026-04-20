@@ -21,6 +21,7 @@ Updated: 2026-04-20 (world-layer stub wiring added)
 - [done] Added short-history anti-repeat weighting in `BehaviorEngine` action picks
 - [done] Added duplicate reward-box recycle crystals by rarity tier
 - [done] Exposed duplicate recycle totals in runtime telemetry/debug output
+- [done] Added `WorldEconomyFlowTest` coverage for quest/encounter/recycle loops
 
 ## Phase 5 (Visual polish & WZ asset expansion — 2026-04-19)
 

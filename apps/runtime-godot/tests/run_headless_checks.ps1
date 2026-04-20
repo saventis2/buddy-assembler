@@ -62,6 +62,16 @@ if ($packCode -ne 0) {
 }
 Write-Host "Pack validation test PASSED."
 
+# --- World + economy flow test ---
+Write-Host ""
+Write-Host "=== World + economy flow test ==="
+$worldEcoCode = Invoke-GodotHeadless -ExtraArgs @("--scene", "res://tests/WorldEconomyFlowTest.tscn") -Label "world-economy-flow"
+if ($worldEcoCode -ne 0) {
+    Write-Host "World + economy flow test FAILED (exit $worldEcoCode)"
+    exit $worldEcoCode
+}
+Write-Host "World + economy flow test PASSED."
+
 # --- Optional: frame-time profiling ---
 if ($Profile) {
     Write-Host ""
