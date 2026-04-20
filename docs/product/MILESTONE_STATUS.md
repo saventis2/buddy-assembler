@@ -5,6 +5,9 @@ Updated: 2026-04-20 (world-layer stub wiring added)
 > Update (2026-04-20): buddy-system milestone tracking is now coordinated with
 > `BUDDY_V1_BUILD_PLAN_MILESTONE_EXECUTION_2026-04-20.md` for identity/economy/world
 > sequencing beyond vertical-slice runtime polish.
+>
+> Execution todo queue now tracked in:
+> `BUDDY_TODO_EXECUTION_QUEUE.md`
 
 ## Buddy Milestone 3 (World Layer Stub — 2026-04-20)
 
