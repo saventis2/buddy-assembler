@@ -2,6 +2,10 @@
 
 Updated: 2026-04-19 (gift-pipeline + face-emote-rotation complete)
 
+> Update (2026-04-20): buddy-system milestone tracking is now coordinated with
+> `BUDDY_V1_BUILD_PLAN_MILESTONE_EXECUTION_2026-04-20.md` for identity/economy/world
+> sequencing beyond vertical-slice runtime polish.
+
 ## Phase 5 (Visual polish & WZ asset expansion — 2026-04-19)
 
 - [done] Per-frame hand tracking for held-prop overlays (renderer parses

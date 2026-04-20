@@ -9,6 +9,7 @@ extends Node
 # between cases so the test is idempotent across CI runs.
 
 const SaveStore = preload("res://scripts/persistence/save_store.gd")
+const SchemaMigrations = preload("res://scripts/persistence/schema_migrations.gd")
 
 const TEST_DIR := "user://save_store_test"
 
@@ -34,6 +35,7 @@ func _run_all() -> void:
     _case("newer_version_quarantined", func(): _test_newer_version_quarantined())
     _case("migration_steps_old_to_current", func(): _test_migration_steps())
     _case("missing_migrator_quarantines", func(): _test_missing_migrator_quarantines())
+    _case("profile_v1_to_v2_migration_shape", func(): _test_profile_v1_to_v2_shape())
 
 
 func _case(name: String, body: Callable) -> void:
@@ -198,3 +200,55 @@ func _test_missing_migrator_quarantines() -> Variant:
         if String(e).ends_with(".no_migrator_v1"):
             return null
     return "no no_migrator quarantine; entries=%s" % [entries]
+
+
+func _test_profile_v1_to_v2_shape() -> Variant:
+    var path := TEST_DIR + "/profile.json"
+    SaveStore.write_json(
+        path,
+        {
+            "schemaVersion": 1,
+            "name": "legacy-buddy",
+            "bond_xp": 10,
+            "bond_level": 1,
+            "personality_seed": 12345,
+        }
+    )
+
+    var d = SaveStore.load_versioned(
+        path,
+        func() -> Dictionary:
+            return {
+                "schemaVersion": 2,
+                "name": "default",
+                "bond_xp": 0,
+                "bond_level": 1,
+                "trust_value": 0.2,
+                "dominant_mood": "calm",
+                "growth_stage": 1,
+                "stats": {
+                    "strength": 1,
+                    "dexterity": 1,
+                    "charisma": 1,
+                    "endurance": 1,
+                    "wisdom": 1,
+                    "knowledge": 1,
+                },
+            },
+        SchemaMigrations.PROFILE_CURRENT_VERSION,
+        SchemaMigrations.PROFILE_MIGRATORS
+    )
+
+    if int(d.get("schemaVersion", 0)) != 2:
+        return "expected schemaVersion 2, got %s" % [d]
+    if String(d.get("name", "")) != "legacy-buddy":
+        return "legacy name not preserved"
+    if not d.has("trust_value"):
+        return "trust_value missing after migration"
+    if not d.has("dominant_mood"):
+        return "dominant_mood missing after migration"
+    if not d.has("growth_stage"):
+        return "growth_stage missing after migration"
+    if typeof(d.get("stats", null)) != TYPE_DICTIONARY:
+        return "stats missing or invalid after migration"
+    return null

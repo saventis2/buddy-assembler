@@ -147,6 +147,69 @@
           }
         }
       }
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "category",
+          "rarity",
+          "primaryTheme"
+        ],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "name": { "type": "string", "minLength": 1 },
+          "category": { "type": "string", "minLength": 1 },
+          "rarity": { "type": "string", "minLength": 1 },
+          "primaryTheme": { "type": "string", "minLength": 1 },
+          "secondaryThemes": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "effectProfile": { "type": "object" }
+        }
+      }
+    },
+    "currencies": {
+      "type": "object",
+      "properties": {
+        "crystals": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "rewardBoxes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "theme",
+          "cost"
+        ],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "theme": { "type": "string", "minLength": 1 },
+          "cost": { "type": "integer", "minimum": 1 },
+          "categoryBias": {
+            "type": "object",
+            "additionalProperties": { "type": "number", "minimum": 0 }
+          },
+          "possibleItems": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "rarityTable": {
+            "type": "object",
+            "additionalProperties": { "type": "number", "minimum": 0 }
+          }
+        }
+      }
     }
   }
 }

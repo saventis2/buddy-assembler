@@ -96,6 +96,9 @@ content/<pack_id>/
 |-------|------|-------|
 | `visual` | object | If omitted, code-drawn placeholder is used |
 | `encounterActions` | array | Actions playable via event rules |
+| `items` | array | Optional runtime item definitions (id, category, rarity, theme) |
+| `currencies` | object | Optional currency defaults (for V1, usually `crystals`) |
+| `rewardBoxes` | array | Optional themed reward-box definitions |
 
 ---
 

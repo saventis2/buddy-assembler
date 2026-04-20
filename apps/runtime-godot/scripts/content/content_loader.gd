@@ -280,6 +280,44 @@ static func validate_manifest(manifest: Dictionary) -> Array:
     if typeof(event_rules) != TYPE_ARRAY:
         errors.append("eventRules must be array")
 
+    var items_variant = manifest.get("items", null)
+    if items_variant != null:
+        if typeof(items_variant) != TYPE_ARRAY:
+            errors.append("items must be array when set")
+        else:
+            for row_variant in (items_variant as Array):
+                if typeof(row_variant) != TYPE_DICTIONARY:
+                    errors.append("items entries must be objects")
+                    continue
+                var row: Dictionary = row_variant
+                for field in ["id", "name", "category", "rarity", "primaryTheme"]:
+                    if _is_blank(row.get(field, "")):
+                        errors.append("items.%s must be non-empty string" % field)
+
+    var currencies_variant = manifest.get("currencies", null)
+    if currencies_variant != null and typeof(currencies_variant) != TYPE_DICTIONARY:
+        errors.append("currencies must be object when set")
+
+    var reward_boxes_variant = manifest.get("rewardBoxes", null)
+    if reward_boxes_variant != null:
+        if typeof(reward_boxes_variant) != TYPE_ARRAY:
+            errors.append("rewardBoxes must be array when set")
+        else:
+            for box_variant in (reward_boxes_variant as Array):
+                if typeof(box_variant) != TYPE_DICTIONARY:
+                    errors.append("rewardBoxes entries must be objects")
+                    continue
+                var box: Dictionary = box_variant
+                if _is_blank(box.get("id", "")):
+                    errors.append("rewardBoxes.id must be non-empty string")
+                if _is_blank(box.get("theme", "")):
+                    errors.append("rewardBoxes.theme must be non-empty string")
+                var cost = box.get("cost", null)
+                if typeof(cost) != TYPE_INT and typeof(cost) != TYPE_FLOAT:
+                    errors.append("rewardBoxes.cost must be numeric")
+                elif int(cost) <= 0:
+                    errors.append("rewardBoxes.cost must be > 0")
+
     return errors
 
 

@@ -1,0 +1,132 @@
+extends RefCounted
+
+const DEFAULT_WALLET := {"crystals": 0}
+const DEFAULT_BOXES := {
+    "cozy_box": {
+        "theme": "cozy",
+        "cost": 15,
+        "table": [
+            {"id": "cozy-lamp", "category": "decor", "rarity": "uncommon", "weight": 50},
+            {"id": "warm-tea", "category": "food", "rarity": "common", "weight": 70},
+            {"id": "plush-heart", "category": "gifts", "rarity": "rare", "weight": 25},
+        ],
+    },
+    "heroic_box": {
+        "theme": "heroic",
+        "cost": 20,
+        "table": [
+            {"id": "hero-ribbon", "category": "training_items", "rarity": "uncommon", "weight": 55},
+            {"id": "focus-badge", "category": "gear", "rarity": "rare", "weight": 35},
+            {"id": "victory-banner", "category": "decor", "rarity": "epic", "weight": 10},
+        ],
+    },
+}
+
+
+func ensure_world_state(world_state: Dictionary) -> Dictionary:
+    var merged := world_state.duplicate(true)
+    if typeof(merged.get("wallet", null)) != TYPE_DICTIONARY:
+        merged["wallet"] = DEFAULT_WALLET.duplicate(true)
+    if typeof(merged.get("inventory", null)) != TYPE_ARRAY:
+        merged["inventory"] = []
+    if typeof(merged.get("reward_transactions", null)) != TYPE_ARRAY:
+        merged["reward_transactions"] = []
+    if typeof(merged.get("reward_boxes", null)) != TYPE_DICTIONARY:
+        merged["reward_boxes"] = DEFAULT_BOXES.duplicate(true)
+    return merged
+
+
+func grant_crystals(world_state: Dictionary, source_type: String, amount: int) -> Dictionary:
+    var merged := ensure_world_state(world_state)
+    var wallet: Dictionary = merged.get("wallet", {}).duplicate(true)
+    wallet["crystals"] = int(wallet.get("crystals", 0)) + max(0, amount)
+    merged["wallet"] = wallet
+    _record_tx(merged, source_type, [], max(0, amount))
+    return merged
+
+
+func grant_item(world_state: Dictionary, source_type: String, item: Dictionary) -> Dictionary:
+    var merged := ensure_world_state(world_state)
+    var inventory: Array = merged.get("inventory", [])
+    inventory.append(item)
+    merged["inventory"] = inventory
+    _record_tx(merged, source_type, [item], 0)
+    return merged
+
+
+func open_reward_box(world_state: Dictionary, box_id: String, seed: int) -> Dictionary:
+    var merged := ensure_world_state(world_state)
+    var boxes: Dictionary = merged.get("reward_boxes", {})
+    if not boxes.has(box_id):
+        return {"ok": false, "reason": "unknown_box", "world_state": merged}
+
+    var box: Dictionary = boxes.get(box_id, {})
+    var cost := int(box.get("cost", 9999))
+    var wallet: Dictionary = merged.get("wallet", {}).duplicate(true)
+    var crystals := int(wallet.get("crystals", 0))
+    if crystals < cost:
+        return {"ok": false, "reason": "insufficient_crystals", "world_state": merged}
+
+    var table: Array = box.get("table", [])
+    if table.is_empty():
+        return {"ok": false, "reason": "empty_box", "world_state": merged}
+
+    var rng := RandomNumberGenerator.new()
+    rng.seed = seed if seed != 0 else int(Time.get_unix_time_from_system())
+    var selected := _pick_weighted(table, rng)
+
+    wallet["crystals"] = crystals - cost
+    merged["wallet"] = wallet
+    merged = grant_item(merged, "reward_box:%s" % box_id, selected)
+    return {
+        "ok": true,
+        "reason": "",
+        "item": selected,
+        "world_state": merged,
+    }
+
+
+func get_snapshot(world_state: Dictionary) -> Dictionary:
+    var merged := ensure_world_state(world_state)
+    var wallet: Dictionary = merged.get("wallet", {})
+    var inventory: Array = merged.get("inventory", [])
+    return {
+        "crystals": int(wallet.get("crystals", 0)),
+        "inventory_count": inventory.size(),
+    }
+
+
+func _pick_weighted(rows: Array, rng: RandomNumberGenerator) -> Dictionary:
+    var total := 0.0
+    for row_variant in rows:
+        if typeof(row_variant) != TYPE_DICTIONARY:
+            continue
+        total += maxf(0.0, float((row_variant as Dictionary).get("weight", 0.0)))
+    if total <= 0.0:
+        return rows[0]
+
+    var roll := rng.randf() * total
+    var cumulative := 0.0
+    for row_variant in rows:
+        if typeof(row_variant) != TYPE_DICTIONARY:
+            continue
+        var row: Dictionary = row_variant
+        cumulative += maxf(0.0, float(row.get("weight", 0.0)))
+        if roll <= cumulative:
+            return row
+    return rows[-1]
+
+
+func _record_tx(world_state: Dictionary, source_type: String, item_rewards: Array, currency_rewards: int) -> void:
+    var txs: Array = world_state.get("reward_transactions", [])
+    txs.append(
+        {
+            "sourceType": source_type,
+            "itemRewards": item_rewards,
+            "currencyRewards": currency_rewards,
+            "timestamp": Time.get_unix_time_from_system(),
+        }
+    )
+    if txs.size() > 50:
+        txs = txs.slice(txs.size() - 50, txs.size())
+    world_state["reward_transactions"] = txs

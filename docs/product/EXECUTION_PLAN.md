@@ -3,6 +3,10 @@
 Recorded on: 2026-04-15
 Owner: product/runtime track
 
+> Update (2026-04-20): Active sequencing for buddy systems now lives in
+> `BUDDY_V1_BUILD_PLAN_MILESTONE_EXECUTION_2026-04-20.md`. This file remains as
+> baseline runtime/vertical-slice context.
+
 ## Goal
 
 Ship a Windows-first desktop buddy that is delightful, non-intrusive, and
@@ -62,4 +66,3 @@ Initial vertical slice is complete when all of the following are true:
 4. Behavior loop changes state over time with cooldowns.
 5. Save files persist and restore bond level and settings.
 6. Core content manifest validates with local validator.
-

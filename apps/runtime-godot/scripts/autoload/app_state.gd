@@ -8,13 +8,39 @@ const SETTINGS_PATH := "user://settings.json"
 const PROFILE_PATH := "user://profile.json"
 const WORLD_STATE_PATH := "user://world_state.json"
 
+const SERVICE_PATHS := {
+    "identity": "res://scripts/services/identity_service.gd",
+    "mood": "res://scripts/services/mood_service.gd",
+    "bond": "res://scripts/services/bond_service.gd",
+    "growth": "res://scripts/services/growth_service.gd",
+    "economy": "res://scripts/services/economy_service.gd",
+    "report": "res://scripts/services/report_service.gd",
+}
+
 var settings := {}
 var profile := {}
 var world_state := {}
+var _services: Dictionary = {}
 
 
 func _ready() -> void:
+    _load_services()
     load_state()
+
+
+func _load_services() -> void:
+    _services.clear()
+    for key in SERVICE_PATHS.keys():
+        var path := str(SERVICE_PATHS[key])
+        var script = load(path)
+        if script == null:
+            push_warning("app_state: service %s missing at %s" % [key, path])
+            continue
+        if not script.can_instantiate():
+            push_warning("app_state: service %s could not instantiate from %s" % [key, path])
+            continue
+        var instance = script.new()
+        _services[key] = instance
 
 
 func load_state() -> void:
@@ -22,22 +48,26 @@ func load_state() -> void:
         SETTINGS_PATH,
         _default_settings,
         SchemaMigrations.SETTINGS_CURRENT_VERSION,
-        SchemaMigrations.SETTINGS_MIGRATORS,
+        SchemaMigrations.SETTINGS_MIGRATORS
     )
     profile = SaveStore.load_versioned(
         PROFILE_PATH,
         _default_profile,
         SchemaMigrations.PROFILE_CURRENT_VERSION,
-        SchemaMigrations.PROFILE_MIGRATORS,
+        SchemaMigrations.PROFILE_MIGRATORS
     )
     world_state = SaveStore.load_versioned(
         WORLD_STATE_PATH,
         _default_world_state,
         SchemaMigrations.WORLD_STATE_CURRENT_VERSION,
-        SchemaMigrations.WORLD_STATE_MIGRATORS,
+        SchemaMigrations.WORLD_STATE_MIGRATORS
     )
+
+    profile = _ensure_profile_modules(profile)
+    world_state = _ensure_world_modules(world_state)
     _refresh_unlocks()
     _prune_event_buckets()
+    _refresh_while_away_report()
 
 
 func flush() -> void:
@@ -47,16 +77,21 @@ func flush() -> void:
 
 
 func record_interaction(kind: String) -> void:
-    var total := int(profile.get("total_interactions", 0))
-    profile["total_interactions"] = total + 1
-
-    var xp := int(profile.get("bond_xp", 0))
-    if kind == "pet":
-        xp += 2
-    else:
-        xp += 1
-    profile["bond_xp"] = xp
-    _apply_level_from_xp()
+    profile["total_interactions"] = int(profile.get("total_interactions", 0)) + 1
+    profile = _call_profile_service("identity", "record_interaction", [profile, kind])
+    profile = _call_profile_service(
+        "bond",
+        "apply_interaction",
+        [profile, kind, UnlockTable.xp_per_level(), UnlockTable.max_level()]
+    )
+    profile = _call_profile_service(
+        "mood",
+        "apply_interaction",
+        [profile, kind, is_quiet_hours_now()]
+    )
+    profile = _call_profile_service("growth", "apply_interaction", [profile, kind])
+    world_state = _call_world_service("economy", "grant_crystals", [world_state, "interaction:%s" % kind, 1])
+    _refresh_unlocks()
     flush()
 
 
@@ -65,11 +100,22 @@ func apply_behavior(action_id: String) -> void:
     world_state["last_tick_unix"] = Time.get_unix_time_from_system()
 
     if action_id == "gift":
-        var gifts := int(profile.get("gifts_seen", 0))
-        profile["gifts_seen"] = gifts + 1
-        profile["bond_xp"] = int(profile.get("bond_xp", 0)) + 3
-        _apply_level_from_xp()
+        profile["gifts_seen"] = int(profile.get("gifts_seen", 0)) + 1
+        world_state = _call_world_service("economy", "grant_crystals", [world_state, "behavior:gift", 3])
+    elif action_id == "visitor":
+        world_state = _call_world_service("economy", "grant_crystals", [world_state, "behavior:visitor", 2])
+    elif action_id == "sleep":
+        world_state = _call_world_service("economy", "grant_crystals", [world_state, "behavior:sleep", 1])
 
+    profile = _call_profile_service(
+        "bond",
+        "apply_behavior",
+        [profile, action_id, UnlockTable.xp_per_level(), UnlockTable.max_level()]
+    )
+    profile = _call_profile_service("mood", "apply_behavior", [profile, action_id])
+    profile = _call_profile_service("growth", "apply_behavior", [profile, action_id])
+    profile = _call_profile_service("identity", "record_behavior", [profile, action_id])
+    _refresh_unlocks()
     flush()
 
 
@@ -97,7 +143,6 @@ func try_consume_event_budget(event_id: String, per_hour: int, per_day: int) -> 
 
     var hour_buckets: Dictionary = world_state.get("event_hour_buckets", {})
     var day_buckets: Dictionary = world_state.get("event_day_buckets", {})
-
     var hour_key := _current_hour_key()
     var day_key := _current_day_key()
 
@@ -155,9 +200,37 @@ func import_profile(path: String) -> bool:
     if imported.is_empty():
         return false
     profile = _merge_defaults(imported, _default_profile())
+    profile = _ensure_profile_modules(profile)
     _refresh_unlocks()
     flush()
     return true
+
+
+func get_behavior_context(allowed_actions: Array = []) -> Dictionary:
+    var mood_ctx: Dictionary = _call_service_with_fallback("mood", "get_context", [profile], {})
+    var growth_ctx: Dictionary = _call_service_with_fallback("growth", "get_context", [profile], {})
+    var identity_ctx: Dictionary = _call_service_with_fallback("identity", "get_context", [profile], {})
+    return {
+        "is_night": _is_night(),
+        "bond_level": int(profile.get("bond_level", 1)),
+        "trust_value": float(profile.get("trust_value", 0.2)),
+        "quiet_mode": is_quiet_hours_now(),
+        "event_frequency": str(settings.get("eventFrequency", "normal")),
+        "allowed_actions": allowed_actions,
+        "unlocked_actions": get_unlocked_actions(),
+        "dominant_mood": str(mood_ctx.get("dominant_mood", "calm")),
+        "growth_stage": int(growth_ctx.get("growth_stage", 1)),
+        "top_trait": str(identity_ctx.get("top_trait", "curiosity")),
+    }
+
+
+func get_last_active_summary() -> String:
+    return str(profile.get("last_active_summary", ""))
+
+
+func clear_last_active_summary() -> void:
+    profile["last_active_summary"] = ""
+    SaveStore.write_json(PROFILE_PATH, profile)
 
 
 func get_telemetry_snapshot() -> Dictionary:
@@ -165,27 +238,31 @@ func get_telemetry_snapshot() -> Dictionary:
     var unlocks = profile.get("unlocks", [])
     if typeof(unlocks) == TYPE_ARRAY:
         unlock_count = (unlocks as Array).size()
+    var econ_snapshot: Dictionary = _call_service_with_fallback("economy", "get_snapshot", [world_state], {})
     return {
         "bond_level": int(profile.get("bond_level", 1)),
         "bond_xp": int(profile.get("bond_xp", 0)),
+        "trust_value": float(profile.get("trust_value", 0.2)),
+        "mood": str(profile.get("dominant_mood", "calm")),
+        "growth_stage": int(profile.get("growth_stage", 1)),
         "total_interactions": int(profile.get("total_interactions", 0)),
         "gifts_seen": int(profile.get("gifts_seen", 0)),
         "active_pack": str(world_state.get("activePackId", settings.get("selectedPackId", "core_pack"))),
         "last_action": str(world_state.get("last_action", "idle")),
         "last_event_id": str(world_state.get("last_event_id", "")),
         "unlock_count": unlock_count,
+        "crystals": int(econ_snapshot.get("crystals", 0)),
+        "inventory_count": int(econ_snapshot.get("inventory_count", 0)),
     }
 
 
 func is_quiet_hours_now() -> bool:
     if not bool(settings.get("quietHoursEnabled", true)):
         return false
-
     var start_hour := int(settings.get("quietHoursStart", 22))
     var end_hour := int(settings.get("quietHoursEnd", 7))
     var now := Time.get_datetime_dict_from_system()
     var hour := int(now.get("hour", 12))
-
     if start_hour == end_hour:
         return true
     if start_hour < end_hour:
@@ -195,16 +272,85 @@ func is_quiet_hours_now() -> bool:
 
 func get_bond_tier() -> Dictionary:
     var level := int(profile.get("bond_level", 1))
-    return UnlockTable.cadence_for_level(level)
+    var tier := UnlockTable.cadence_for_level(level)
+    var mood := str(profile.get("dominant_mood", "calm"))
+    if mood in ["worried", "sleepy"]:
+        var phrases: Array = tier.get("idle_phrases", []).duplicate(true)
+        if not phrases.has("Staying near you helps."):
+            phrases.append("Staying near you helps.")
+        tier["idle_phrases"] = phrases
+    return tier
 
 
-func _apply_level_from_xp() -> void:
-    var xp := int(profile.get("bond_xp", 0))
-    var xp_cap := UnlockTable.xp_per_level() * UnlockTable.max_level()
-    profile["bond_xp"] = min(xp, xp_cap)
-    var level := 1 + int(min(xp, xp_cap) / max(1, UnlockTable.xp_per_level()))
-    profile["bond_level"] = clamp(level, 1, UnlockTable.max_level())
-    _refresh_unlocks()
+func is_first_run() -> bool:
+    return not bool(settings.get("firstRunSeen", false))
+
+
+func mark_first_run_seen() -> void:
+    settings["firstRunSeen"] = true
+    SaveStore.write_json(SETTINGS_PATH, settings)
+
+
+func _ensure_profile_modules(input_profile: Dictionary) -> Dictionary:
+    var merged := input_profile.duplicate(true)
+    merged = _call_profile_service("identity", "ensure_profile", [merged], false)
+    merged = _call_profile_service("mood", "ensure_profile", [merged], false)
+    merged = _call_profile_service("bond", "ensure_profile", [merged], false)
+    merged = _call_profile_service("growth", "ensure_profile", [merged], false)
+    return merged
+
+
+func _ensure_world_modules(input_world: Dictionary) -> Dictionary:
+    var merged := input_world.duplicate(true)
+    merged = _call_world_service("economy", "ensure_world_state", [merged], false)
+    return merged
+
+
+func _refresh_while_away_report() -> void:
+    var now_unix := Time.get_unix_time_from_system()
+    var report: Dictionary = _call_service_with_fallback(
+        "report",
+        "generate_while_away_report",
+        [profile, world_state, now_unix],
+        {}
+    )
+    var summary := str(report.get("summary", ""))
+    if summary != "":
+        profile["last_active_summary"] = summary
+
+
+func _call_profile_service(name: String, method: String, args: Array, write_back: bool = true) -> Dictionary:
+    var fallback := profile.duplicate(true) if not profile.is_empty() else _default_profile()
+    var result = _call_service_with_fallback(name, method, args, fallback)
+    if typeof(result) != TYPE_DICTIONARY:
+        return fallback
+    if write_back:
+        profile = result
+    return result
+
+
+func _call_world_service(name: String, method: String, args: Array, write_back: bool = true) -> Dictionary:
+    var fallback := world_state.duplicate(true) if not world_state.is_empty() else _default_world_state()
+    var result = _call_service_with_fallback(name, method, args, fallback)
+    if typeof(result) == TYPE_DICTIONARY and result.has("world_state") and typeof(result.get("world_state")) == TYPE_DICTIONARY:
+        result = result.get("world_state")
+    if typeof(result) != TYPE_DICTIONARY:
+        return fallback
+    if write_back:
+        world_state = result
+    return result
+
+
+func _call_service_with_fallback(name: String, method: String, args: Array, fallback: Variant) -> Variant:
+    if not _services.has(name):
+        return fallback
+    var service = _services[name]
+    if service == null or not service.has_method(method):
+        return fallback
+    var value = service.callv(method, args)
+    if value == null:
+        return fallback
+    return value
 
 
 func _refresh_unlocks() -> void:
@@ -235,31 +381,65 @@ func _default_settings() -> Dictionary:
     }
 
 
-func is_first_run() -> bool:
-    return not bool(settings.get("firstRunSeen", false))
-
-
-func mark_first_run_seen() -> void:
-    settings["firstRunSeen"] = true
-    SaveStore.write_json(SETTINGS_PATH, settings)
-
-
 func _default_profile() -> Dictionary:
     return {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "name": "Buddy",
+        "base_type": "sprout",
+        "personality_seed": Time.get_unix_time_from_system(),
+        "personality_seed_tag": "curious",
+        "current_personality_profile": {
+            "curiosity": 0.55,
+            "sociability": 0.45,
+            "bravery": 0.40,
+            "playfulness": 0.50,
+            "diligence": 0.45,
+            "independence": 0.35,
+            "empathy": 0.55,
+            "competitiveness": 0.30,
+        },
+        "likes": [],
+        "dislikes": [],
+        "interests": ["cozy"],
+        "active_goals": ["settle-in"],
+        "trait_history_summary": [],
+        "interaction_counters": {},
         "bond_xp": 0,
         "bond_level": 1,
+        "trust_value": 0.2,
+        "recent_affection_memory": [],
+        "recent_neglect_summary": [],
+        "dominant_mood": "calm",
+        "mood_modifiers": {
+            "energy_strain": 0.0,
+            "social_fulfillment": 0.0,
+            "comfort": 0.5,
+            "confidence": 0.5,
+        },
+        "mood_stability": 0.7,
+        "last_mood_change_reason": "init",
+        "growth_stage": 1,
+        "stats": {
+            "strength": 1,
+            "dexterity": 1,
+            "charisma": 1,
+            "endurance": 1,
+            "wisdom": 1,
+            "knowledge": 1,
+        },
+        "milestone_flags": [],
+        "trait_shifts": [],
+        "unlocked_behaviors": [],
         "gifts_seen": 0,
         "total_interactions": 0,
-        "personality_seed": Time.get_unix_time_from_system(),
+        "last_active_summary": "",
         "unlocks": [],
     }
 
 
 func _default_world_state() -> Dictionary:
     return {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "last_action": "idle",
         "last_tick_unix": 0,
         "last_event_id": "",
@@ -269,6 +449,10 @@ func _default_world_state() -> Dictionary:
         "activePackManifestVersion": "",
         "event_hour_buckets": {},
         "event_day_buckets": {},
+        "wallet": {"crystals": 0},
+        "inventory": [],
+        "reward_transactions": [],
+        "reward_boxes": {},
     }
 
 
@@ -307,10 +491,15 @@ func _prune_event_buckets() -> void:
     for key in hour_buckets.keys():
         if str(key) != keep_hour:
             hour_buckets.erase(key)
-
     for key in day_buckets.keys():
         if str(key) != keep_day:
             day_buckets.erase(key)
 
     world_state["event_hour_buckets"] = hour_buckets
     world_state["event_day_buckets"] = day_buckets
+
+
+func _is_night() -> bool:
+    var now := Time.get_datetime_dict_from_system()
+    var hour := int(now.get("hour", 12))
+    return hour < 7 or hour >= 22

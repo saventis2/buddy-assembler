@@ -7,11 +7,11 @@ const IDLE_SWAY_DISTANCE_X := 0.0
 const IDLE_SWAY_DISTANCE_Y := 0.0
 const FLOOR_PADDING := 14.0
 const SPRITE_VIEW_MARGIN := 4.0
-const DESKTOP_FLOOR_CONTACT_OFFSET_Y := 40.0
+const DESKTOP_FLOOR_CONTACT_OFFSET_Y := 28.0
 const DEFAULT_ROAM_SPEED_PX_PER_SEC := 96.0
 const DEFAULT_SPRITE_ANCHOR := Vector2(0.5, 1.0)
 const NO_PIVOT := Vector2(-1.0, -1.0)
-const SLEEP_PIVOT_OVERFLOW_BLEND := 0.5
+const SLEEP_PIVOT_OVERFLOW_BLEND := 0.85
 const SIT_PIVOT_OVERFLOW_BLEND := 1.0
 const DEFAULT_EMOTE_MANIFEST_PATH := "character/emotes/manifest.json"
 const DEFAULT_STATE_EMOTES := {
@@ -47,7 +47,7 @@ const ProductivityTracker = preload("res://scripts/utility/productivity_tracker.
 @onready var tick_timer: Timer = $TickTimer
 @onready var telemetry_timer: Timer = $TelemetryTimer
 @onready var telemetry_label: Label = $Telemetry/Label
-@onready var bond_speech_label: Label = $BondSpeechLayer/BondSpeechLabel
+@onready var chat_balloon: Node2D = $ChatBalloon
 @onready var welcome_label: Label = $WelcomeLayer/WelcomeLabel
 
 var _engine := BehaviorEngine.new()
@@ -105,6 +105,7 @@ var _roam_speed_px_per_sec := DEFAULT_ROAM_SPEED_PX_PER_SEC
 var _roam_direction := 1
 var _roam_subpixel_x := 0.0
 var _bond_phrase_active := false
+var _away_report_shown := false
 
 
 func _ready() -> void:
@@ -129,6 +130,8 @@ func _ready() -> void:
     _refresh_telemetry()
     if AppState.is_first_run():
         _show_welcome_once()
+    else:
+        _show_while_away_report_once()
 
 
 func _configure_window() -> void:
@@ -296,14 +299,7 @@ func _hit_test(point: Vector2) -> bool:
 
 func _on_tick_timer_timeout() -> void:
     var now_unix := Time.get_unix_time_from_system()
-    var context := {
-        "is_night": _is_night(),
-        "bond_level": int(AppState.profile.get("bond_level", 1)),
-        "quiet_mode": AppState.is_quiet_hours_now(),
-        "event_frequency": str(AppState.settings.get("eventFrequency", "normal")),
-        "allowed_actions": _allowed_actions,
-        "unlocked_actions": AppState.get_unlocked_actions(),
-    }
+    var context := AppState.get_behavior_context(_allowed_actions)
 
     var productivity_event := _productivity.tick(now_unix, AppState.settings)
     if not productivity_event.is_empty():
@@ -391,10 +387,7 @@ func _normalize_screen_index(index: int) -> int:
 
 func _screen_rect(screen_index: int) -> Rect2i:
     var normalized := _normalize_screen_index(screen_index)
-    return Rect2i(
-        DisplayServer.screen_get_position(normalized),
-        DisplayServer.screen_get_size(normalized)
-    )
+    return DisplayServer.screen_get_usable_rect(normalized)
 
 
 func _screen_for_point(point: Vector2i) -> int:
@@ -531,6 +524,15 @@ func _refresh_telemetry() -> void:
         "emote: %s -> %s" % [_active_emote_semantic, _active_face_variant],
         "face src: %s" % _last_face_texture_path,
         "level: %d  xp: %d" % [int(snapshot.get("bond_level", 1)), int(snapshot.get("bond_xp", 0))],
+        "mood: %s  growth: %d  trust: %.2f" % [
+            str(snapshot.get("mood", "calm")),
+            int(snapshot.get("growth_stage", 1)),
+            float(snapshot.get("trust_value", 0.2)),
+        ],
+        "crystals: %d  items: %d" % [
+            int(snapshot.get("crystals", 0)),
+            int(snapshot.get("inventory_count", 0)),
+        ],
         "pack: %s" % str(snapshot.get("active_pack", "core_pack")),
         "freq: %s  quiet: %s" % [
             str(AppState.settings.get("eventFrequency", "normal")),
@@ -1342,11 +1344,16 @@ func _maybe_show_bond_phrase() -> void:
     if phrase == "" or phrase == "...":
         return
     _bond_phrase_active = true
-    bond_speech_label.text = phrase
-    bond_speech_label.visible = true
+    _update_balloon_position()
+    chat_balloon.show_text(phrase)
     await get_tree().create_timer(4.0).timeout
-    bond_speech_label.visible = false
+    chat_balloon.hide_bubble()
     _bond_phrase_active = false
+
+
+func _update_balloon_position() -> void:
+    var head_y := _current_sprite_rect.position.y if _current_sprite_rect.size.y > 0.0 else _draw_center.y - 80.0
+    chat_balloon.position = Vector2(_draw_center.x, head_y)
 
 
 func _return_to_idle_after_drag() -> void:
@@ -1363,3 +1370,17 @@ func _show_welcome_once() -> void:
     AppState.mark_first_run_seen()
     await get_tree().create_timer(6.0).timeout
     welcome_label.visible = false
+
+
+func _show_while_away_report_once() -> void:
+    if _away_report_shown:
+        return
+    _away_report_shown = true
+    var summary := AppState.get_last_active_summary()
+    if summary == "":
+        return
+    _update_balloon_position()
+    chat_balloon.show_text(summary)
+    await get_tree().create_timer(5.0).timeout
+    chat_balloon.hide_bubble()
+    AppState.clear_last_active_summary()

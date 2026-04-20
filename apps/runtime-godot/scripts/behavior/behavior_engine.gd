@@ -60,6 +60,21 @@ func tick(now_unix: int, context: Dictionary) -> Dictionary:
 			weight *= 2.6
 		if int(context.get("bond_level", 1)) > 3 and action_id == "happy":
 			weight *= 1.5
+		var mood := str(context.get("dominant_mood", "calm"))
+		if mood == "sleepy" and action_id == "sleep":
+			weight *= 1.6
+		elif mood == "proud" and action_id == "gift":
+			weight *= 1.4
+		elif mood == "worried" and action_id == "visitor":
+			weight *= 1.2
+		var top_trait := str(context.get("top_trait", ""))
+		if top_trait == "curiosity" and action_id == "wander":
+			weight *= 1.35
+		elif top_trait == "empathy" and action_id in ["happy", "gift"]:
+			weight *= 1.2
+		var growth_stage := int(context.get("growth_stage", 1))
+		if growth_stage >= 3 and action_id == "visitor":
+			weight *= 1.2
 		if context.get("quiet_mode", false):
 			if action_id in ["wander", "happy", "gift"]:
 				weight *= 0.15
