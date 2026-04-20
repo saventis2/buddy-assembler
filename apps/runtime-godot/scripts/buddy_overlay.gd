@@ -141,6 +141,10 @@ var _last_auto_prompt_unix := 0
 var _deferred_world_prompt := {}
 
 
+func _using_overlay_actor_core() -> bool:
+    return overlay_actor != null and is_instance_valid(overlay_actor)
+
+
 func _ready() -> void:
     position = Vector2.ZERO
     _draw_center = _floor_point()
@@ -352,7 +356,7 @@ func _configure_settings_window() -> void:
 
 
 func _draw() -> void:
-    if overlay_actor != null and is_instance_valid(overlay_actor):
+    if _using_overlay_actor_core():
         return
     var center := _draw_center
     if _current_texture == null:
@@ -418,6 +422,9 @@ func _ground_surface_y(viewport_size: Vector2) -> float:
 
 
 func _hit_test(point: Vector2) -> bool:
+    if _using_overlay_actor_core():
+        var actor_hit_center: Vector2 = overlay_actor.position + Vector2(0.0, -46.0)
+        return point.distance_to(actor_hit_center) <= 56.0
     if _current_texture != null:
         var hit_rect := _sprite_rect_for_texture(_draw_center, _current_texture).grow(8.0)
         _current_sprite_rect = hit_rect
@@ -1040,6 +1047,8 @@ func _load_visual_assets(pack_id: String, manifest: Dictionary) -> void:
 
 
 func _set_visual_for_state(action_id: String, force_reset: bool = false) -> void:
+    if _using_overlay_actor_core():
+        return
     var selected_animation_action := action_id
     var animation_variant = _action_animations.get(selected_animation_action, {})
     var use_animation := false
@@ -1143,6 +1152,8 @@ func _reset_current_animation() -> void:
 
 
 func _advance_animation(delta: float) -> void:
+    if _using_overlay_actor_core():
+        return
     if _current_animation_frames.size() <= 1:
         return
     _current_animation_elapsed += delta
@@ -1754,6 +1765,9 @@ func _maybe_show_bond_phrase() -> void:
 
 
 func _update_balloon_position() -> void:
+    if _using_overlay_actor_core():
+        chat_balloon.position = overlay_actor.position + Vector2(0.0, -102.0)
+        return
     var head_y := _current_sprite_rect.position.y if _current_sprite_rect.size.y > 0.0 else _draw_center.y - 80.0
     chat_balloon.position = Vector2(_draw_center.x, head_y)
 
