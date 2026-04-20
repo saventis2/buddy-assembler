@@ -15,7 +15,8 @@ const ACTION_EXTRA_FLOOR_OFFSET := {
 const DEFAULT_ROAM_SPEED_PX_PER_SEC := 96.0
 const FLOOR_SETTLE_SPEED_PX_PER_SEC := 720.0
 const SETTINGS_WINDOW_OFFSET := Vector2i(56, 56)
-const SETTINGS_WINDOW_MIN_SIZE := Vector2i(420, 560)
+const SETTINGS_WINDOW_MIN_SIZE := Vector2i(320, 380)
+const SETTINGS_WINDOW_DEFAULT_SIZE := Vector2i(360, 460)
 const DEFAULT_SPRITE_ANCHOR := Vector2(0.5, 1.0)
 const NO_PIVOT := Vector2(-1.0, -1.0)
 const SLEEP_PIVOT_OVERFLOW_BLEND := 1.0
@@ -57,7 +58,7 @@ const ManualVerificationReport = preload("res://scripts/utility/manual_verificat
 @onready var telemetry_timer: Timer = $TelemetryTimer
 @onready var telemetry_label: Label = $Telemetry/Label
 @onready var settings_window: Window = $SettingsWindow
-@onready var settings_label: Label = $SettingsWindow/MarginContainer/SettingsLabel
+@onready var settings_label: RichTextLabel = $SettingsWindow/MarginContainer/SettingsLabel
 @onready var chat_balloon: Node2D = $ChatBalloon
 @onready var welcome_label: Label = $WelcomeLayer/WelcomeLabel
 
@@ -281,10 +282,12 @@ func _configure_settings_window() -> void:
         return
     settings_window.transient = false
     settings_window.exclusive = false
+    settings_window.borderless = false
     settings_window.visible = false
     settings_window.unresizable = false
     settings_window.min_size = SETTINGS_WINDOW_MIN_SIZE
-    settings_window.title = "Buddy Settings"
+    settings_window.size = SETTINGS_WINDOW_DEFAULT_SIZE
+    settings_window.title = "Maple Buddy Menu"
     settings_window.wrap_controls = true
     settings_window.always_on_top = true
     settings_window.close_requested.connect(func() -> void:
@@ -765,8 +768,23 @@ func _layout_settings_window() -> void:
     if settings_window == null:
         return
     if _settings_menu_open:
+        var main_screen := DisplayServer.window_get_current_screen()
+        var usable := DisplayServer.screen_get_usable_rect(main_screen)
+        var max_size := Vector2i(
+            maxi(SETTINGS_WINDOW_MIN_SIZE.x, int(usable.size.x * 0.45)),
+            maxi(SETTINGS_WINDOW_MIN_SIZE.y, int(usable.size.y * 0.8))
+        )
+        var target_size := settings_window.size
+        target_size.x = clampi(target_size.x, SETTINGS_WINDOW_MIN_SIZE.x, max_size.x)
+        target_size.y = clampi(target_size.y, SETTINGS_WINDOW_MIN_SIZE.y, max_size.y)
+        settings_window.size = target_size
+
         var main_pos: Vector2i = DisplayServer.window_get_position()
         var target_pos := main_pos + SETTINGS_WINDOW_OFFSET
+        var max_x := usable.position.x + maxi(0, usable.size.x - target_size.x)
+        var max_y := usable.position.y + maxi(0, usable.size.y - target_size.y)
+        target_pos.x = clampi(target_pos.x, usable.position.x, max_x)
+        target_pos.y = clampi(target_pos.y, usable.position.y, max_y)
         settings_window.position = target_pos
         settings_window.popup()
         settings_window.grab_focus()
@@ -782,54 +800,45 @@ func _refresh_settings_menu() -> void:
     var prompt_metrics := _manual_verification_report.get_prompt_metrics()
     var lock_remaining := maxi(0, _manual_emote_until_unix - int(Time.get_unix_time_from_system()))
 
-    var lines: Array[String] = [
-        "Settings Menu (F10)",
-        "Separate movable popout window",
-        "",
-        "[Status]",
-        "state: %s  mood: %s  growth: %d" % [
-            _state,
-            str(snapshot.get("mood", "calm")),
-            int(snapshot.get("growth_stage", 1)),
-        ],
-        "bond: Lv %d  xp %d  trust %.2f" % [
-            int(snapshot.get("bond_level", 1)),
-            int(snapshot.get("bond_xp", 0)),
-            float(snapshot.get("trust_value", 0.2)),
-        ],
-        "pack: %s  mode: %s" % [
-            str(snapshot.get("active_pack", "core_pack")),
-            str(snapshot.get("home_mode", "overlay")),
-        ],
-        "",
-        "[Cadence]",
-        "event freq: %s" % str(AppState.settings.get("eventFrequency", "normal")),
-        "prompt freq: %s" % str(AppState.settings.get("promptFrequency", "normal")),
-        "quiet strict: %s  quiet now: %s" % [
-            str(AppState.settings.get("quietModeStrictness", "balanced")),
-            "on" if AppState.is_quiet_hours_now() else "off",
-        ],
-        "prompts: s+%d s-%d w+%d w-%d wd%d" % [
-            int(prompt_metrics.get("support_shown", 0)),
-            int(prompt_metrics.get("support_suppressed", 0)),
-            int(prompt_metrics.get("world_shown", 0)),
-            int(prompt_metrics.get("world_suppressed", 0)),
-            int(prompt_metrics.get("world_deferred", 0)),
-        ],
-        "",
-        "[Controls]",
-        "F2 prompt freq  Shift+F2 demo support",
-        "F3 quiet strict  F4 intensity",
-        "F5 home/overlay  F7 event freq",
-        "Shift+F7 demo world  F8 monitor",
-        "F9 pack  F11 reward box  F12 resolve world",
-        "",
-        "[Emote Debug]",
-        "lock: %ds" % lock_remaining,
-        "1 happy 2 sad 3 angry 4 surprised 5 love",
-        "6 wink 7 sleepy 8 sick 9 pain 0 default",
+    var text := ""
+    text += "[center][b][color=#FFD77A]Maple Buddy Menu[/color][/b][/center]\n"
+    text += "[center][color=#E7D9B4]Separate movable popout[/color][/center]\n\n"
+    text += "[b][color=#FFCF6E]Character[/color][/b]\n"
+    text += "[color=#F4E9CF]State:[/color] %s   [color=#F4E9CF]Mood:[/color] %s   [color=#F4E9CF]Growth:[/color] %d\n" % [
+        _state, str(snapshot.get("mood", "calm")), int(snapshot.get("growth_stage", 1))
     ]
-    settings_label.text = "\n".join(lines)
+    text += "[color=#F4E9CF]Bond:[/color] Lv %d   XP %d   [color=#F4E9CF]Trust:[/color] %.2f\n" % [
+        int(snapshot.get("bond_level", 1)), int(snapshot.get("bond_xp", 0)), float(snapshot.get("trust_value", 0.2))
+    ]
+    text += "[color=#F4E9CF]Pack:[/color] %s   [color=#F4E9CF]Mode:[/color] %s\n\n" % [
+        str(snapshot.get("active_pack", "core_pack")), str(snapshot.get("home_mode", "overlay"))
+    ]
+    text += "[b][color=#FFCF6E]System[/color][/b]\n"
+    text += "[color=#F4E9CF]Event Freq:[/color] %s   [color=#F4E9CF]Prompt Freq:[/color] %s\n" % [
+        str(AppState.settings.get("eventFrequency", "normal")),
+        str(AppState.settings.get("promptFrequency", "normal"))
+    ]
+    text += "[color=#F4E9CF]Quiet:[/color] %s (%s)\n" % [
+        str(AppState.settings.get("quietModeStrictness", "balanced")),
+        "on" if AppState.is_quiet_hours_now() else "off"
+    ]
+    text += "[color=#F4E9CF]Prompts:[/color] s+%d s-%d w+%d w-%d wd%d\n\n" % [
+        int(prompt_metrics.get("support_shown", 0)),
+        int(prompt_metrics.get("support_suppressed", 0)),
+        int(prompt_metrics.get("world_shown", 0)),
+        int(prompt_metrics.get("world_suppressed", 0)),
+        int(prompt_metrics.get("world_deferred", 0))
+    ]
+    text += "[b][color=#FFCF6E]Hotkeys[/color][/b]\n"
+    text += "[color=#F4E9CF]F2[/color] prompt  [color=#F4E9CF]Shift+F2[/color] demo support\n"
+    text += "[color=#F4E9CF]F3[/color] quiet  [color=#F4E9CF]F4[/color] intensity\n"
+    text += "[color=#F4E9CF]F5[/color] home  [color=#F4E9CF]F7[/color] events  [color=#F4E9CF]F8[/color] monitor\n"
+    text += "[color=#F4E9CF]F9[/color] pack  [color=#F4E9CF]F11[/color] reward  [color=#F4E9CF]F12[/color] world\n\n"
+    text += "[b][color=#FFCF6E]Emote Debug[/color][/b]\n"
+    text += "[color=#F4E9CF]Lock:[/color] %ds\n" % lock_remaining
+    text += "[color=#F4E9CF]1-0:[/color] happy/sad/angry/surprised/love/wink/sleepy/sick/pain/default"
+    settings_label.bbcode_enabled = true
+    settings_label.text = text
 
 
 func _load_visual_assets(pack_id: String, manifest: Dictionary) -> void:

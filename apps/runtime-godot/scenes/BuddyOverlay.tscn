@@ -29,10 +29,10 @@ text = "telemetry"
 
 [node name="SettingsWindow" type="Window" parent="."]
 visible = false
-title = "Buddy Settings"
+title = "Maple Buddy Menu"
 position = Vector2i(180, 100)
-size = Vector2i(420, 560)
-min_size = Vector2i(420, 560)
+size = Vector2i(360, 460)
+min_size = Vector2i(320, 380)
 always_on_top = true
 unresizable = false
 wrap_controls = true
@@ -52,13 +52,15 @@ theme_override_constants/margin_top = 6
 theme_override_constants/margin_right = 6
 theme_override_constants/margin_bottom = 6
 
-[node name="SettingsLabel" type="Label" parent="SettingsWindow/MarginContainer"]
+[node name="SettingsLabel" type="RichTextLabel" parent="SettingsWindow/MarginContainer"]
+bbcode_enabled = true
+scroll_active = true
+fit_content = false
 theme_override_font_sizes/font_size = 13
-theme_override_colors/font_color = Color(1, 1, 1, 0.95)
-theme_override_colors/font_outline_color = Color(0, 0, 0, 0.85)
+theme_override_colors/font_color = Color(0.96, 0.91, 0.81, 0.98)
+theme_override_colors/font_outline_color = Color(0.13, 0.09, 0.05, 0.95)
 theme_override_constants/outline_size = 2
 text = "Settings Menu (F10)"
-autowrap_mode = 3
 
 [node name="WelcomeLayer" type="CanvasLayer" parent="."]
 
