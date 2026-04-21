@@ -22,6 +22,8 @@ const NO_PIVOT := Vector2(-1.0, -1.0)
 const SLEEP_PIVOT_OVERFLOW_BLEND := 1.0
 const SIT_PIVOT_OVERFLOW_BLEND := 1.0
 const DEFAULT_EMOTE_MANIFEST_PATH := "character/emotes/manifest.json"
+const SIT_CHAIR_FRAME_PATH := "effects/chair_basic/frames/000.png"
+const SIT_CHAIR_EFFECT_PATH := "effects/chair_basic/effect.json"
 const DEFAULT_STATE_EMOTES := {
     "idle": "default",
     "wander": "default",
@@ -138,6 +140,8 @@ var _continuity_hint_shown := false
 var _last_auto_prompt_unix := 0
 var _deferred_world_prompt := {}
 var _desktop_floor_offset_adjust := 0.0
+var _sit_chair_texture: Texture2D = null
+var _sit_chair_origin_px := Vector2.ZERO
 
 
 func _ready() -> void:
@@ -359,6 +363,7 @@ func _draw() -> void:
         _load_core_character_sprite_fallbacks()
         _set_visual_for_state(_state, true)
 
+    _draw_sit_chair(center)
     if _draw_character_sprite(center):
         _draw_face_overlay()
         return
@@ -845,7 +850,7 @@ func _layout_settings_window() -> void:
         target_pos.x = clampi(target_pos.x, usable.position.x, max_x)
         target_pos.y = clampi(target_pos.y, usable.position.y, max_y)
         settings_window.position = target_pos
-        settings_window.popup()
+        settings_window.show()
         settings_window.grab_focus()
     else:
         settings_window.hide()
@@ -971,6 +976,8 @@ func _load_visual_assets(pack_id: String, manifest: Dictionary) -> void:
     _active_face_variant = "default"
     _manual_emote_until_unix = 0
     _last_face_texture_path = ""
+    _sit_chair_texture = null
+    _sit_chair_origin_px = Vector2.ZERO
 
     var visual_variant = manifest.get("visual", {})
     if typeof(visual_variant) == TYPE_DICTIONARY:
@@ -1031,11 +1038,64 @@ func _load_visual_assets(pack_id: String, manifest: Dictionary) -> void:
         _load_core_character_animation_fallbacks()
     if _action_textures.is_empty():
         _load_core_character_sprite_fallbacks()
+    _load_sit_chair_assets(pack_id)
     _ground_enabled = false
     _ground_texture = null
     _set_emote_from_state(_state)
     _set_visual_for_state(_state, true)
     _update_mouse_region()
+
+
+func _draw_sit_chair(center: Vector2) -> void:
+    if _state != "sit":
+        return
+    if _sit_chair_texture == null:
+        return
+    var tex_size := _sit_chair_texture.get_size()
+    if tex_size.x <= 0.0 or tex_size.y <= 0.0:
+        return
+    var scale := maxf(0.2, _sprite_scale)
+    var draw_size := tex_size * scale
+    var top_left := center - (_sit_chair_origin_px * scale)
+    draw_texture_rect(_sit_chair_texture, Rect2(top_left, draw_size), false)
+
+
+func _load_sit_chair_assets(pack_id: String) -> void:
+    _sit_chair_texture = _resolve_texture(SIT_CHAIR_FRAME_PATH, pack_id)
+    var origin := _load_sit_chair_origin(pack_id)
+    if _sit_chair_texture == null and pack_id != "core_pack":
+        _sit_chair_texture = _resolve_texture(SIT_CHAIR_FRAME_PATH, "core_pack")
+        origin = _load_sit_chair_origin("core_pack")
+    if _sit_chair_texture == null:
+        return
+    var tex_size := _sit_chair_texture.get_size()
+    if tex_size.x <= 0.0 or tex_size.y <= 0.0:
+        return
+    if origin == Vector2.ZERO:
+        origin = Vector2(tex_size.x * 0.5, tex_size.y)
+    _sit_chair_origin_px = origin
+
+
+func _load_sit_chair_origin(pack_id: String) -> Vector2:
+    var raw := _resolve_text(SIT_CHAIR_EFFECT_PATH, pack_id)
+    if raw == "":
+        return Vector2.ZERO
+    var parsed = JSON.parse_string(raw)
+    if typeof(parsed) != TYPE_DICTIONARY:
+        return Vector2.ZERO
+    var effect: Dictionary = parsed
+    var frames_variant = effect.get("frames", [])
+    if typeof(frames_variant) != TYPE_ARRAY or (frames_variant as Array).is_empty():
+        return Vector2.ZERO
+    var first_variant = (frames_variant as Array)[0]
+    if typeof(first_variant) != TYPE_DICTIONARY:
+        return Vector2.ZERO
+    var first: Dictionary = first_variant
+    var origin_variant = first.get("origin_px", [])
+    if typeof(origin_variant) != TYPE_ARRAY or (origin_variant as Array).size() < 2:
+        return Vector2.ZERO
+    var values: Array = origin_variant
+    return Vector2(float(values[0]), float(values[1]))
 
 
 func _set_visual_for_state(action_id: String, force_reset: bool = false) -> void:
