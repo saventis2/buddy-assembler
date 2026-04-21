@@ -185,6 +185,9 @@ var _chat_memory_next_note_id := 1
 var _chat_memory_pending_forget_id := -1
 var _chat_memory_pending_forget_until := 0
 var _chat_unread_prompt_count := 0
+var _chat_cmd_latency_last_ms := 0
+var _chat_cmd_latency_total_ms := 0
+var _chat_cmd_latency_samples := 0
 
 
 func _ready() -> void:
@@ -879,6 +882,10 @@ func _refresh_telemetry() -> void:
             _chat_last_command_id,
             _chat_last_reason_code,
         ],
+        "chat cmd latency: last=%dms avg=%dms" % [
+            _chat_cmd_latency_last_ms,
+            int(round(float(_chat_cmd_latency_total_ms) / max(1, _chat_cmd_latency_samples))),
+        ],
         "intensity: %s  quiet strict: %s" % [
             str(snapshot.get("interaction_intensity", "balanced")),
             str(snapshot.get("quiet_strictness", "balanced")),
@@ -1122,8 +1129,10 @@ func _send_chat_input() -> void:
     AppState.record_interaction("chat_reply")
     _productivity.note_user_activity(int(Time.get_unix_time_from_system()))
 
+    var started_ms := Time.get_ticks_msec()
     var resolved := _chat_router.resolve(raw)
     var outcome := _execute_resolved_chat(raw, resolved)
+    outcome["elapsed_ms"] = Time.get_ticks_msec() - started_ms
     _record_chat_command_outcome(outcome)
     var reply := str(outcome.get("message", ""))
     if reply != "":
@@ -1206,7 +1215,7 @@ func _execute_chat_command(command: String, params: Dictionary) -> Dictionary:
         return _action_result(
             true,
             "command.help",
-            "Commands: /help /status /pending /mode home|overlay /reward /world engage|skip|complete /quiet lenient|balanced|strict /freq low|normal|high /chat close|clear [confirm]|text m|l /memory /remember <note> /forget <id> [confirm]",
+            "Commands: /help /status /pending /mode home|overlay /reward /world engage|skip|complete /quiet lenient|balanced|strict /freq low|normal|high /chat close|clear [confirm]|text m|l /memory /remember <note> /forget <id> [confirm] /cadence /debug chat /settings-check",
             "ok"
         )
     if command == "status":
@@ -1285,6 +1294,15 @@ func _execute_chat_command(command: String, params: Dictionary) -> Dictionary:
         var note_id := int(params.get("id", -1))
         var confirm := bool(params.get("confirm", false))
         return _forget_note(note_id, confirm)
+    if command == "cadence":
+        return _action_result(true, "command.cadence", _build_cadence_summary(), "ok")
+    if command == "debug":
+        var area := str(params.get("area", ""))
+        if area == "chat":
+            return _action_result(true, "command.debug", _build_chat_debug_summary(), "ok")
+        return _action_result(false, "command.debug", "Unknown debug area.", "invalid_arg")
+    if command == "settings-check":
+        return _action_result(true, "command.settings-check", _run_settings_check(), "ok")
 
     return _action_result(false, "command.%s" % command, "Unsupported command.", "unsupported_command")
 
@@ -1460,6 +1478,69 @@ func _apply_chat_text_size() -> void:
         chat_send.add_theme_font_size_override("font_size", size)
 
 
+func _build_cadence_summary() -> String:
+    var now_unix := int(Time.get_unix_time_from_system())
+    var quiet_mode := AppState.is_quiet_hours_now()
+    var info_variant = _prompt_cadence.debug_snapshot(now_unix, AppState.settings, quiet_mode)
+    if typeof(info_variant) != TYPE_DICTIONARY:
+        return "Cadence diagnostics unavailable."
+    var info: Dictionary = info_variant
+    var pieces := []
+    for source in ["support", "world", "chat"]:
+        var source_variant = info.get(source, {})
+        if typeof(source_variant) != TYPE_DICTIONARY:
+            continue
+        var source_data: Dictionary = source_variant
+        pieces.append(
+            "%s c=%d/%d min=%ss" % [
+                source,
+                int(source_data.get("recent_count", 0)),
+                int(source_data.get("burst_cap", 0)),
+                int(source_data.get("min_interval_s", 0)),
+            ]
+        )
+    return "Cadence: %s" % " | ".join(pieces)
+
+
+func _build_chat_debug_summary() -> String:
+    var reason_pairs := []
+    for reason_key in _chat_cmd_reason_counts.keys():
+        reason_pairs.append("%s=%d" % [str(reason_key), int(_chat_cmd_reason_counts.get(reason_key, 0))])
+    reason_pairs.sort()
+    var reasons := ", ".join(reason_pairs)
+    if reasons == "":
+        reasons = "none"
+    var avg_latency := int(round(float(_chat_cmd_latency_total_ms) / max(1, _chat_cmd_latency_samples)))
+    return "Chat debug: turns(y/b)=%d/%d cmd(ok/fail)=%d/%d latency(last/avg)=%d/%d reasons[%s]" % [
+        _chat_turn_user_count,
+        _chat_turn_buddy_count,
+        _chat_cmd_ok_count,
+        _chat_cmd_fail_count,
+        _chat_cmd_latency_last_ms,
+        avg_latency,
+        reasons,
+    ]
+
+
+func _run_settings_check() -> String:
+    var issues := []
+    var freq := str(AppState.settings.get("promptFrequency", "normal"))
+    var event_freq := str(AppState.settings.get("eventFrequency", "normal"))
+    var quiet := str(AppState.settings.get("quietModeStrictness", "balanced"))
+    var intensity := str(AppState.settings.get("interactionIntensity", "balanced"))
+    if freq not in ["low", "normal", "high"]:
+        issues.append("promptFrequency invalid")
+    if event_freq not in ["low", "normal", "high"]:
+        issues.append("eventFrequency invalid")
+    if quiet not in ["lenient", "balanced", "strict"]:
+        issues.append("quietModeStrictness invalid")
+    if intensity not in ["cozy", "balanced", "deep"]:
+        issues.append("interactionIntensity invalid")
+    if issues.is_empty():
+        return "Settings check passed."
+    return "Settings check warnings: %s" % ", ".join(issues)
+
+
 func _action_result(ok: bool, action_id: String, message: String, reason_code: String) -> Dictionary:
     return {
         "ok": ok,
@@ -1481,6 +1562,11 @@ func _record_chat_command_outcome(outcome: Dictionary) -> void:
         _chat_cmd_fail_count += 1
     var count := int(_chat_cmd_reason_counts.get(reason_code, 0))
     _chat_cmd_reason_counts[reason_code] = count + 1
+    var elapsed_ms := int(outcome.get("elapsed_ms", 0))
+    if elapsed_ms > 0:
+        _chat_cmd_latency_last_ms = elapsed_ms
+        _chat_cmd_latency_total_ms += elapsed_ms
+        _chat_cmd_latency_samples += 1
 
 
 func _throttle_command(action_id: String) -> Dictionary:

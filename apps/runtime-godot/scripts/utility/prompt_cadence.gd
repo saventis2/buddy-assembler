@@ -65,6 +65,19 @@ func note_emit(now_unix: int, source_kind: String = "support") -> void:
 	_recent_emits_by_source[source_kind] = recent
 
 
+func debug_snapshot(now_unix: int, settings: Dictionary, quiet_mode: bool) -> Dictionary:
+	var out := {}
+	var sources := ["support", "world", "chat"]
+	for source in sources:
+		var recent := _pruned_recent(now_unix, source)
+		out[source] = {
+			"recent_count": recent.size(),
+			"burst_cap": _burst_cap_per_10m(settings, source, quiet_mode),
+			"min_interval_s": min_interval_seconds(settings, quiet_mode, source),
+		}
+	return out
+
+
 func _source_additive_seconds(source_kind: String) -> int:
 	if source_kind == "support":
 		return 8

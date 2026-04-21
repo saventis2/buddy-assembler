@@ -13,6 +13,9 @@ const SUPPORTED_COMMANDS := [
 	"memory",
 	"remember",
 	"forget",
+	"cadence",
+	"debug",
+	"settings-check",
 ]
 
 
@@ -55,7 +58,7 @@ func _resolve_slash(raw: String) -> Dictionary:
 
 
 func _validate_command(command: String, args: Array) -> Dictionary:
-	if command in ["help", "status", "pending", "reward", "memory"]:
+	if command in ["help", "status", "pending", "reward", "memory", "cadence", "settings-check"]:
 		if not args.is_empty():
 			return _result(false, "command", command, {}, "unexpected_args", 1.0)
 		return _result(true, "command", command, {}, "ok", 1.0)
@@ -135,6 +138,14 @@ func _validate_command(command: String, args: Array) -> Dictionary:
 		if args.size() > 1:
 			confirm = str(args[1]).to_lower() == "confirm"
 		return _result(true, "command", command, {"id": note_id, "confirm": confirm}, "ok", 1.0)
+
+	if command == "debug":
+		if args.size() != 1:
+			return _result(false, "command", command, {}, "missing_arg", 1.0)
+		var area := str(args[0]).to_lower()
+		if area not in ["chat"]:
+			return _result(false, "command", command, {}, "invalid_arg", 1.0)
+		return _result(true, "command", command, {"area": area}, "ok", 1.0)
 
 	return _result(false, "command", command, {}, "unsupported_command", 0.5)
 
