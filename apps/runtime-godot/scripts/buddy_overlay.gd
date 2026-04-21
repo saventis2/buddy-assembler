@@ -366,24 +366,31 @@ func _configure_settings_window() -> void:
     settings_btn_event_freq.pressed.connect(func() -> void:
         _cycle_event_frequency()
     )
+    settings_btn_event_freq.tooltip_text = "Controls world-event cadence. Low is calmer; high is busier."
     settings_btn_prompt_freq.pressed.connect(func() -> void:
         _cycle_prompt_frequency()
     )
+    settings_btn_prompt_freq.tooltip_text = "Controls support-prompt cadence. Low reduces interruptions."
     settings_btn_quiet.pressed.connect(func() -> void:
         _cycle_quiet_strictness()
     )
+    settings_btn_quiet.tooltip_text = "Strict suppresses almost all non-critical prompts."
     settings_btn_intensity.pressed.connect(func() -> void:
         _cycle_interaction_intensity()
     )
+    settings_btn_intensity.tooltip_text = "Cozy = lighter progression cadence, Deep = denser progression cadence."
     settings_btn_mode.pressed.connect(func() -> void:
         _cycle_home_mode()
     )
+    settings_btn_mode.tooltip_text = "Switch between Home behavior and Overlay behavior."
     settings_btn_pack.pressed.connect(func() -> void:
         _cycle_pack()
     )
+    settings_btn_pack.tooltip_text = "Cycles active content pack for visuals/content mappings."
     settings_btn_demo_support.pressed.connect(func() -> void:
         _show_auto_prompt("Demo support prompt (menu).", "support")
     )
+    settings_btn_demo_support.tooltip_text = "Manual support prompt trigger for cadence verification."
     settings_btn_demo_world.pressed.connect(func() -> void:
         _show_world_prompt(
             {
@@ -393,22 +400,28 @@ func _configure_settings_window() -> void:
             }
         )
     )
+    settings_btn_demo_world.tooltip_text = "Manual world prompt trigger for cadence verification."
     settings_btn_reward.pressed.connect(func() -> void:
         _open_debug_reward_box()
     )
+    settings_btn_reward.tooltip_text = "Opens a debug reward box using current economy state."
     settings_btn_telemetry.pressed.connect(func() -> void:
         _telemetry_enabled = not _telemetry_enabled
         _refresh_telemetry()
     )
+    settings_btn_telemetry.tooltip_text = "Toggles runtime telemetry overlay."
     settings_btn_restart.pressed.connect(func() -> void:
         _restart_runtime()
     )
+    settings_btn_restart.tooltip_text = "Restarts runtime process/scene and preserves saved state."
     settings_btn_quit.pressed.connect(func() -> void:
         _quit_runtime()
     )
+    settings_btn_quit.tooltip_text = "Closes runtime process."
     settings_btn_chat.pressed.connect(func() -> void:
         _toggle_chat_window()
     )
+    settings_btn_chat.tooltip_text = "Opens/closes the Buddy Chat popout window."
     if settings_floor_slider != null:
         settings_floor_slider.value_changed.connect(func(value: float) -> void:
             _set_floor_offset_adjust(value)
