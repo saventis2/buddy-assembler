@@ -966,7 +966,14 @@ func _restart_runtime_deferred() -> void:
     if settings_window != null:
         settings_window.hide()
     _settings_menu_open = false
-    get_tree().reload_current_scene()
+    var relaunched := false
+    if not OS.has_feature("editor"):
+        var relaunch_err := OS.create_instance(OS.get_cmdline_user_args())
+        relaunched = relaunch_err == OK
+    if relaunched:
+        get_tree().quit()
+    else:
+        get_tree().reload_current_scene()
 
 
 func _quit_runtime() -> void:
