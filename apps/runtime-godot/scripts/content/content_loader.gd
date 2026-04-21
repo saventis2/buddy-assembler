@@ -60,12 +60,36 @@ static func list_pack_ids(root_override: String = "") -> Array:
 static func list_cycleable_pack_ids(root_override: String = "") -> Array:
     var ids := list_pack_ids(root_override)
     var cycleable: Array = []
+    var seen_visual_signatures := {}
     for pack_id in ids:
         var loaded := load_pack(str(pack_id), root_override)
-        if bool(loaded.get("ok", false)):
-            cycleable.append(str(pack_id))
+        if not bool(loaded.get("ok", false)):
+            continue
+        var manifest_variant = loaded.get("manifest", null)
+        if typeof(manifest_variant) != TYPE_DICTIONARY:
+            continue
+        var manifest: Dictionary = manifest_variant
+        var signature := _manifest_visual_signature(manifest)
+        if seen_visual_signatures.has(signature):
+            continue
+        seen_visual_signatures[signature] = true
+        cycleable.append(str(pack_id))
     cycleable.sort()
     return cycleable
+
+
+static func _manifest_visual_signature(manifest: Dictionary) -> String:
+    var visual_variant = manifest.get("visual", null)
+    if typeof(visual_variant) != TYPE_DICTIONARY:
+        return "no-visual:%s" % str(manifest.get("id", ""))
+    var visual: Dictionary = visual_variant
+    var key_map := {
+        "animations": visual.get("animations", {}),
+        "sprites": visual.get("sprites", {}),
+        "scale": visual.get("scale", 0),
+        "anchor": visual.get("anchor", []),
+    }
+    return JSON.stringify(key_map)
 
 
 static func load_pack(pack_id: String, root_override: String = "") -> Dictionary:

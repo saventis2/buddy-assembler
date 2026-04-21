@@ -7,7 +7,7 @@ const IDLE_SWAY_DISTANCE_X := 0.0
 const IDLE_SWAY_DISTANCE_Y := 0.0
 const FLOOR_PADDING := 14.0
 const SPRITE_VIEW_MARGIN := 4.0
-const DESKTOP_FLOOR_CONTACT_OFFSET_Y := 16.0
+const DESKTOP_FLOOR_CONTACT_OFFSET_Y := 10.0
 const CHARACTER_FLOOR_OFFSET_PX := 15.0
 const ACTION_EXTRA_FLOOR_OFFSET := {
     "sleep": 15.0,
@@ -433,7 +433,10 @@ func _on_tick_timer_timeout() -> void:
         AppState.record_event_trigger(prod_event_id, prod_action)
         _show_support_hint(productivity_event)
 
-    if home_mode != "home":
+    if home_mode == "home":
+        if not context.has("forced_action"):
+            context["forced_action"] = _select_home_mode_action(now_unix)
+    else:
         var selected_event := _encounters.tick(now_unix, context)
         if not selected_event.is_empty():
             var event_id := str(selected_event.get("id", ""))
@@ -1841,6 +1844,12 @@ func _cycle_home_mode() -> void:
     var current_mode := str(snapshot.get("home_mode", "overlay"))
     var next_mode := "home" if current_mode != "home" else "overlay"
     AppState.set_home_mode(next_mode)
+    if next_mode == "home":
+        _state = _select_home_mode_action(int(Time.get_unix_time_from_system()))
+    else:
+        _state = "idle"
+    _set_emote_from_state(_state)
+    _set_visual_for_state(_state, true)
     _update_balloon_position()
     var home_name := str(snapshot.get("home_scene_id", "cozy_starter_room"))
     if next_mode == "home":
@@ -1852,6 +1861,20 @@ func _cycle_home_mode() -> void:
     else:
         chat_balloon.show_text("Overlay mode active.")
     _refresh_telemetry()
+
+
+func _select_home_mode_action(now_unix: int) -> String:
+    var dt := Time.get_datetime_dict_from_system()
+    var hour := int(dt.get("hour", 12))
+    if (hour < 6 or hour >= 22) and _allowed_actions.has("sleep"):
+        return "sleep"
+    if _allowed_actions.has("sit") and int(now_unix / 12) % 2 == 0:
+        return "sit"
+    if _allowed_actions.has("happy") and int(now_unix / 18) % 3 == 0:
+        return "happy"
+    if _allowed_actions.has("idle"):
+        return "idle"
+    return "default"
 
 
 func _show_support_hint(productivity_event: Dictionary) -> void:
