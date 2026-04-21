@@ -52,6 +52,7 @@ const EMOTE_DRAW_OFFSETS := {
 const BehaviorEngine = preload("res://scripts/behavior/behavior_engine.gd")
 const ContentLoader = preload("res://scripts/content/content_loader.gd")
 const EncounterScheduler = preload("res://scripts/encounters/encounter_scheduler.gd")
+const ChatCommandRouter = preload("res://scripts/interaction/chat_command_router.gd")
 const ProductivityTracker = preload("res://scripts/utility/productivity_tracker.gd")
 const PromptCadence = preload("res://scripts/utility/prompt_cadence.gd")
 const ManualVerificationReport = preload("res://scripts/utility/manual_verification_report.gd")
@@ -85,6 +86,7 @@ const ManualVerificationReport = preload("res://scripts/utility/manual_verificat
 
 var _engine := BehaviorEngine.new()
 var _encounters := EncounterScheduler.new()
+var _chat_router := ChatCommandRouter.new()
 var _productivity := ProductivityTracker.new()
 var _prompt_cadence := PromptCadence.new()
 var _manual_verification_report := ManualVerificationReport.new()
@@ -146,10 +148,19 @@ var _last_idle_phrase_unix := 0
 var _away_report_shown := false
 var _continuity_hint_shown := false
 var _last_auto_prompt_unix := 0
+var _last_auto_prompt_by_source := {}
 var _deferred_world_prompt := {}
 var _desktop_floor_offset_adjust := 0.0
 var _sit_chair_texture: Texture2D = null
 var _sit_chair_origin_px := Vector2.ZERO
+var _chat_turn_user_count := 0
+var _chat_turn_buddy_count := 0
+var _chat_cmd_ok_count := 0
+var _chat_cmd_fail_count := 0
+var _chat_cmd_reason_counts := {}
+var _chat_cmd_last_key_by_action := {}
+var _chat_last_command_id := ""
+var _chat_last_reason_code := ""
 
 
 func _ready() -> void:
@@ -608,6 +619,7 @@ func _cycle_event_frequency() -> void:
     index = (index + 1) % values.size()
     AppState.settings["eventFrequency"] = values[index]
     AppState.flush()
+    _emit_setting_feedback("eventFrequency", values[index])
     _update_balloon_position()
     _buddy_say("Event frequency: %s (Shift+F7 demo prompt)" % values[index])
     _refresh_telemetry()
@@ -622,6 +634,7 @@ func _cycle_prompt_frequency() -> void:
     index = (index + 1) % values.size()
     AppState.settings["promptFrequency"] = values[index]
     AppState.flush()
+    _emit_setting_feedback("promptFrequency", values[index])
     _update_balloon_position()
     _buddy_say("Prompt frequency: %s (Shift+F2 demo prompt)" % values[index])
     _refresh_telemetry()
@@ -636,6 +649,7 @@ func _cycle_interaction_intensity() -> void:
     index = (index + 1) % values.size()
     AppState.settings["interactionIntensity"] = values[index]
     AppState.flush()
+    _emit_setting_feedback("interactionIntensity", values[index])
     _update_balloon_position()
     _buddy_say("Interaction intensity: %s" % values[index])
     _refresh_telemetry()
@@ -650,6 +664,7 @@ func _cycle_quiet_strictness() -> void:
     index = (index + 1) % values.size()
     AppState.settings["quietModeStrictness"] = values[index]
     AppState.flush()
+    _emit_setting_feedback("quietModeStrictness", values[index])
     _update_balloon_position()
     _buddy_say("Quiet strictness: %s" % values[index])
     _refresh_telemetry()
@@ -831,6 +846,13 @@ func _refresh_telemetry() -> void:
             int(prompt_metrics.get("world_shown", 0)),
             int(prompt_metrics.get("world_suppressed", 0)),
             int(prompt_metrics.get("world_deferred", 0)),
+        ],
+        "chat turns: you=%d buddy=%d" % [_chat_turn_user_count, _chat_turn_buddy_count],
+        "chat cmd: ok=%d fail=%d last=%s (%s)" % [
+            _chat_cmd_ok_count,
+            _chat_cmd_fail_count,
+            _chat_last_command_id,
+            _chat_last_reason_code,
         ],
         "intensity: %s  quiet strict: %s" % [
             str(snapshot.get("interaction_intensity", "balanced")),
@@ -1025,6 +1047,7 @@ func _format_floor_adjust_text(value: float) -> String:
 func _buddy_say(line: String) -> void:
     if line == "":
         return
+    _chat_turn_buddy_count += 1
     _update_balloon_position()
     chat_balloon.show_text(line)
     _append_chat_line("Buddy", line, "#F4E9CF")
@@ -1047,11 +1070,17 @@ func _send_chat_input() -> void:
     if raw == "":
         return
     chat_input.text = ""
+    _chat_turn_user_count += 1
     _append_chat_line("You", raw, "#9FD9FF")
     AppState.record_interaction("chat_reply")
     _productivity.note_user_activity(int(Time.get_unix_time_from_system()))
-    var reply := _generate_chat_reply(raw)
-    _buddy_say(reply)
+
+    var resolved := _chat_router.resolve(raw)
+    var outcome := _execute_resolved_chat(raw, resolved)
+    _record_chat_command_outcome(outcome)
+    var reply := str(outcome.get("message", ""))
+    if reply != "":
+        _buddy_say(reply)
     _refresh_telemetry()
 
 
@@ -1089,6 +1118,150 @@ func _generate_chat_reply(user_text: String) -> String:
     if mood == "happy":
         return "Nice. I like chatting with you."
     return "Got it. Want to do rewards, quests, or just hang out?"
+
+
+func _execute_resolved_chat(raw_text: String, resolved: Dictionary) -> Dictionary:
+    var ok := bool(resolved.get("ok", false))
+    var kind := str(resolved.get("kind", "unknown"))
+    var action_id := str(resolved.get("action_id", ""))
+    var params_variant = resolved.get("params", {})
+    var params: Dictionary = params_variant if typeof(params_variant) == TYPE_DICTIONARY else {}
+    var reason := str(resolved.get("reason_code", "unknown"))
+    var confidence := float(resolved.get("confidence", 0.0))
+
+    if kind == "command":
+        if not ok:
+            return _action_result(
+                false,
+                "command.%s" % action_id,
+                "I could not run that command (%s). Use /help." % reason,
+                reason
+            )
+        if confidence < 0.60:
+            return _action_result(false, "command.%s" % action_id, "I am not confident enough to run that command.", "low_confidence")
+        var throttle := _throttle_command(action_id)
+        if not bool(throttle.get("ok", false)):
+            return throttle
+        return _execute_chat_command(action_id, params)
+
+    if kind == "intent" and ok:
+        return _action_result(true, "intent.%s" % action_id, _generate_chat_reply(raw_text), "ok")
+
+    return _action_result(false, "intent.unknown", "I did not catch that. Try /help.", "unknown_intent")
+
+
+func _execute_chat_command(command: String, params: Dictionary) -> Dictionary:
+    if command == "help":
+        return _action_result(
+            true,
+            "command.help",
+            "Commands: /help /status /pending /mode home|overlay /reward /world engage|skip|complete /quiet lenient|balanced|strict /freq low|normal|high /chat close",
+            "ok"
+        )
+    if command == "status":
+        var snap := AppState.get_telemetry_snapshot()
+        var world := AppState.get_world_snapshot()
+        var msg := "Status: Lv %d XP %d Mood %s Mode %s Crystals %d" % [
+            int(snap.get("bond_level", 1)),
+            int(snap.get("bond_xp", 0)),
+            str(snap.get("mood", "calm")),
+            str(world.get("home_mode", "overlay")),
+            int(snap.get("crystals", 0)),
+        ]
+        return _action_result(true, "command.status", msg, "ok")
+    if command == "pending":
+        var world_pending := AppState.get_world_snapshot()
+        var q := str(world_pending.get("pending_quest_id", ""))
+        var e := str(world_pending.get("pending_encounter_id", ""))
+        if q == "" and e == "":
+            return _action_result(true, "command.pending", "No pending quest or encounter.", "ok")
+        return _action_result(true, "command.pending", "Pending: quest=%s encounter=%s" % [q, e], "ok")
+    if command == "mode":
+        var mode := str(params.get("mode", "overlay"))
+        _set_home_mode_explicit(mode)
+        return _action_result(true, "command.mode", "Mode set to %s." % mode, "ok")
+    if command == "reward":
+        _open_debug_reward_box()
+        return _action_result(true, "command.reward", "", "ok")
+    if command == "world":
+        var decision := str(params.get("decision", "complete"))
+        if decision == "skip":
+            _resolve_world_prompt(false)
+        else:
+            _resolve_world_prompt(true)
+        return _action_result(true, "command.world", "", "ok")
+    if command == "quiet":
+        var level := str(params.get("level", "balanced"))
+        AppState.settings["quietModeStrictness"] = level
+        AppState.flush()
+        _emit_setting_feedback("quietModeStrictness", level)
+        return _action_result(true, "command.quiet", "Quiet strictness set to %s." % level, "ok")
+    if command == "freq":
+        var value := str(params.get("value", "normal"))
+        AppState.settings["promptFrequency"] = value
+        AppState.settings["eventFrequency"] = value
+        AppState.flush()
+        _emit_setting_feedback("freq", value)
+        return _action_result(true, "command.freq", "Prompt/Event frequency set to %s." % value, "ok")
+    if command == "chat":
+        var action := str(params.get("action", ""))
+        if action == "close":
+            _chat_window_open = false
+            _layout_chat_window()
+            return _action_result(true, "command.chat", "Chat window closed.", "ok")
+        return _action_result(false, "command.chat", "Unknown chat action.", "invalid_arg")
+
+    return _action_result(false, "command.%s" % command, "Unsupported command.", "unsupported_command")
+
+
+func _action_result(ok: bool, action_id: String, message: String, reason_code: String) -> Dictionary:
+    return {
+        "ok": ok,
+        "action_id": action_id,
+        "message": message,
+        "reason_code": reason_code,
+    }
+
+
+func _record_chat_command_outcome(outcome: Dictionary) -> void:
+    var action_id := str(outcome.get("action_id", ""))
+    var reason_code := str(outcome.get("reason_code", "unknown"))
+    var ok := bool(outcome.get("ok", false))
+    _chat_last_command_id = action_id
+    _chat_last_reason_code = reason_code
+    if ok:
+        _chat_cmd_ok_count += 1
+    else:
+        _chat_cmd_fail_count += 1
+    var count := int(_chat_cmd_reason_counts.get(reason_code, 0))
+    _chat_cmd_reason_counts[reason_code] = count + 1
+
+
+func _throttle_command(action_id: String) -> Dictionary:
+    var now_ms := Time.get_ticks_msec()
+    var key := "command:%s" % action_id
+    var last_ms := int(_chat_cmd_last_key_by_action.get(key, 0))
+    if now_ms - last_ms < 300:
+        return _action_result(false, "command.%s" % action_id, "That was too fast. Try again.", "throttled")
+    _chat_cmd_last_key_by_action[key] = now_ms
+    return _action_result(true, "command.%s" % action_id, "", "ok")
+
+
+func _set_home_mode_explicit(mode: String) -> void:
+    var next_mode := "home" if mode == "home" else "overlay"
+    AppState.set_home_mode(next_mode)
+    if next_mode == "home":
+        _state = _select_home_mode_action(int(Time.get_unix_time_from_system()))
+    else:
+        _state = "idle"
+    _set_emote_from_state(_state)
+    _set_visual_for_state(_state, true)
+    _update_balloon_position()
+    _refresh_telemetry()
+
+
+func _emit_setting_feedback(key: String, value: String) -> void:
+    _append_chat_line("System", "Applied %s=%s" % [key, value], "#B8F8C6")
 
 
 func _restart_runtime() -> void:
@@ -2184,18 +2357,22 @@ func _show_auto_prompt(line: String, source_kind: String) -> bool:
         return false
     var now_unix := int(Time.get_unix_time_from_system())
     var quiet_mode := AppState.is_quiet_hours_now()
+    var source_last := int(_last_auto_prompt_by_source.get(source_kind, 0))
     if not _prompt_cadence.can_emit(
         _last_auto_prompt_unix,
         now_unix,
         AppState.settings,
         quiet_mode,
-        source_kind
+        source_kind,
+        source_last
     ):
         _manual_verification_report.record_prompt_metric(source_kind, "suppressed")
         return false
     _update_balloon_position()
     _buddy_say(line)
     _last_auto_prompt_unix = now_unix
+    _last_auto_prompt_by_source[source_kind] = now_unix
+    _prompt_cadence.note_emit(now_unix, source_kind)
     _manual_verification_report.record_prompt_metric(source_kind, "shown")
     return true
 
@@ -2204,12 +2381,14 @@ func _flush_deferred_world_prompt(now_unix: int) -> void:
     if _deferred_world_prompt.is_empty():
         return
     var quiet_mode := AppState.is_quiet_hours_now()
+    var source_last := int(_last_auto_prompt_by_source.get("world", 0))
     if _prompt_cadence.can_emit(
         _last_auto_prompt_unix,
         now_unix,
         AppState.settings,
         quiet_mode,
-        "world"
+        "world",
+        source_last
     ):
         var queued: Dictionary = _deferred_world_prompt.duplicate(true)
         _deferred_world_prompt.clear()
