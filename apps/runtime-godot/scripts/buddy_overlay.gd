@@ -958,6 +958,10 @@ func _format_floor_adjust_text(value: float) -> String:
 
 
 func _restart_runtime() -> void:
+    call_deferred("_restart_runtime_deferred")
+
+
+func _restart_runtime_deferred() -> void:
     AppState.flush()
     if settings_window != null:
         settings_window.hide()
