@@ -24,6 +24,7 @@ const CHAT_FOLLOW_UP_MIN_TURNS := 3
 const CHAT_MEMORY_MAX_NOTES := 10
 const CHAT_FONT_SIZE_M := 13
 const CHAT_FONT_SIZE_L := 16
+const SETTINGS_CHANGE_HISTORY_MAX := 20
 const DEFAULT_SPRITE_ANCHOR := Vector2(0.5, 1.0)
 const NO_PIVOT := Vector2(-1.0, -1.0)
 const SLEEP_PIVOT_OVERFLOW_BLEND := 1.0
@@ -190,6 +191,7 @@ var _chat_cmd_latency_total_ms := 0
 var _chat_cmd_latency_samples := 0
 var _settings_undo_snapshot := {}
 var _settings_undo_until_unix := 0
+var _settings_change_history: Array = []
 
 
 func _ready() -> void:
@@ -647,7 +649,7 @@ func _cycle_event_frequency() -> void:
     if index < 0:
         index = 1
     index = (index + 1) % values.size()
-    AppState.settings["eventFrequency"] = values[index]
+    _set_setting_with_audit("eventFrequency", values[index], "cycle")
     AppState.flush()
     _emit_setting_feedback("eventFrequency", values[index])
     _update_balloon_position()
@@ -662,7 +664,7 @@ func _cycle_prompt_frequency() -> void:
     if index < 0:
         index = 1
     index = (index + 1) % values.size()
-    AppState.settings["promptFrequency"] = values[index]
+    _set_setting_with_audit("promptFrequency", values[index], "cycle")
     AppState.flush()
     _emit_setting_feedback("promptFrequency", values[index])
     _update_balloon_position()
@@ -677,7 +679,7 @@ func _cycle_interaction_intensity() -> void:
     if index < 0:
         index = 1
     index = (index + 1) % values.size()
-    AppState.settings["interactionIntensity"] = values[index]
+    _set_setting_with_audit("interactionIntensity", values[index], "cycle")
     AppState.flush()
     _emit_setting_feedback("interactionIntensity", values[index])
     _update_balloon_position()
@@ -692,7 +694,7 @@ func _cycle_quiet_strictness() -> void:
     if index < 0:
         index = 1
     index = (index + 1) % values.size()
-    AppState.settings["quietModeStrictness"] = values[index]
+    _set_setting_with_audit("quietModeStrictness", values[index], "cycle")
     AppState.flush()
     _emit_setting_feedback("quietModeStrictness", values[index])
     _update_balloon_position()
@@ -888,6 +890,7 @@ func _refresh_telemetry() -> void:
             _chat_cmd_latency_last_ms,
             int(round(float(_chat_cmd_latency_total_ms) / max(1, _chat_cmd_latency_samples))),
         ],
+        "settings recent: %s" % _recent_settings_change_summary(3),
         "intensity: %s  quiet strict: %s" % [
             str(snapshot.get("interaction_intensity", "balanced")),
             str(snapshot.get("quiet_strictness", "balanced")),
@@ -1230,6 +1233,9 @@ func _execute_chat_command(command: String, params: Dictionary) -> Dictionary:
             str(world.get("home_mode", "overlay")),
             int(snap.get("crystals", 0)),
         ]
+        var recent := _recent_settings_change_summary(5)
+        if recent != "":
+            msg += " | settings: %s" % recent
         return _action_result(true, "command.status", msg, "ok")
     if command == "pending":
         var world_pending := AppState.get_world_snapshot()
@@ -1254,14 +1260,14 @@ func _execute_chat_command(command: String, params: Dictionary) -> Dictionary:
         return _action_result(true, "command.world", "", "ok")
     if command == "quiet":
         var level := str(params.get("level", "balanced"))
-        AppState.settings["quietModeStrictness"] = level
+        _set_setting_with_audit("quietModeStrictness", level, "command")
         AppState.flush()
         _emit_setting_feedback("quietModeStrictness", level)
         return _action_result(true, "command.quiet", "Quiet strictness set to %s." % level, "ok")
     if command == "freq":
         var value := str(params.get("value", "normal"))
-        AppState.settings["promptFrequency"] = value
-        AppState.settings["eventFrequency"] = value
+        _set_setting_with_audit("promptFrequency", value, "command")
+        _set_setting_with_audit("eventFrequency", value, "command")
         AppState.flush()
         _emit_setting_feedback("freq", value)
         return _action_result(true, "command.freq", "Prompt/Event frequency set to %s." % value, "ok")
@@ -1280,7 +1286,7 @@ func _execute_chat_command(command: String, params: Dictionary) -> Dictionary:
             return _action_result(true, "command.chat", "Chat transcript cleared.", "ok")
         if action == "text":
             var size := str(params.get("size", "m"))
-            AppState.settings["chatTextSize"] = size
+            _set_setting_with_audit("chatTextSize", size, "command")
             AppState.flush()
             _apply_chat_text_size()
             return _action_result(true, "command.chat", "Chat text size set to %s." % size.to_upper(), "ok")
@@ -1585,7 +1591,7 @@ func _apply_settings_preset(preset: String) -> Dictionary:
 
     _capture_settings_undo_snapshot()
     for key in preset_values.keys():
-        AppState.settings[key] = preset_values[key]
+        _set_setting_with_audit(key, preset_values[key], "preset:%s" % chosen)
     AppState.flush()
     _refresh_settings_menu()
     _refresh_telemetry()
@@ -1601,11 +1607,11 @@ func _reset_settings_with_undo(confirm: bool) -> Dictionary:
     if not confirm:
         return _action_result(false, "command.settings", "Confirm with /settings reset confirm", "confirm_required")
     _capture_settings_undo_snapshot()
-    AppState.settings["eventFrequency"] = "normal"
-    AppState.settings["promptFrequency"] = "normal"
-    AppState.settings["interactionIntensity"] = "balanced"
-    AppState.settings["quietModeStrictness"] = "balanced"
-    AppState.settings["chatTextSize"] = "m"
+    _set_setting_with_audit("eventFrequency", "normal", "settings_reset")
+    _set_setting_with_audit("promptFrequency", "normal", "settings_reset")
+    _set_setting_with_audit("interactionIntensity", "balanced", "settings_reset")
+    _set_setting_with_audit("quietModeStrictness", "balanced", "settings_reset")
+    _set_setting_with_audit("chatTextSize", "m", "settings_reset")
     AppState.flush()
     _apply_chat_text_size()
     _refresh_settings_menu()
@@ -1627,7 +1633,7 @@ func _undo_settings_reset() -> Dictionary:
         _settings_undo_until_unix = 0
         return _action_result(false, "command.settings", "Settings undo window expired.", "undo_expired")
     for key in _settings_undo_snapshot.keys():
-        AppState.settings[key] = _settings_undo_snapshot[key]
+        _set_setting_with_audit(key, _settings_undo_snapshot[key], "settings_undo")
     AppState.flush()
     _apply_chat_text_size()
     _refresh_settings_menu()
@@ -1646,6 +1652,43 @@ func _capture_settings_undo_snapshot() -> void:
         "chatTextSize": str(AppState.settings.get("chatTextSize", "m")),
     }
     _settings_undo_until_unix = int(Time.get_unix_time_from_system()) + 10
+
+
+func _set_setting_with_audit(key: String, value: Variant, source: String) -> bool:
+    var old_value = AppState.settings.get(key, null)
+    if old_value == value:
+        return false
+    AppState.settings[key] = value
+    _record_settings_change(key, old_value, value, source)
+    return true
+
+
+func _record_settings_change(key: String, old_value: Variant, new_value: Variant, source: String) -> void:
+    _settings_change_history.append(
+        {
+            "ts": int(Time.get_unix_time_from_system()),
+            "key": key,
+            "old": str(old_value),
+            "new": str(new_value),
+            "source": source,
+        }
+    )
+    if _settings_change_history.size() > SETTINGS_CHANGE_HISTORY_MAX:
+        _settings_change_history.remove_at(0)
+
+
+func _recent_settings_change_summary(max_items: int) -> String:
+    if _settings_change_history.is_empty():
+        return ""
+    var start := maxi(0, _settings_change_history.size() - max_items)
+    var entries: Array = _settings_change_history.slice(start, _settings_change_history.size())
+    var parts := []
+    for entry_variant in entries:
+        if typeof(entry_variant) != TYPE_DICTIONARY:
+            continue
+        var entry: Dictionary = entry_variant
+        parts.append("%s=%s" % [str(entry.get("key", "")), str(entry.get("new", ""))])
+    return ", ".join(parts)
 
 
 func _action_result(ok: bool, action_id: String, message: String, reason_code: String) -> Dictionary:
