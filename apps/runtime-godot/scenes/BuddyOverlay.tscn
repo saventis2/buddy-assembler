@@ -110,6 +110,30 @@ text = "Open Reward Box"
 layout_mode = 2
 text = "Toggle Telemetry"
 
+[node name="FloorAdjustBox" type="VBoxContainer" parent="SettingsWindow/MarginContainer/SettingsVBox"]
+layout_mode = 2
+
+[node name="FloorAdjustTitle" type="Label" parent="SettingsWindow/MarginContainer/SettingsVBox/FloorAdjustBox"]
+layout_mode = 2
+text = "Floor Height (TO)"
+
+[node name="FloorAdjustRow" type="HBoxContainer" parent="SettingsWindow/MarginContainer/SettingsVBox/FloorAdjustBox"]
+layout_mode = 2
+
+[node name="FloorAdjustSlider" type="HSlider" parent="SettingsWindow/MarginContainer/SettingsVBox/FloorAdjustBox/FloorAdjustRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+min_value = -20.0
+max_value = 20.0
+step = 1.0
+value = 0.0
+
+[node name="FloorAdjustValue" type="Label" parent="SettingsWindow/MarginContainer/SettingsVBox/FloorAdjustBox/FloorAdjustRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(72, 0)
+text = "+0 px"
+horizontal_alignment = 2
+
 [node name="WelcomeLayer" type="CanvasLayer" parent="."]
 
 [node name="WelcomeLabel" type="Label" parent="WelcomeLayer"]

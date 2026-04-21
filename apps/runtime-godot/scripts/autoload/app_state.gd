@@ -586,6 +586,7 @@ func _default_settings() -> Dictionary:
         "lateSessionHourStart": 23,
         "idleCheckinMinutes": 20,
         "selectedPackId": "core_pack",
+        "desktopFloorOffsetAdjust": 0.0,
         "preferredScreen": 0,
         "lastWindowPosition": [120, 120],
         "firstRunSeen": false,

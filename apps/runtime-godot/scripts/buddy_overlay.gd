@@ -69,6 +69,8 @@ const ManualVerificationReport = preload("res://scripts/utility/manual_verificat
 @onready var settings_btn_demo_world: Button = $SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid/BtnDemoWorld
 @onready var settings_btn_reward: Button = $SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid/BtnReward
 @onready var settings_btn_telemetry: Button = $SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid/BtnTelemetry
+@onready var settings_floor_slider: HSlider = $SettingsWindow/MarginContainer/SettingsVBox/FloorAdjustBox/FloorAdjustRow/FloorAdjustSlider
+@onready var settings_floor_value: Label = $SettingsWindow/MarginContainer/SettingsVBox/FloorAdjustBox/FloorAdjustRow/FloorAdjustValue
 @onready var chat_balloon: Node2D = $ChatBalloon
 @onready var welcome_label: Label = $WelcomeLayer/WelcomeLabel
 
@@ -135,10 +137,12 @@ var _away_report_shown := false
 var _continuity_hint_shown := false
 var _last_auto_prompt_unix := 0
 var _deferred_world_prompt := {}
+var _desktop_floor_offset_adjust := 0.0
 
 
 func _ready() -> void:
     position = Vector2.ZERO
+    _desktop_floor_offset_adjust = _read_floor_offset_adjust_setting()
     _draw_center = _floor_point()
     _configure_window()
     _restore_window_state()
@@ -341,6 +345,11 @@ func _configure_settings_window() -> void:
         _telemetry_enabled = not _telemetry_enabled
         _refresh_telemetry()
     )
+    if settings_floor_slider != null:
+        settings_floor_slider.value_changed.connect(func(value: float) -> void:
+            _set_floor_offset_adjust(value)
+        )
+        settings_floor_slider.set_value_no_signal(_desktop_floor_offset_adjust)
 
 
 func _draw() -> void:
@@ -375,7 +384,7 @@ func _floor_point() -> Vector2:
     var viewport_size: Vector2 = get_viewport_rect().size
     return Vector2(
         viewport_size.x * 0.5,
-        viewport_size.y - SPRITE_VIEW_MARGIN + DESKTOP_FLOOR_CONTACT_OFFSET_Y
+        viewport_size.y - SPRITE_VIEW_MARGIN + DESKTOP_FLOOR_CONTACT_OFFSET_Y + _desktop_floor_offset_adjust
     )
 
 
@@ -868,6 +877,7 @@ func _refresh_settings_menu() -> void:
         str(AppState.settings.get("eventFrequency", "normal")),
         str(AppState.settings.get("promptFrequency", "normal"))
     ]
+    text += "[color=#F4E9CF]Floor Adjust (TO):[/color] %s\n" % _format_floor_adjust_text(_desktop_floor_offset_adjust)
     text += "[color=#F4E9CF]Quiet:[/color] %s (%s)\n" % [
         str(AppState.settings.get("quietModeStrictness", "balanced")),
         "on" if AppState.is_quiet_hours_now() else "off"
@@ -900,6 +910,36 @@ func _refresh_settings_menu() -> void:
     settings_btn_demo_world.text = "Demo World (Shift+F7)"
     settings_btn_reward.text = "Open Reward Box (F11)"
     settings_btn_telemetry.text = "Telemetry (F6): %s" % ("on" if _telemetry_enabled else "off")
+    if settings_floor_slider != null:
+        settings_floor_slider.set_value_no_signal(_desktop_floor_offset_adjust)
+    if settings_floor_value != null:
+        settings_floor_value.text = _format_floor_adjust_text(_desktop_floor_offset_adjust)
+
+
+func _read_floor_offset_adjust_setting() -> float:
+    var raw = AppState.settings.get("desktopFloorOffsetAdjust", 0.0)
+    return clampf(float(raw), -20.0, 20.0)
+
+
+func _set_floor_offset_adjust(raw_value: float) -> void:
+    var next_value := clampf(roundf(raw_value), -20.0, 20.0)
+    if is_equal_approx(next_value, _desktop_floor_offset_adjust):
+        return
+    _desktop_floor_offset_adjust = next_value
+    AppState.settings["desktopFloorOffsetAdjust"] = _desktop_floor_offset_adjust
+    AppState.flush()
+    _draw_center = _floor_point()
+    _update_balloon_position()
+    queue_redraw()
+    if settings_floor_value != null:
+        settings_floor_value.text = _format_floor_adjust_text(_desktop_floor_offset_adjust)
+    _refresh_telemetry()
+
+
+func _format_floor_adjust_text(value: float) -> String:
+    var rounded := int(roundf(value))
+    var sign := "+" if rounded >= 0 else ""
+    return "%s%d px" % [sign, rounded]
 
 
 func _load_visual_assets(pack_id: String, manifest: Dictionary) -> void:
