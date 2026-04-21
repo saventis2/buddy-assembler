@@ -11,7 +11,7 @@ pwsh ./run_headless_checks.ps1
 Optional guided log generator:
 
 ```powershell
-pwsh ./run_manual_checklist.ps1
+pwsh ./run_manual_checklist.ps1 -Track TO
 ```
 
 For non-interactive template generation:
@@ -23,7 +23,13 @@ pwsh ./run_manual_checklist.ps1 -UseDefaults -DefaultResult pending
 One-command Plan 5 gate flow:
 
 ```powershell
-pwsh ./run_plan5_gate.ps1
+pwsh ./run_plan5_gate.ps1 -Track TO
+```
+
+Home-only gate flow:
+
+```powershell
+pwsh ./run_plan5_gate.ps1 -Track HOME
 ```
 
 Non-interactive tooling smoke mode (skip GUI launches):

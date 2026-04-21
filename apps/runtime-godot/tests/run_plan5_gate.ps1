@@ -5,7 +5,9 @@ param(
     [switch]$UseDefaults,
     [ValidateSet("pass", "fail", "pending")]
     [string]$DefaultResult = "pending",
-    [string]$Reviewer = ""
+    [string]$Reviewer = "",
+    [ValidateSet("TO", "HOME", "ALL")]
+    [string]$Track = "TO"
 )
 
 $ErrorActionPreference = "Stop"
@@ -37,20 +39,24 @@ if (-not $SkipRuntimeLaunch) {
         throw "Godot is not on PATH. Install Godot 4 or run with -SkipRuntimeLaunch."
     }
 
-    Write-Host "Launching runtime session for Overlay/Multi-Monitor/Behavior checks..." -ForegroundColor Cyan
-    Write-Host "Close the runtime window when finished with that section." -ForegroundColor Yellow
-    & godot --path $projectRoot
-    $runtimeExit = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
-    if ($runtimeExit -ne 0) {
-        throw "Runtime session exited with code $runtimeExit"
+    if ($Track -eq "TO" -or $Track -eq "ALL") {
+        Write-Host "Launching runtime session for Overlay/Multi-Monitor/Behavior checks..." -ForegroundColor Cyan
+        Write-Host "Close the runtime window when finished with that section." -ForegroundColor Yellow
+        & godot --path $projectRoot
+        $runtimeExit = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
+        if ($runtimeExit -ne 0) {
+            throw "Runtime session exited with code $runtimeExit"
+        }
     }
 
-    Write-Host "Launching vertical-slice session for VS/Speech Bubble checks..." -ForegroundColor Cyan
-    Write-Host "Close the vertical-slice window when finished with that section." -ForegroundColor Yellow
-    & godot --path $projectRoot -- --vertical-slice
-    $sliceExit = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
-    if ($sliceExit -ne 0) {
-        throw "Vertical-slice session exited with code $sliceExit"
+    if ($Track -eq "HOME" -or $Track -eq "ALL") {
+        Write-Host "Launching vertical-slice session for VS/Speech Bubble checks..." -ForegroundColor Cyan
+        Write-Host "Close the vertical-slice window when finished with that section." -ForegroundColor Yellow
+        & godot --path $projectRoot -- --vertical-slice
+        $sliceExit = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
+        if ($sliceExit -ne 0) {
+            throw "Vertical-slice session exited with code $sliceExit"
+        }
     }
 }
 
@@ -66,6 +72,7 @@ if ($UseDefaults) {
 if ($Reviewer -ne "") {
     $manualArgs += @("-Reviewer", $Reviewer)
 }
+$manualArgs += @("-Track", $Track)
 
 & pwsh @manualArgs
 $manualExitCode = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }

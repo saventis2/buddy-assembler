@@ -3,7 +3,9 @@ param(
     [switch]$UseDefaults,
     [ValidateSet("pass", "fail", "pending")]
     [string]$DefaultResult = "pending",
-    [string]$Reviewer = ""
+    [string]$Reviewer = "",
+    [ValidateSet("TO", "HOME", "ALL")]
+    [string]$Track = "TO"
 )
 
 $ErrorActionPreference = "Stop"
@@ -103,6 +105,24 @@ $items = @(
     (New-ChecklistItem -Id "SB4" -Section "Speech Bubble Timer" -Prompt "After [ or ] and pressing M, updated duration applies to new say event.")
 )
 
+$toIds = @(
+    "OB1","OB2","OB3",
+    "MM1","MM2","MM3",
+    "BE1","BE2","BE3","BE4","BE5",
+    "PG1","PG2","PG3",
+    "CP1","CP2"
+)
+$homeIds = @(
+    "VS1","VS2","VS3","VS4","VS5","VS6",
+    "SB1","SB2","SB3","SB4"
+)
+
+if ($Track -eq "TO") {
+    $items = $items | Where-Object { $_.Id -in $toIds }
+} elseif ($Track -eq "HOME") {
+    $items = $items | Where-Object { $_.Id -in $homeIds }
+}
+
 $results = @()
 $failNotes = @()
 
@@ -148,6 +168,7 @@ $lines += "# Plan 5 Manual Verification Log (Desktop Checklist)"
 $lines += ""
 $lines += "Date: $headerDate  "
 $lines += "Plan: Plan 5: Manual Desktop Verification Gate  "
+$lines += "Track: $Track  "
 $lines += "Checklist source: apps/runtime-godot/tests/SCENARIO_CHECKLIST.md  "
 $lines += "Generated: $runTimestamp  "
 $lines += "Reviewer: $reviewerLine"
