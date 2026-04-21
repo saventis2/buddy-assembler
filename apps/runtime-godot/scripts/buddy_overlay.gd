@@ -17,6 +17,14 @@ const FLOOR_SETTLE_SPEED_PX_PER_SEC := 720.0
 const SETTINGS_WINDOW_OFFSET := Vector2i(56, 56)
 const SETTINGS_WINDOW_MIN_SIZE := Vector2i(320, 380)
 const SETTINGS_WINDOW_DEFAULT_SIZE := Vector2i(360, 460)
+const CHAT_TRANSCRIPT_MAX_LINES := 120
+const CHAT_SEPARATOR_IDLE_SECONDS := 600
+const CHAT_RECENT_REPLY_MAX := 20
+const CHAT_FOLLOW_UP_MIN_TURNS := 3
+const CHAT_MEMORY_MAX_NOTES := 10
+const CHAT_FONT_SIZE_M := 13
+const CHAT_FONT_SIZE_L := 16
+const SETTINGS_CHANGE_HISTORY_MAX := 20
 const DEFAULT_SPRITE_ANCHOR := Vector2(0.5, 1.0)
 const NO_PIVOT := Vector2(-1.0, -1.0)
 const SLEEP_PIVOT_OVERFLOW_BLEND := 1.0
@@ -52,6 +60,8 @@ const EMOTE_DRAW_OFFSETS := {
 const BehaviorEngine = preload("res://scripts/behavior/behavior_engine.gd")
 const ContentLoader = preload("res://scripts/content/content_loader.gd")
 const EncounterScheduler = preload("res://scripts/encounters/encounter_scheduler.gd")
+const ChatCommandRouter = preload("res://scripts/interaction/chat_command_router.gd")
+const UnlockTable = preload("res://scripts/progression/unlock_table.gd")
 const ProductivityTracker = preload("res://scripts/utility/productivity_tracker.gd")
 const PromptCadence = preload("res://scripts/utility/prompt_cadence.gd")
 const ManualVerificationReport = preload("res://scripts/utility/manual_verification_report.gd")
@@ -71,13 +81,21 @@ const ManualVerificationReport = preload("res://scripts/utility/manual_verificat
 @onready var settings_btn_demo_world: Button = $SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid/BtnDemoWorld
 @onready var settings_btn_reward: Button = $SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid/BtnReward
 @onready var settings_btn_telemetry: Button = $SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid/BtnTelemetry
+@onready var settings_btn_restart: Button = $SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid/BtnRestart
+@onready var settings_btn_quit: Button = $SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid/BtnQuit
+@onready var settings_btn_chat: Button = $SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid/BtnChat
 @onready var settings_floor_slider: HSlider = $SettingsWindow/MarginContainer/SettingsVBox/FloorAdjustBox/FloorAdjustRow/FloorAdjustSlider
 @onready var settings_floor_value: Label = $SettingsWindow/MarginContainer/SettingsVBox/FloorAdjustBox/FloorAdjustRow/FloorAdjustValue
+@onready var chat_window: Window = $ChatWindow
+@onready var chat_log: RichTextLabel = $ChatWindow/MarginContainer/ChatVBox/ChatLog
+@onready var chat_input: LineEdit = $ChatWindow/MarginContainer/ChatVBox/ChatInputRow/ChatInput
+@onready var chat_send: Button = $ChatWindow/MarginContainer/ChatVBox/ChatInputRow/ChatSend
 @onready var chat_balloon: Node2D = $ChatBalloon
 @onready var welcome_label: Label = $WelcomeLayer/WelcomeLabel
 
 var _engine := BehaviorEngine.new()
 var _encounters := EncounterScheduler.new()
+var _chat_router := ChatCommandRouter.new()
 var _productivity := ProductivityTracker.new()
 var _prompt_cadence := PromptCadence.new()
 var _manual_verification_report := ManualVerificationReport.new()
@@ -127,6 +145,7 @@ var _face_texture_cache: Dictionary = {}
 var _active_emote_semantic := "default"
 var _active_face_variant := "default"
 var _settings_menu_open := false
+var _chat_window_open := false
 var _manual_emote_until_unix := 0
 var _last_face_texture_path := ""
 var _roam_speed_px_per_sec := DEFAULT_ROAM_SPEED_PX_PER_SEC
@@ -138,10 +157,42 @@ var _last_idle_phrase_unix := 0
 var _away_report_shown := false
 var _continuity_hint_shown := false
 var _last_auto_prompt_unix := 0
+var _last_auto_prompt_by_source := {}
 var _deferred_world_prompt := {}
 var _desktop_floor_offset_adjust := 0.0
 var _sit_chair_texture: Texture2D = null
 var _sit_chair_origin_px := Vector2.ZERO
+var _chat_turn_user_count := 0
+var _chat_turn_buddy_count := 0
+var _chat_cmd_ok_count := 0
+var _chat_cmd_fail_count := 0
+var _chat_cmd_reason_counts := {}
+var _chat_cmd_last_key_by_action := {}
+var _chat_last_command_id := ""
+var _chat_last_reason_code := ""
+var _chat_last_line_unix := 0
+var _chat_recent_buddy_norm_lines: Array = []
+var _chat_last_followup_turn := -100
+var _chat_memory_tag_counts := {
+    "goal": 0,
+    "mood": 0,
+    "task": 0,
+    "reward": 0,
+    "world": 0,
+    "support": 0,
+}
+var _chat_memory_turn_tags: Array = []
+var _chat_memory_notes: Array = []
+var _chat_memory_next_note_id := 1
+var _chat_memory_pending_forget_id := -1
+var _chat_memory_pending_forget_until := 0
+var _chat_unread_prompt_count := 0
+var _chat_cmd_latency_last_ms := 0
+var _chat_cmd_latency_total_ms := 0
+var _chat_cmd_latency_samples := 0
+var _settings_undo_snapshot := {}
+var _settings_undo_until_unix := 0
+var _settings_change_history: Array = []
 
 
 func _ready() -> void:
@@ -165,6 +216,7 @@ func _ready() -> void:
     _productivity.note_session_reset(int(Time.get_unix_time_from_system()))
     telemetry_label.visible = false
     _configure_settings_window()
+    _configure_chat_window()
     _refresh_telemetry()
     if AppState.is_first_run():
         _show_welcome_once()
@@ -315,24 +367,31 @@ func _configure_settings_window() -> void:
     settings_btn_event_freq.pressed.connect(func() -> void:
         _cycle_event_frequency()
     )
+    settings_btn_event_freq.tooltip_text = "Controls world-event cadence. Low is calmer; high is busier."
     settings_btn_prompt_freq.pressed.connect(func() -> void:
         _cycle_prompt_frequency()
     )
+    settings_btn_prompt_freq.tooltip_text = "Controls support-prompt cadence. Low reduces interruptions."
     settings_btn_quiet.pressed.connect(func() -> void:
         _cycle_quiet_strictness()
     )
+    settings_btn_quiet.tooltip_text = "Strict suppresses almost all non-critical prompts."
     settings_btn_intensity.pressed.connect(func() -> void:
         _cycle_interaction_intensity()
     )
+    settings_btn_intensity.tooltip_text = "Cozy = lighter progression cadence, Deep = denser progression cadence."
     settings_btn_mode.pressed.connect(func() -> void:
         _cycle_home_mode()
     )
+    settings_btn_mode.tooltip_text = "Switch between Home behavior and Overlay behavior."
     settings_btn_pack.pressed.connect(func() -> void:
         _cycle_pack()
     )
+    settings_btn_pack.tooltip_text = "Cycles active content pack for visuals/content mappings."
     settings_btn_demo_support.pressed.connect(func() -> void:
         _show_auto_prompt("Demo support prompt (menu).", "support")
     )
+    settings_btn_demo_support.tooltip_text = "Manual support prompt trigger for cadence verification."
     settings_btn_demo_world.pressed.connect(func() -> void:
         _show_world_prompt(
             {
@@ -342,18 +401,58 @@ func _configure_settings_window() -> void:
             }
         )
     )
+    settings_btn_demo_world.tooltip_text = "Manual world prompt trigger for cadence verification."
     settings_btn_reward.pressed.connect(func() -> void:
         _open_debug_reward_box()
     )
+    settings_btn_reward.tooltip_text = "Opens a debug reward box using current economy state."
     settings_btn_telemetry.pressed.connect(func() -> void:
         _telemetry_enabled = not _telemetry_enabled
         _refresh_telemetry()
     )
+    settings_btn_telemetry.tooltip_text = "Toggles runtime telemetry overlay."
+    settings_btn_restart.pressed.connect(func() -> void:
+        _restart_runtime()
+    )
+    settings_btn_restart.tooltip_text = "Restarts runtime process/scene and preserves saved state."
+    settings_btn_quit.pressed.connect(func() -> void:
+        _quit_runtime()
+    )
+    settings_btn_quit.tooltip_text = "Closes runtime process."
+    settings_btn_chat.pressed.connect(func() -> void:
+        _toggle_chat_window()
+    )
+    settings_btn_chat.tooltip_text = "Opens/closes the Buddy Chat popout window."
     if settings_floor_slider != null:
         settings_floor_slider.value_changed.connect(func(value: float) -> void:
             _set_floor_offset_adjust(value)
         )
         settings_floor_slider.set_value_no_signal(_desktop_floor_offset_adjust)
+
+
+func _configure_chat_window() -> void:
+    if chat_window == null:
+        return
+    chat_window.transient = false
+    chat_window.exclusive = false
+    chat_window.borderless = false
+    chat_window.visible = false
+    chat_window.always_on_top = true
+    chat_window.unresizable = false
+    chat_window.title = "Buddy Chat"
+    chat_window.close_requested.connect(func() -> void:
+        chat_window.hide()
+        _chat_window_open = false
+    )
+    if chat_send != null:
+        chat_send.pressed.connect(func() -> void:
+            _send_chat_input()
+        )
+    if chat_input != null:
+        chat_input.text_submitted.connect(func(_submitted: String) -> void:
+            _send_chat_input()
+        )
+    _apply_chat_text_size()
 
 
 func _draw() -> void:
@@ -564,10 +663,14 @@ func _cycle_event_frequency() -> void:
     if index < 0:
         index = 1
     index = (index + 1) % values.size()
-    AppState.settings["eventFrequency"] = values[index]
+    _set_setting_with_audit("eventFrequency", values[index], "cycle")
     AppState.flush()
+    _emit_setting_feedback("eventFrequency", values[index])
     _update_balloon_position()
-    chat_balloon.show_text("Event frequency: %s (Shift+F7 demo prompt)" % values[index])
+    _buddy_say(
+        "Event frequency: %s. For quick validation press Shift+F7, then compare /cadence."
+        % values[index]
+    )
     _refresh_telemetry()
 
 
@@ -578,10 +681,14 @@ func _cycle_prompt_frequency() -> void:
     if index < 0:
         index = 1
     index = (index + 1) % values.size()
-    AppState.settings["promptFrequency"] = values[index]
+    _set_setting_with_audit("promptFrequency", values[index], "cycle")
     AppState.flush()
+    _emit_setting_feedback("promptFrequency", values[index])
     _update_balloon_position()
-    chat_balloon.show_text("Prompt frequency: %s (Shift+F2 demo prompt)" % values[index])
+    _buddy_say(
+        "Prompt frequency: %s. For quick validation press Shift+F2, then compare /cadence."
+        % values[index]
+    )
     _refresh_telemetry()
 
 
@@ -592,10 +699,11 @@ func _cycle_interaction_intensity() -> void:
     if index < 0:
         index = 1
     index = (index + 1) % values.size()
-    AppState.settings["interactionIntensity"] = values[index]
+    _set_setting_with_audit("interactionIntensity", values[index], "cycle")
     AppState.flush()
+    _emit_setting_feedback("interactionIntensity", values[index])
     _update_balloon_position()
-    chat_balloon.show_text("Interaction intensity: %s" % values[index])
+    _buddy_say("Interaction intensity: %s" % values[index])
     _refresh_telemetry()
 
 
@@ -606,10 +714,11 @@ func _cycle_quiet_strictness() -> void:
     if index < 0:
         index = 1
     index = (index + 1) % values.size()
-    AppState.settings["quietModeStrictness"] = values[index]
+    _set_setting_with_audit("quietModeStrictness", values[index], "cycle")
     AppState.flush()
+    _emit_setting_feedback("quietModeStrictness", values[index])
     _update_balloon_position()
-    chat_balloon.show_text("Quiet strictness: %s" % values[index])
+    _buddy_say("Quiet strictness: %s" % values[index])
     _refresh_telemetry()
 
 
@@ -685,7 +794,7 @@ func _cycle_pack() -> void:
     var ids := ContentLoader.list_cycleable_pack_ids()
     if ids.is_empty():
         _update_balloon_position()
-        chat_balloon.show_text("No valid content packs found.")
+        _buddy_say("No valid content packs found.")
         return
     if ids.size() == 1:
         var only_pack := str(ids[0])
@@ -693,7 +802,7 @@ func _cycle_pack() -> void:
         var only_manifest_variant = loaded_only.get("manifest", null)
         if typeof(only_manifest_variant) != TYPE_DICTIONARY:
             _update_balloon_position()
-            chat_balloon.show_text("Pack load failed: %s" % only_pack)
+            _buddy_say("Pack load failed: %s" % only_pack)
             return
         _active_pack_id = str(loaded_only.get("pack_id", only_pack))
         _active_manifest = only_manifest_variant as Dictionary
@@ -705,7 +814,7 @@ func _cycle_pack() -> void:
         _load_visual_assets(_active_pack_id, _active_manifest)
         AppState.apply_loaded_pack(_active_pack_id, _active_manifest)
         _update_balloon_position()
-        chat_balloon.show_text("Only valid pack available: %s" % _active_pack_id)
+        _buddy_say("Only valid pack available: %s" % _active_pack_id)
         _refresh_telemetry()
         return
 
@@ -721,7 +830,7 @@ func _cycle_pack() -> void:
     var manifest_variant = loaded.get("manifest", null)
     if typeof(manifest_variant) != TYPE_DICTIONARY:
         _update_balloon_position()
-        chat_balloon.show_text("Pack load failed: %s" % next_pack)
+        _buddy_say("Pack load failed: %s" % next_pack)
         return
 
     _active_pack_id = str(loaded.get("pack_id", next_pack))
@@ -734,8 +843,12 @@ func _cycle_pack() -> void:
     _load_visual_assets(_active_pack_id, _active_manifest)
     AppState.apply_loaded_pack(_active_pack_id, _active_manifest)
     _update_balloon_position()
-    chat_balloon.show_text(
-        "Active pack: %s (%d available; visual deltas can be subtle)" % [_active_pack_id, ids.size()]
+    var slot := ids.find(_active_pack_id) + 1
+    if slot <= 0:
+        slot = index + 1
+    _buddy_say(
+        "Active pack: %s (slot %d/%d). Validate via telemetry 'pack:' line; visual deltas can be subtle."
+        % [_active_pack_id, slot, ids.size()]
     )
     _refresh_telemetry()
 
@@ -790,6 +903,18 @@ func _refresh_telemetry() -> void:
             int(prompt_metrics.get("world_suppressed", 0)),
             int(prompt_metrics.get("world_deferred", 0)),
         ],
+        "chat turns: you=%d buddy=%d" % [_chat_turn_user_count, _chat_turn_buddy_count],
+        "chat cmd: ok=%d fail=%d last=%s (%s)" % [
+            _chat_cmd_ok_count,
+            _chat_cmd_fail_count,
+            _chat_last_command_id,
+            _chat_last_reason_code,
+        ],
+        "chat cmd latency: last=%dms avg=%dms" % [
+            _chat_cmd_latency_last_ms,
+            int(round(float(_chat_cmd_latency_total_ms) / max(1, _chat_cmd_latency_samples))),
+        ],
+        "settings recent: %s" % _recent_settings_change_summary(3),
         "intensity: %s  quiet strict: %s" % [
             str(snapshot.get("interaction_intensity", "balanced")),
             str(snapshot.get("quiet_strictness", "balanced")),
@@ -828,6 +953,16 @@ func _toggle_settings_menu() -> void:
     _refresh_settings_menu()
 
 
+func _toggle_chat_window() -> void:
+    _chat_window_open = not _chat_window_open
+    _layout_chat_window()
+    if _chat_window_open:
+        _chat_unread_prompt_count = 0
+        _refresh_settings_menu()
+    if _chat_window_open and chat_input != null:
+        chat_input.grab_focus()
+
+
 func _layout_settings_window() -> void:
     if settings_window == null:
         return
@@ -854,6 +989,29 @@ func _layout_settings_window() -> void:
         settings_window.grab_focus()
     else:
         settings_window.hide()
+
+
+func _layout_chat_window() -> void:
+    if chat_window == null:
+        return
+    if _chat_window_open:
+        var main_screen := DisplayServer.window_get_current_screen()
+        var usable := DisplayServer.screen_get_usable_rect(main_screen)
+        var target_size := chat_window.size
+        target_size.x = clampi(target_size.x, 320, maxi(320, int(usable.size.x * 0.6)))
+        target_size.y = clampi(target_size.y, 220, maxi(220, int(usable.size.y * 0.6)))
+        chat_window.size = target_size
+        var main_pos: Vector2i = DisplayServer.window_get_position()
+        var target_pos := main_pos + Vector2i(72, 72)
+        var max_x := usable.position.x + maxi(0, usable.size.x - target_size.x)
+        var max_y := usable.position.y + maxi(0, usable.size.y - target_size.y)
+        target_pos.x = clampi(target_pos.x, usable.position.x, max_x)
+        target_pos.y = clampi(target_pos.y, usable.position.y, max_y)
+        chat_window.position = target_pos
+        chat_window.show()
+        chat_window.grab_focus()
+    else:
+        chat_window.hide()
 
 
 func _refresh_settings_menu() -> void:
@@ -915,6 +1073,12 @@ func _refresh_settings_menu() -> void:
     settings_btn_demo_world.text = "Demo World (Shift+F7)"
     settings_btn_reward.text = "Open Reward Box (F11)"
     settings_btn_telemetry.text = "Telemetry (F6): %s" % ("on" if _telemetry_enabled else "off")
+    settings_btn_restart.text = "Restart Runtime"
+    settings_btn_quit.text = "Quit Runtime"
+    var unread_suffix := ""
+    if _chat_unread_prompt_count > 0:
+        unread_suffix = " (%d new)" % _chat_unread_prompt_count
+    settings_btn_chat.text = "Chat: %s%s" % [("Open" if _chat_window_open else "Closed"), unread_suffix]
     if settings_floor_slider != null:
         settings_floor_slider.set_value_no_signal(_desktop_floor_offset_adjust)
     if settings_floor_value != null:
@@ -945,6 +1109,689 @@ func _format_floor_adjust_text(value: float) -> String:
     var rounded := int(roundf(value))
     var sign := "+" if rounded >= 0 else ""
     return "%s%d px" % [sign, rounded]
+
+
+func _buddy_say(line: String, source_kind: String = "") -> void:
+    if line == "":
+        return
+    line = _normalize_buddy_reply(line)
+    _chat_turn_buddy_count += 1
+    if not _chat_window_open and (source_kind == "support" or source_kind == "world"):
+        _chat_unread_prompt_count += 1
+        _refresh_settings_menu()
+    _update_balloon_position()
+    chat_balloon.show_text(line)
+    _append_chat_line("Buddy", line, "#F4E9CF")
+
+
+func _append_chat_line(speaker: String, text: String, color_hex: String) -> void:
+    if chat_log == null:
+        return
+    var now_unix := int(Time.get_unix_time_from_system())
+    if _chat_last_line_unix > 0 and now_unix - _chat_last_line_unix >= CHAT_SEPARATOR_IDLE_SECONDS:
+        chat_log.append_text("[color=#6A7D8F]---------- session pause ----------[/color]\n")
+    _chat_last_line_unix = now_unix
+    var safe_speaker := speaker.replace("[", "").replace("]", "")
+    var safe_text := text.replace("[", "\\[").replace("]", "\\]")
+    var row := "[color=%s][b]%s:[/b][/color] %s\n" % [color_hex, safe_speaker, safe_text]
+    chat_log.append_text(row)
+    var line_count := chat_log.get_line_count()
+    if line_count > CHAT_TRANSCRIPT_MAX_LINES:
+        var full_text := chat_log.text
+        var parts := full_text.split("\n")
+        var keep_from: int = maxi(0, parts.size() - CHAT_TRANSCRIPT_MAX_LINES)
+        var trimmed := "\n".join(parts.slice(keep_from, parts.size()))
+        chat_log.text = trimmed
+    chat_log.scroll_to_line(chat_log.get_line_count())
+
+
+func _send_chat_input() -> void:
+    if chat_input == null:
+        return
+    var raw := chat_input.text.strip_edges()
+    if raw == "":
+        return
+    chat_input.text = ""
+    _chat_turn_user_count += 1
+    _append_chat_line("You", raw, "#9FD9FF")
+    _capture_chat_memory(raw)
+    AppState.record_interaction("chat_reply")
+    _productivity.note_user_activity(int(Time.get_unix_time_from_system()))
+
+    var started_ms := Time.get_ticks_msec()
+    var resolved := _chat_router.resolve(raw)
+    var outcome := _execute_resolved_chat(raw, resolved)
+    outcome["elapsed_ms"] = Time.get_ticks_msec() - started_ms
+    _record_chat_command_outcome(outcome)
+    var reply := str(outcome.get("message", ""))
+    if reply != "":
+        _buddy_say(reply)
+    _refresh_telemetry()
+
+
+func _generate_chat_reply(user_text: String) -> String:
+    var msg := user_text.to_lower()
+    var snap := AppState.get_telemetry_snapshot()
+    var mood := str(snap.get("mood", "calm"))
+    var bond_level := int(snap.get("bond_level", 1))
+    var world := AppState.get_world_snapshot()
+    var tone := _tone_prefix(mood, bond_level)
+
+    if msg.find("hello") >= 0 or msg.find("hi") >= 0 or msg.find("hey") >= 0:
+        return "%sHey. I am here with you." % tone
+    if msg.find("help") >= 0:
+        return "%sI can do quick things: rewards (F11), world prompts (F12), and mode toggle (F5)." % tone
+    if msg.find("quest") >= 0 or msg.find("world") >= 0:
+        var pending_q := str(world.get("pending_quest_id", ""))
+        var pending_e := str(world.get("pending_encounter_id", ""))
+        if pending_q != "" or pending_e != "":
+            return "%sWe have something pending. Press F12 and we can resolve it." % tone
+        return "%sNo pending quest right now. I can ping one when events roll." % tone
+    if msg.find("reward") >= 0 or msg.find("box") >= 0:
+        return "%sOpen a reward box with F11 and I will call out what we get." % tone
+    if msg.find("sleep") >= 0 or msg.find("tired") >= 0:
+        return "%sIf you want quiet mode, right-click me to sleep and I will keep calm." % tone
+    if msg.find("mode") >= 0 or msg.find("home") >= 0 or msg.find("overlay") >= 0:
+        var home_mode := str(world.get("home_mode", "overlay"))
+        return "%sCurrent mode is %s. Press F5 to switch." % [tone, home_mode]
+    if msg.find("thanks") >= 0 or msg.find("thank you") >= 0:
+        return "%sAlways. Bond level is %d and climbing." % [tone, bond_level]
+    if _should_ask_follow_up(msg):
+        _chat_last_followup_turn = _chat_turn_user_count
+        return "%sCan you tell me a bit more so I can help better?" % tone
+
+    if mood == "sleepy":
+        return "%sI am a bit sleepy, but I am still listening." % tone
+    if mood == "curious":
+        return "%sTell me more. I am curious." % tone
+    if mood == "happy":
+        return "%sNice. I like chatting with you." % tone
+    return "%sGot it. Want to do rewards, quests, or just hang out?" % tone
+
+
+func _execute_resolved_chat(raw_text: String, resolved: Dictionary) -> Dictionary:
+    var ok := bool(resolved.get("ok", false))
+    var kind := str(resolved.get("kind", "unknown"))
+    var action_id := str(resolved.get("action_id", ""))
+    var params_variant = resolved.get("params", {})
+    var params: Dictionary = params_variant if typeof(params_variant) == TYPE_DICTIONARY else {}
+    var reason := str(resolved.get("reason_code", "unknown"))
+    var confidence := float(resolved.get("confidence", 0.0))
+
+    if kind == "command":
+        if not ok:
+            return _action_result(
+                false,
+                "command.%s" % action_id,
+                "I could not run that command (%s). Use /help." % reason,
+                reason
+            )
+        if confidence < 0.60:
+            return _action_result(false, "command.%s" % action_id, "I am not confident enough to run that command.", "low_confidence")
+        var throttle := _throttle_command(action_id)
+        if not bool(throttle.get("ok", false)):
+            return throttle
+        return _execute_chat_command(action_id, params)
+
+    if kind == "intent" and ok:
+        return _action_result(true, "intent.%s" % action_id, _generate_chat_reply(raw_text), "ok")
+
+    return _action_result(false, "intent.unknown", "I did not catch that. Try /help.", "unknown_intent")
+
+
+func _execute_chat_command(command: String, params: Dictionary) -> Dictionary:
+    if command == "help":
+        return _action_result(
+            true,
+            "command.help",
+            "Commands: /help /status /pending /mode home|overlay /reward /world engage|skip|complete /quiet lenient|balanced|strict /freq low|normal|high /chat close|clear [confirm]|text m|l /memory /remember <note> /forget <id> [confirm] /cadence /debug chat /settings-check /preset cozy|balanced|deep /settings reset [confirm]|undo",
+            "ok"
+        )
+    if command == "status":
+        var snap := AppState.get_telemetry_snapshot()
+        var world := AppState.get_world_snapshot()
+        var msg := "Status: Lv %d XP %d Mood %s Mode %s Crystals %d" % [
+            int(snap.get("bond_level", 1)),
+            int(snap.get("bond_xp", 0)),
+            str(snap.get("mood", "calm")),
+            str(world.get("home_mode", "overlay")),
+            int(snap.get("crystals", 0)),
+        ]
+        var recent := _recent_settings_change_summary(5)
+        if recent != "":
+            msg += " | settings: %s" % recent
+        return _action_result(true, "command.status", msg, "ok")
+    if command == "pending":
+        var world_pending := AppState.get_world_snapshot()
+        var q := str(world_pending.get("pending_quest_id", ""))
+        var e := str(world_pending.get("pending_encounter_id", ""))
+        if q == "" and e == "":
+            return _action_result(true, "command.pending", "No pending quest or encounter.", "ok")
+        return _action_result(true, "command.pending", "Pending: quest=%s encounter=%s" % [q, e], "ok")
+    if command == "mode":
+        var mode := str(params.get("mode", "overlay"))
+        _set_home_mode_explicit(mode)
+        return _action_result(true, "command.mode", "Mode set to %s." % mode, "ok")
+    if command == "reward":
+        _open_debug_reward_box()
+        return _action_result(true, "command.reward", "", "ok")
+    if command == "world":
+        var decision := str(params.get("decision", "complete"))
+        if decision == "skip":
+            _resolve_world_prompt(false)
+        else:
+            _resolve_world_prompt(true)
+        return _action_result(true, "command.world", "", "ok")
+    if command == "quiet":
+        var level := str(params.get("level", "balanced"))
+        _set_setting_with_audit("quietModeStrictness", level, "command")
+        AppState.flush()
+        _emit_setting_feedback("quietModeStrictness", level)
+        return _action_result(true, "command.quiet", "Quiet strictness set to %s." % level, "ok")
+    if command == "freq":
+        var value := str(params.get("value", "normal"))
+        _set_setting_with_audit("promptFrequency", value, "command")
+        _set_setting_with_audit("eventFrequency", value, "command")
+        AppState.flush()
+        _emit_setting_feedback("freq", value)
+        return _action_result(true, "command.freq", "Prompt/Event frequency set to %s." % value, "ok")
+    if command == "chat":
+        var action := str(params.get("action", ""))
+        if action == "close":
+            _chat_window_open = false
+            _layout_chat_window()
+            return _action_result(true, "command.chat", "Chat window closed.", "ok")
+        if action == "clear":
+            var confirm := bool(params.get("confirm", false))
+            if not confirm:
+                return _action_result(false, "command.chat", "Confirm with /chat clear confirm", "confirm_required")
+            if chat_log != null:
+                chat_log.clear()
+            return _action_result(true, "command.chat", "Chat transcript cleared.", "ok")
+        if action == "text":
+            var size := str(params.get("size", "m"))
+            _set_setting_with_audit("chatTextSize", size, "command")
+            AppState.flush()
+            _apply_chat_text_size()
+            return _action_result(true, "command.chat", "Chat text size set to %s." % size.to_upper(), "ok")
+        return _action_result(false, "command.chat", "Unknown chat action.", "invalid_arg")
+    if command == "memory":
+        return _action_result(true, "command.memory", _build_memory_summary(), "ok")
+    if command == "remember":
+        var note := str(params.get("note", "")).strip_edges()
+        if note == "":
+            return _action_result(false, "command.remember", "Missing note text. Use /remember <note>", "missing_arg")
+        return _remember_note(note)
+    if command == "forget":
+        var note_id := int(params.get("id", -1))
+        var confirm := bool(params.get("confirm", false))
+        return _forget_note(note_id, confirm)
+    if command == "cadence":
+        return _action_result(true, "command.cadence", _build_cadence_summary(), "ok")
+    if command == "debug":
+        var area := str(params.get("area", ""))
+        if area == "chat":
+            return _action_result(true, "command.debug", _build_chat_debug_summary(), "ok")
+        return _action_result(false, "command.debug", "Unknown debug area.", "invalid_arg")
+    if command == "settings-check":
+        return _action_result(true, "command.settings-check", _run_settings_check(), "ok")
+    if command == "preset":
+        var preset := str(params.get("preset", "balanced"))
+        return _apply_settings_preset(preset)
+    if command == "settings":
+        var settings_action := str(params.get("action", ""))
+        if settings_action == "reset":
+            var confirm := bool(params.get("confirm", false))
+            return _reset_settings_with_undo(confirm)
+        if settings_action == "undo":
+            return _undo_settings_reset()
+        return _action_result(false, "command.settings", "Unknown settings action.", "invalid_arg")
+
+    return _action_result(false, "command.%s" % command, "Unsupported command.", "unsupported_command")
+
+
+func _tone_prefix(mood: String, bond_level: int) -> String:
+    var bond_band := 0
+    if bond_level >= 12:
+        bond_band = 2
+    elif bond_level >= 6:
+        bond_band = 1
+    if mood == "sleepy":
+        return ["", "Hey... ", "Hey friend... "][bond_band]
+    if mood == "happy":
+        return ["", "Nice! ", "Nice! I am glad you are here. "][bond_band]
+    if mood == "curious":
+        return ["", "Hmm. ", "Hmm, tell me more. "][bond_band]
+    if mood == "frustrated":
+        return ["", "Okay. ", "Okay, we can handle this. "][bond_band]
+    if mood == "calm":
+        return ["", "Alright. ", "Alright, teammate. "][bond_band]
+    return ""
+
+
+func _should_ask_follow_up(msg: String) -> bool:
+    var compact := msg.strip_edges()
+    if compact == "":
+        return false
+    if compact.begins_with("/"):
+        return false
+    if _chat_turn_user_count - _chat_last_followup_turn < CHAT_FOLLOW_UP_MIN_TURNS:
+        return false
+    var noisy_keywords := [
+        "reward",
+        "world",
+        "quest",
+        "mode",
+        "help",
+        "quiet",
+        "freq",
+        "sleep",
+        "tired",
+    ]
+    for key in noisy_keywords:
+        if compact.find(key) >= 0:
+            return false
+    var words := compact.split(" ", false)
+    return words.size() <= 3
+
+
+func _normalize_buddy_reply(line: String) -> String:
+    var normalized := line.strip_edges().to_lower()
+    if normalized == "":
+        return line
+    if _chat_recent_buddy_norm_lines.has(normalized):
+        line = _rewrite_repetitive_reply(line)
+        normalized = line.strip_edges().to_lower()
+    _chat_recent_buddy_norm_lines.append(normalized)
+    if _chat_recent_buddy_norm_lines.size() > CHAT_RECENT_REPLY_MAX:
+        _chat_recent_buddy_norm_lines.remove_at(0)
+    return line
+
+
+func _rewrite_repetitive_reply(line: String) -> String:
+    if line.find("?") >= 0:
+        return "Let me rephrase: %s" % line
+    if line.find("Press F") >= 0:
+        return "%s (shortcut reminder)" % line
+    return "%s Let us keep going." % line
+
+
+func _capture_chat_memory(raw_text: String) -> void:
+    var tags := _extract_memory_tags(raw_text)
+    for tag in tags:
+        var count := int(_chat_memory_tag_counts.get(tag, 0))
+        _chat_memory_tag_counts[tag] = count + 1
+    _chat_memory_turn_tags.append(
+        {
+            "turn": _chat_turn_user_count,
+            "text": raw_text.strip_edges(),
+            "tags": tags,
+            "ts": int(Time.get_unix_time_from_system()),
+        }
+    )
+    if _chat_memory_turn_tags.size() > 40:
+        _chat_memory_turn_tags.remove_at(0)
+
+
+func _extract_memory_tags(raw_text: String) -> Array:
+    var msg := raw_text.to_lower()
+    var tags: Array = []
+    var rules := {
+        "goal": ["plan", "goal", "next", "later", "todo"],
+        "mood": ["tired", "stressed", "happy", "sad", "upset", "excited"],
+        "task": ["work", "task", "finish", "start", "focus", "meeting"],
+        "reward": ["reward", "box", "crystal", "item", "loot"],
+        "world": ["quest", "encounter", "world", "village", "npc"],
+        "support": ["help", "remind", "check", "support"],
+    }
+    for tag_key in rules.keys():
+        var keys: Array = rules[tag_key]
+        for key_variant in keys:
+            var key := str(key_variant)
+            if msg.find(key) >= 0:
+                tags.append(tag_key)
+                break
+    return tags
+
+
+func _build_memory_summary() -> String:
+    var tags_summary := []
+    for key in _chat_memory_tag_counts.keys():
+        var value := int(_chat_memory_tag_counts.get(key, 0))
+        if value > 0:
+            tags_summary.append("%s:%d" % [key, value])
+    if tags_summary.is_empty():
+        tags_summary.append("none")
+    var notes_summary := []
+    for note_variant in _chat_memory_notes:
+        var note: Dictionary = note_variant
+        notes_summary.append("#%d %s" % [int(note.get("id", 0)), str(note.get("text", ""))])
+    if notes_summary.is_empty():
+        notes_summary.append("none")
+    return "Memory tags [%s] | notes [%s]" % [", ".join(tags_summary), " ; ".join(notes_summary)]
+
+
+func _remember_note(note_text: String) -> Dictionary:
+    if _chat_memory_notes.size() >= CHAT_MEMORY_MAX_NOTES:
+        return _action_result(false, "command.remember", "Memory notes are full (10). Forget one first.", "memory_full")
+    var note := {
+        "id": _chat_memory_next_note_id,
+        "text": note_text,
+        "ts": int(Time.get_unix_time_from_system()),
+    }
+    _chat_memory_notes.append(note)
+    _chat_memory_next_note_id += 1
+    return _action_result(true, "command.remember", "Saved note #%d." % int(note.get("id", 0)), "ok")
+
+
+func _forget_note(note_id: int, confirm: bool) -> Dictionary:
+    if note_id <= 0:
+        return _action_result(false, "command.forget", "Invalid note id.", "invalid_arg")
+    if not confirm:
+        _chat_memory_pending_forget_id = note_id
+        _chat_memory_pending_forget_until = int(Time.get_unix_time_from_system()) + 10
+        return _action_result(
+            false,
+            "command.forget",
+            "Confirm with /forget %d confirm (within 10s)." % note_id,
+            "confirm_required"
+        )
+    var now_unix := int(Time.get_unix_time_from_system())
+    if _chat_memory_pending_forget_id != note_id or now_unix > _chat_memory_pending_forget_until:
+        return _action_result(false, "command.forget", "Forget confirmation expired. Run /forget <id> again.", "confirm_expired")
+    for i in range(_chat_memory_notes.size()):
+        var note: Dictionary = _chat_memory_notes[i]
+        if int(note.get("id", -1)) == note_id:
+            _chat_memory_notes.remove_at(i)
+            _chat_memory_pending_forget_id = -1
+            _chat_memory_pending_forget_until = 0
+            return _action_result(true, "command.forget", "Forgot note #%d." % note_id, "ok")
+    return _action_result(false, "command.forget", "Note not found.", "missing_note")
+
+
+func _apply_chat_text_size() -> void:
+    if chat_log == null:
+        return
+    var mode := str(AppState.settings.get("chatTextSize", "m")).to_lower()
+    var size := CHAT_FONT_SIZE_L if mode == "l" else CHAT_FONT_SIZE_M
+    chat_log.add_theme_font_size_override("normal_font_size", size)
+    if chat_input != null:
+        chat_input.add_theme_font_size_override("font_size", size)
+    if chat_send != null:
+        chat_send.add_theme_font_size_override("font_size", size)
+
+
+func _build_cadence_summary() -> String:
+    var now_unix := int(Time.get_unix_time_from_system())
+    var quiet_mode := AppState.is_quiet_hours_now()
+    var info_variant = _prompt_cadence.debug_snapshot(now_unix, AppState.settings, quiet_mode)
+    if typeof(info_variant) != TYPE_DICTIONARY:
+        return "Cadence diagnostics unavailable."
+    var info: Dictionary = info_variant
+    var pieces := []
+    for source in ["support", "world", "chat"]:
+        var source_variant = info.get(source, {})
+        if typeof(source_variant) != TYPE_DICTIONARY:
+            continue
+        var source_data: Dictionary = source_variant
+        pieces.append(
+            "%s c=%d/%d min=%ss" % [
+                source,
+                int(source_data.get("recent_count", 0)),
+                int(source_data.get("burst_cap", 0)),
+                int(source_data.get("min_interval_s", 0)),
+            ]
+        )
+    return "Cadence: %s" % " | ".join(pieces)
+
+
+func _build_chat_debug_summary() -> String:
+    var reason_pairs := []
+    for reason_key in _chat_cmd_reason_counts.keys():
+        reason_pairs.append("%s=%d" % [str(reason_key), int(_chat_cmd_reason_counts.get(reason_key, 0))])
+    reason_pairs.sort()
+    var reasons := ", ".join(reason_pairs)
+    if reasons == "":
+        reasons = "none"
+    var avg_latency := int(round(float(_chat_cmd_latency_total_ms) / max(1, _chat_cmd_latency_samples)))
+    return "Chat debug: turns(y/b)=%d/%d cmd(ok/fail)=%d/%d latency(last/avg)=%d/%d reasons[%s]" % [
+        _chat_turn_user_count,
+        _chat_turn_buddy_count,
+        _chat_cmd_ok_count,
+        _chat_cmd_fail_count,
+        _chat_cmd_latency_last_ms,
+        avg_latency,
+        reasons,
+    ]
+
+
+func _run_settings_check() -> String:
+    var issues := []
+    var freq := str(AppState.settings.get("promptFrequency", "normal"))
+    var event_freq := str(AppState.settings.get("eventFrequency", "normal"))
+    var quiet := str(AppState.settings.get("quietModeStrictness", "balanced"))
+    var intensity := str(AppState.settings.get("interactionIntensity", "balanced"))
+    var chat_text_size := str(AppState.settings.get("chatTextSize", "m")).to_lower()
+    if freq not in ["low", "normal", "high"]:
+        issues.append("promptFrequency invalid")
+    if event_freq not in ["low", "normal", "high"]:
+        issues.append("eventFrequency invalid")
+    if quiet not in ["lenient", "balanced", "strict"]:
+        issues.append("quietModeStrictness invalid")
+    if intensity not in ["cozy", "balanced", "deep"]:
+        issues.append("interactionIntensity invalid")
+    if chat_text_size not in ["m", "l"]:
+        issues.append("chatTextSize invalid")
+    if issues.is_empty():
+        return "Settings check passed."
+    return "Settings check warnings: %s" % ", ".join(issues)
+
+
+func _apply_settings_preset(preset: String) -> Dictionary:
+    var chosen := preset.to_lower()
+    var preset_values := {}
+    if chosen == "cozy":
+        preset_values = {
+            "eventFrequency": "low",
+            "promptFrequency": "low",
+            "interactionIntensity": "cozy",
+            "quietModeStrictness": "strict",
+        }
+    elif chosen == "deep":
+        preset_values = {
+            "eventFrequency": "high",
+            "promptFrequency": "high",
+            "interactionIntensity": "deep",
+            "quietModeStrictness": "lenient",
+        }
+    else:
+        chosen = "balanced"
+        preset_values = {
+            "eventFrequency": "normal",
+            "promptFrequency": "normal",
+            "interactionIntensity": "balanced",
+            "quietModeStrictness": "balanced",
+        }
+
+    _capture_settings_undo_snapshot()
+    for key in preset_values.keys():
+        _set_setting_with_audit(key, preset_values[key], "preset:%s" % chosen)
+    AppState.flush()
+    _refresh_settings_menu()
+    _refresh_telemetry()
+    return _action_result(
+        true,
+        "command.preset",
+        "Preset applied: %s (use /settings undo within 10s)." % chosen,
+        "ok"
+    )
+
+
+func _reset_settings_with_undo(confirm: bool) -> Dictionary:
+    if not confirm:
+        return _action_result(false, "command.settings", "Confirm with /settings reset confirm", "confirm_required")
+    _capture_settings_undo_snapshot()
+    _set_setting_with_audit("eventFrequency", "normal", "settings_reset")
+    _set_setting_with_audit("promptFrequency", "normal", "settings_reset")
+    _set_setting_with_audit("interactionIntensity", "balanced", "settings_reset")
+    _set_setting_with_audit("quietModeStrictness", "balanced", "settings_reset")
+    _set_setting_with_audit("chatTextSize", "m", "settings_reset")
+    AppState.flush()
+    _apply_chat_text_size()
+    _refresh_settings_menu()
+    _refresh_telemetry()
+    return _action_result(
+        true,
+        "command.settings",
+        "Settings reset to defaults (use /settings undo within 10s).",
+        "ok"
+    )
+
+
+func _undo_settings_reset() -> Dictionary:
+    var now_unix := int(Time.get_unix_time_from_system())
+    if _settings_undo_snapshot.is_empty():
+        return _action_result(false, "command.settings", "No settings undo snapshot available.", "missing_undo")
+    if now_unix > _settings_undo_until_unix:
+        _settings_undo_snapshot.clear()
+        _settings_undo_until_unix = 0
+        return _action_result(false, "command.settings", "Settings undo window expired.", "undo_expired")
+    for key in _settings_undo_snapshot.keys():
+        _set_setting_with_audit(key, _settings_undo_snapshot[key], "settings_undo")
+    AppState.flush()
+    _apply_chat_text_size()
+    _refresh_settings_menu()
+    _refresh_telemetry()
+    _settings_undo_snapshot.clear()
+    _settings_undo_until_unix = 0
+    return _action_result(true, "command.settings", "Settings restored from undo snapshot.", "ok")
+
+
+func _capture_settings_undo_snapshot() -> void:
+    _settings_undo_snapshot = {
+        "eventFrequency": str(AppState.settings.get("eventFrequency", "normal")),
+        "promptFrequency": str(AppState.settings.get("promptFrequency", "normal")),
+        "interactionIntensity": str(AppState.settings.get("interactionIntensity", "balanced")),
+        "quietModeStrictness": str(AppState.settings.get("quietModeStrictness", "balanced")),
+        "chatTextSize": str(AppState.settings.get("chatTextSize", "m")),
+    }
+    _settings_undo_until_unix = int(Time.get_unix_time_from_system()) + 10
+
+
+func _set_setting_with_audit(key: String, value: Variant, source: String) -> bool:
+    var old_value = AppState.settings.get(key, null)
+    if old_value == value:
+        return false
+    AppState.settings[key] = value
+    _record_settings_change(key, old_value, value, source)
+    return true
+
+
+func _record_settings_change(key: String, old_value: Variant, new_value: Variant, source: String) -> void:
+    _settings_change_history.append(
+        {
+            "ts": int(Time.get_unix_time_from_system()),
+            "key": key,
+            "old": str(old_value),
+            "new": str(new_value),
+            "source": source,
+        }
+    )
+    if _settings_change_history.size() > SETTINGS_CHANGE_HISTORY_MAX:
+        _settings_change_history.remove_at(0)
+
+
+func _recent_settings_change_summary(max_items: int) -> String:
+    if _settings_change_history.is_empty():
+        return ""
+    var start := maxi(0, _settings_change_history.size() - max_items)
+    var entries: Array = _settings_change_history.slice(start, _settings_change_history.size())
+    var parts := []
+    for entry_variant in entries:
+        if typeof(entry_variant) != TYPE_DICTIONARY:
+            continue
+        var entry: Dictionary = entry_variant
+        parts.append("%s=%s" % [str(entry.get("key", "")), str(entry.get("new", ""))])
+    return ", ".join(parts)
+
+
+func _action_result(ok: bool, action_id: String, message: String, reason_code: String) -> Dictionary:
+    return {
+        "ok": ok,
+        "action_id": action_id,
+        "message": message,
+        "reason_code": reason_code,
+    }
+
+
+func _record_chat_command_outcome(outcome: Dictionary) -> void:
+    var action_id := str(outcome.get("action_id", ""))
+    var reason_code := str(outcome.get("reason_code", "unknown"))
+    var ok := bool(outcome.get("ok", false))
+    _chat_last_command_id = action_id
+    _chat_last_reason_code = reason_code
+    if ok:
+        _chat_cmd_ok_count += 1
+    else:
+        _chat_cmd_fail_count += 1
+    var count := int(_chat_cmd_reason_counts.get(reason_code, 0))
+    _chat_cmd_reason_counts[reason_code] = count + 1
+    var elapsed_ms := int(outcome.get("elapsed_ms", 0))
+    if elapsed_ms > 0:
+        _chat_cmd_latency_last_ms = elapsed_ms
+        _chat_cmd_latency_total_ms += elapsed_ms
+        _chat_cmd_latency_samples += 1
+
+
+func _throttle_command(action_id: String) -> Dictionary:
+    var now_ms := Time.get_ticks_msec()
+    var key := "command:%s" % action_id
+    var last_ms := int(_chat_cmd_last_key_by_action.get(key, 0))
+    if now_ms - last_ms < 300:
+        return _action_result(false, "command.%s" % action_id, "That was too fast. Try again.", "throttled")
+    _chat_cmd_last_key_by_action[key] = now_ms
+    return _action_result(true, "command.%s" % action_id, "", "ok")
+
+
+func _set_home_mode_explicit(mode: String) -> void:
+    var next_mode := "home" if mode == "home" else "overlay"
+    AppState.set_home_mode(next_mode)
+    if next_mode == "home":
+        _state = _select_home_mode_action(int(Time.get_unix_time_from_system()))
+    else:
+        _state = "idle"
+    _set_emote_from_state(_state)
+    _set_visual_for_state(_state, true)
+    _update_balloon_position()
+    _refresh_telemetry()
+
+
+func _emit_setting_feedback(key: String, value: String) -> void:
+    _append_chat_line("System", "Applied %s=%s" % [key, value], "#B8F8C6")
+
+
+func _restart_runtime() -> void:
+    call_deferred("_restart_runtime_deferred")
+
+
+func _restart_runtime_deferred() -> void:
+    AppState.flush()
+    if settings_window != null:
+        settings_window.hide()
+    _settings_menu_open = false
+    var relaunched := false
+    if not OS.has_feature("editor"):
+        var relaunch_err := OS.create_instance(OS.get_cmdline_user_args())
+        relaunched = relaunch_err == OK
+    if relaunched:
+        get_tree().quit()
+    else:
+        get_tree().reload_current_scene()
+
+
+func _quit_runtime() -> void:
+    AppState.flush()
+    get_tree().quit()
 
 
 func _load_visual_assets(pack_id: String, manifest: Dictionary) -> void:
@@ -1806,7 +2653,7 @@ func _maybe_show_bond_phrase() -> void:
     _bond_phrase_active = true
     _last_idle_phrase_unix = now_unix
     _update_balloon_position()
-    chat_balloon.show_text(phrase)
+    _buddy_say(phrase)
     await get_tree().create_timer(4.0).timeout
     chat_balloon.hide_bubble()
     _bond_phrase_active = false
@@ -1841,7 +2688,7 @@ func _show_while_away_report_once() -> void:
     if summary == "":
         return
     _update_balloon_position()
-    chat_balloon.show_text(summary)
+    _buddy_say(summary)
     await get_tree().create_timer(5.0).timeout
     chat_balloon.hide_bubble()
     AppState.clear_last_active_summary()
@@ -1856,7 +2703,7 @@ func _show_continuity_hint_once() -> void:
     if hint == "":
         return
     _update_balloon_position()
-    chat_balloon.show_text(hint)
+    _buddy_say(hint)
     await get_tree().create_timer(4.0).timeout
     chat_balloon.hide_bubble()
 
@@ -1865,7 +2712,7 @@ func _open_debug_reward_box() -> void:
     var box_ids := AppState.get_reward_box_ids()
     if box_ids.is_empty():
         _update_balloon_position()
-        chat_balloon.show_text("No reward boxes configured.")
+        _buddy_say("No reward boxes configured.")
         return
     var preferred := "cozy_box" if box_ids.has("cozy_box") else str(box_ids[0])
     var result := AppState.open_reward_box(preferred)
@@ -1875,15 +2722,15 @@ func _open_debug_reward_box() -> void:
         var item_rarity := str(result.get("item_rarity", "common"))
         if bool(result.get("duplicate", false)):
             var recycle := int(result.get("recycle_crystals", 0))
-            chat_balloon.show_text(
+            _buddy_say(
                 "Opened %s: %s [%s] (duplicate +%d crystals)"
                 % [preferred, item_name, item_rarity, recycle]
             )
         else:
-            chat_balloon.show_text("Opened %s: %s [%s]" % [preferred, item_name, item_rarity])
+            _buddy_say("Opened %s: %s [%s]" % [preferred, item_name, item_rarity])
     else:
         var reason := str(result.get("reason", "unavailable"))
-        chat_balloon.show_text("Could not open %s (%s)" % [preferred, reason])
+        _buddy_say("Could not open %s (%s)" % [preferred, reason])
 
 
 func _show_world_prompt(prompt: Dictionary) -> bool:
@@ -1915,9 +2762,9 @@ func _resolve_world_prompt(engage_encounter: bool) -> void:
             var reward_text := "+%d crystals" % crystals
             if item_name != "":
                 reward_text += " + %s" % item_name
-            chat_balloon.show_text("%s encounter %s: %s" % [npc, action_word, reward_text])
+            _buddy_say("%s encounter %s: %s" % [npc, action_word, reward_text])
         else:
-            chat_balloon.show_text("No encounter to resolve.")
+            _buddy_say("No encounter to resolve.")
         _refresh_telemetry()
         return
 
@@ -1930,13 +2777,13 @@ func _resolve_world_prompt(engage_encounter: bool) -> void:
             var item := str(quest_result.get("item_name", ""))
             if item != "":
                 reward_line += " + %s" % item
-            chat_balloon.show_text("%s quest complete: %s" % [npc_name, reward_line])
+            _buddy_say("%s quest complete: %s" % [npc_name, reward_line])
         else:
-            chat_balloon.show_text("No quest to complete.")
+            _buddy_say("No quest to complete.")
         _refresh_telemetry()
         return
 
-    chat_balloon.show_text("No pending world prompt.")
+    _buddy_say("No pending world prompt.")
 
 
 func _cycle_home_mode() -> void:
@@ -1957,9 +2804,9 @@ func _cycle_home_mode() -> void:
         var suffix := ""
         if wall_decor != "":
             suffix = " wall decor: %s" % wall_decor
-        chat_balloon.show_text("Home mode active (%s)%s" % [home_name, suffix])
+        _buddy_say("Home mode active (%s)%s" % [home_name, suffix])
     else:
-        chat_balloon.show_text("Overlay mode active.")
+        _buddy_say("Overlay mode active.")
     _refresh_telemetry()
 
 
@@ -2000,15 +2847,45 @@ func _show_progress_feedback(before: Dictionary, after: Dictionary) -> void:
     var after_xp := int(after.get("bond_xp", 0))
     var before_level := int(before.get("bond_level", 1))
     var after_level := int(after.get("bond_level", 1))
+    var before_growth := int(before.get("growth_stage", 1))
+    var after_growth := int(after.get("growth_stage", 1))
     var before_unlocks := int(before.get("unlock_count", 0))
     var after_unlocks := int(after.get("unlock_count", 0))
-    var msg := "Bond XP: %d -> %d (Lv %d)" % [before_xp, after_xp, after_level]
+    var xp_per_level := UnlockTable.xp_per_level()
+    var xp_into_level := after_xp % xp_per_level
+    var msg := "Bond Lv %d XP %d/%d Growth %d" % [after_level, xp_into_level, xp_per_level, after_growth]
     if after_level > before_level:
         msg += " level up!"
+    if after_growth > before_growth:
+        msg += " growth up!"
     if after_unlocks > before_unlocks:
         msg += " unlock +%d" % (after_unlocks - before_unlocks)
+    var next_unlock := _next_unlock_hint(after_level)
+    if next_unlock == "":
+        msg += " all unlocks unlocked"
+    else:
+        msg += " next %s" % next_unlock
     _update_balloon_position()
-    chat_balloon.show_text(msg)
+    _buddy_say(msg)
+
+
+func _next_unlock_hint(level: int) -> String:
+    var rows := UnlockTable.all_unlock_rows()
+    var best_level := 9999
+    var best_value := ""
+    for row_variant in rows:
+        if typeof(row_variant) != TYPE_DICTIONARY:
+            continue
+        var row: Dictionary = row_variant
+        var unlock_level := int(row.get("level", 9999))
+        if unlock_level <= level:
+            continue
+        if unlock_level < best_level:
+            best_level = unlock_level
+            best_value = str(row.get("value", row.get("id", "unlock")))
+    if best_value == "":
+        return ""
+    return "L%d:%s" % [best_level, best_value]
 
 
 func _show_auto_prompt(line: String, source_kind: String) -> bool:
@@ -2016,18 +2893,22 @@ func _show_auto_prompt(line: String, source_kind: String) -> bool:
         return false
     var now_unix := int(Time.get_unix_time_from_system())
     var quiet_mode := AppState.is_quiet_hours_now()
+    var source_last := int(_last_auto_prompt_by_source.get(source_kind, 0))
     if not _prompt_cadence.can_emit(
         _last_auto_prompt_unix,
         now_unix,
         AppState.settings,
         quiet_mode,
-        source_kind
+        source_kind,
+        source_last
     ):
         _manual_verification_report.record_prompt_metric(source_kind, "suppressed")
         return false
     _update_balloon_position()
-    chat_balloon.show_text(line)
+    _buddy_say(line, source_kind)
     _last_auto_prompt_unix = now_unix
+    _last_auto_prompt_by_source[source_kind] = now_unix
+    _prompt_cadence.note_emit(now_unix, source_kind)
     _manual_verification_report.record_prompt_metric(source_kind, "shown")
     return true
 
@@ -2036,12 +2917,14 @@ func _flush_deferred_world_prompt(now_unix: int) -> void:
     if _deferred_world_prompt.is_empty():
         return
     var quiet_mode := AppState.is_quiet_hours_now()
+    var source_last := int(_last_auto_prompt_by_source.get("world", 0))
     if _prompt_cadence.can_emit(
         _last_auto_prompt_unix,
         now_unix,
         AppState.settings,
         quiet_mode,
-        "world"
+        "world",
+        source_last
     ):
         var queued: Dictionary = _deferred_world_prompt.duplicate(true)
         _deferred_world_prompt.clear()
@@ -2063,7 +2946,7 @@ func _export_manual_verification_snapshot() -> void:
     var mkdir_code := DirAccess.make_dir_recursive_absolute(absolute_dir)
     if mkdir_code != OK:
         _update_balloon_position()
-        chat_balloon.show_text("Snapshot export failed (mkdir).")
+        _buddy_say("Snapshot export failed (mkdir).")
         return
     var dt := Time.get_datetime_dict_from_unix_time(now_unix)
     var filename := "plan5_snapshot_%04d%02d%02d_%02d%02d%02d.json" % [
@@ -2078,9 +2961,9 @@ func _export_manual_verification_snapshot() -> void:
     var file := FileAccess.open(user_path, FileAccess.WRITE)
     if file == null:
         _update_balloon_position()
-        chat_balloon.show_text("Snapshot export failed (write).")
+        _buddy_say("Snapshot export failed (write).")
         return
     file.store_string(JSON.stringify(snapshot, "\t"))
     file.close()
     _update_balloon_position()
-    chat_balloon.show_text("Manual snapshot exported: %s" % user_path)
+    _buddy_say("Manual snapshot exported: %s" % user_path)

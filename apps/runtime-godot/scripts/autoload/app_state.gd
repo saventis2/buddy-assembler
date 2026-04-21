@@ -578,6 +578,7 @@ func _default_settings() -> Dictionary:
         "promptFrequency": "normal",
         "interactionIntensity": "balanced",
         "quietModeStrictness": "balanced",
+        "chatTextSize": "m",
         "continuityDigestEnabled": true,
         "supportHintsEnabled": true,
         "productivityOptIn": false,
