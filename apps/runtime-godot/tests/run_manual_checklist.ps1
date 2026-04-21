@@ -81,15 +81,15 @@ $items = @(
 
     (New-ChecklistItem -Id "BE1" -Section "Behavior and Encounters" -Prompt "Idle transitions over several ticks feel correct."),
     (New-ChecklistItem -Id "BE2" -Section "Behavior and Encounters" -Prompt "Quiet-hours lowers active events."),
-    (New-ChecklistItem -Id "BE3" -Section "Behavior and Encounters" -Prompt "F7 event frequency cadence feels correct."),
-    (New-ChecklistItem -Id "BE4" -Section "Behavior and Encounters" -Prompt "F2 prompt frequency cadence feels correct."),
+    (New-ChecklistItem -Id "BE3" -Section "Behavior and Encounters" -Prompt "F7 cycles event frequency; verify via Shift+F7 demo + /cadence summary."),
+    (New-ChecklistItem -Id "BE4" -Section "Behavior and Encounters" -Prompt "F2 cycles prompt frequency; verify via Shift+F2 demo + /cadence summary."),
     (New-ChecklistItem -Id "BE5" -Section "Behavior and Encounters" -Prompt "Event budgets suppress repeat encounter spam."),
 
-    (New-ChecklistItem -Id "PG1" -Section "Progression and Unlocks" -Prompt "Pet loop increases bond XP/level."),
-    (New-ChecklistItem -Id "PG2" -Section "Progression and Unlocks" -Prompt "Unlock growth appears at expected levels."),
+    (New-ChecklistItem -Id "PG1" -Section "Progression and Unlocks" -Prompt "Pet loop shows Bond Lv/XP/Growth feedback and values move in telemetry."),
+    (New-ChecklistItem -Id "PG2" -Section "Progression and Unlocks" -Prompt "Progress feedback shows next unlock hint (or all unlocks unlocked)."),
     (New-ChecklistItem -Id "PG3" -Section "Progression and Unlocks" -Prompt "Restart preserves progression state."),
 
-    (New-ChecklistItem -Id "CP1" -Section "Content Packs" -Prompt "F9 pack cycle works in runtime (validate by pack id/chat telemetry, visuals may be subtle)."),
+    (New-ChecklistItem -Id "CP1" -Section "Content Packs" -Prompt "F9 pack cycle updates chat with slot x/y and telemetry pack id (visual deltas may be subtle)."),
     (New-ChecklistItem -Id "CP2" -Section "Content Packs" -Prompt "Telemetry reflects active pack."),
 
     (New-ChecklistItem -Id "VS1" -Section "Vertical Slice" -Prompt "Movement left/right is smooth."),

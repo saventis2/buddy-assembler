@@ -61,6 +61,7 @@ const BehaviorEngine = preload("res://scripts/behavior/behavior_engine.gd")
 const ContentLoader = preload("res://scripts/content/content_loader.gd")
 const EncounterScheduler = preload("res://scripts/encounters/encounter_scheduler.gd")
 const ChatCommandRouter = preload("res://scripts/interaction/chat_command_router.gd")
+const UnlockTable = preload("res://scripts/progression/unlock_table.gd")
 const ProductivityTracker = preload("res://scripts/utility/productivity_tracker.gd")
 const PromptCadence = preload("res://scripts/utility/prompt_cadence.gd")
 const ManualVerificationReport = preload("res://scripts/utility/manual_verification_report.gd")
@@ -666,7 +667,10 @@ func _cycle_event_frequency() -> void:
     AppState.flush()
     _emit_setting_feedback("eventFrequency", values[index])
     _update_balloon_position()
-    _buddy_say("Event frequency: %s (Shift+F7 demo prompt)" % values[index])
+    _buddy_say(
+        "Event frequency: %s. For quick validation press Shift+F7, then compare /cadence."
+        % values[index]
+    )
     _refresh_telemetry()
 
 
@@ -681,7 +685,10 @@ func _cycle_prompt_frequency() -> void:
     AppState.flush()
     _emit_setting_feedback("promptFrequency", values[index])
     _update_balloon_position()
-    _buddy_say("Prompt frequency: %s (Shift+F2 demo prompt)" % values[index])
+    _buddy_say(
+        "Prompt frequency: %s. For quick validation press Shift+F2, then compare /cadence."
+        % values[index]
+    )
     _refresh_telemetry()
 
 
@@ -836,8 +843,12 @@ func _cycle_pack() -> void:
     _load_visual_assets(_active_pack_id, _active_manifest)
     AppState.apply_loaded_pack(_active_pack_id, _active_manifest)
     _update_balloon_position()
+    var slot := ids.find(_active_pack_id) + 1
+    if slot <= 0:
+        slot = index + 1
     _buddy_say(
-        "Active pack: %s (%d available; visual deltas can be subtle)" % [_active_pack_id, ids.size()]
+        "Active pack: %s (slot %d/%d). Validate via telemetry 'pack:' line; visual deltas can be subtle."
+        % [_active_pack_id, slot, ids.size()]
     )
     _refresh_telemetry()
 
@@ -2836,15 +2847,45 @@ func _show_progress_feedback(before: Dictionary, after: Dictionary) -> void:
     var after_xp := int(after.get("bond_xp", 0))
     var before_level := int(before.get("bond_level", 1))
     var after_level := int(after.get("bond_level", 1))
+    var before_growth := int(before.get("growth_stage", 1))
+    var after_growth := int(after.get("growth_stage", 1))
     var before_unlocks := int(before.get("unlock_count", 0))
     var after_unlocks := int(after.get("unlock_count", 0))
-    var msg := "Bond XP: %d -> %d (Lv %d)" % [before_xp, after_xp, after_level]
+    var xp_per_level := UnlockTable.xp_per_level()
+    var xp_into_level := after_xp % xp_per_level
+    var msg := "Bond Lv %d XP %d/%d Growth %d" % [after_level, xp_into_level, xp_per_level, after_growth]
     if after_level > before_level:
         msg += " level up!"
+    if after_growth > before_growth:
+        msg += " growth up!"
     if after_unlocks > before_unlocks:
         msg += " unlock +%d" % (after_unlocks - before_unlocks)
+    var next_unlock := _next_unlock_hint(after_level)
+    if next_unlock == "":
+        msg += " all unlocks unlocked"
+    else:
+        msg += " next %s" % next_unlock
     _update_balloon_position()
     _buddy_say(msg)
+
+
+func _next_unlock_hint(level: int) -> String:
+    var rows := UnlockTable.all_unlock_rows()
+    var best_level := 9999
+    var best_value := ""
+    for row_variant in rows:
+        if typeof(row_variant) != TYPE_DICTIONARY:
+            continue
+        var row: Dictionary = row_variant
+        var unlock_level := int(row.get("level", 9999))
+        if unlock_level <= level:
+            continue
+        if unlock_level < best_level:
+            best_level = unlock_level
+            best_value = str(row.get("value", row.get("id", "unlock")))
+    if best_value == "":
+        return ""
+    return "L%d:%s" % [best_level, best_value]
 
 
 func _show_auto_prompt(line: String, source_kind: String) -> bool:

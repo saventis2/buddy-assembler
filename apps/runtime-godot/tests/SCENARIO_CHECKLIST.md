@@ -56,23 +56,26 @@ pwsh ./run_plan5_gate.ps1 -SkipRuntimeLaunch -UseDefaults -DefaultResult pending
 1. Observe idle transitions over several ticks.
 2. Confirm quiet-hours behavior lowers active events.
 3. Press `F7` to cycle event frequency (`low` -> `normal` -> `high`) and verify effect.
-   - Optional immediate check: `Shift+F7` emits a demo world prompt.
+   - Immediate check: `Shift+F7` emits a demo world prompt.
+   - Evidence check: run `/cadence` and confirm world cadence values change with frequency.
 4. Press `F2` to cycle prompt frequency (`low` -> `normal` -> `high`) and verify chat prompt cadence changes.
-   - Optional immediate check: `Shift+F2` emits a demo support prompt.
+   - Immediate check: `Shift+F2` emits a demo support prompt.
+   - Evidence check: run `/cadence` and confirm support cadence values change with frequency.
 5. Confirm event budgets prevent repeated encounter spam in same hour/day.
 
 ## Progression and Unlocks
 
-1. Repeated pet interactions increase bond XP and level.
-2. Confirm pet interaction shows bond feedback text (XP/level/unlock delta).
-3. Unlock list grows at expected levels (wander/happy/gift/visitor).
+1. Repeated pet interactions increase bond XP/level telemetry.
+2. Confirm pet interaction shows bond feedback text with `Bond Lv`, `XP`, `Growth`, and next unlock hint.
+3. Unlock verification passes if feedback shows either a valid next unlock hint (`L#:...`) or `all unlocks unlocked`.
 4. Restart app and verify progression persists.
 
 ## Content Packs
 
 1. Validate both manifests using validator CLI.
 2. Press `F9` to cycle available packs.
-   - Validate pass/fail from chat + telemetry pack id; visual deltas can be subtle depending on installed packs.
+   - Validate pass/fail from chat + telemetry pack id; chat should include pack slot `x/y`.
+   - Visual deltas can be subtle depending on installed packs.
 3. Verify runtime reports active pack in telemetry and chat feedback.
 
 ## Vertical Slice (requires desktop run with `--vertical-slice` flag)
