@@ -17,6 +17,13 @@ const FLOOR_SETTLE_SPEED_PX_PER_SEC := 720.0
 const SETTINGS_WINDOW_OFFSET := Vector2i(56, 56)
 const SETTINGS_WINDOW_MIN_SIZE := Vector2i(320, 380)
 const SETTINGS_WINDOW_DEFAULT_SIZE := Vector2i(360, 460)
+const CHAT_TRANSCRIPT_MAX_LINES := 120
+const CHAT_SEPARATOR_IDLE_SECONDS := 600
+const CHAT_RECENT_REPLY_MAX := 20
+const CHAT_FOLLOW_UP_MIN_TURNS := 3
+const CHAT_MEMORY_MAX_NOTES := 10
+const CHAT_FONT_SIZE_M := 13
+const CHAT_FONT_SIZE_L := 16
 const DEFAULT_SPRITE_ANCHOR := Vector2(0.5, 1.0)
 const NO_PIVOT := Vector2(-1.0, -1.0)
 const SLEEP_PIVOT_OVERFLOW_BLEND := 1.0
@@ -161,6 +168,23 @@ var _chat_cmd_reason_counts := {}
 var _chat_cmd_last_key_by_action := {}
 var _chat_last_command_id := ""
 var _chat_last_reason_code := ""
+var _chat_last_line_unix := 0
+var _chat_recent_buddy_norm_lines: Array = []
+var _chat_last_followup_turn := -100
+var _chat_memory_tag_counts := {
+    "goal": 0,
+    "mood": 0,
+    "task": 0,
+    "reward": 0,
+    "world": 0,
+    "support": 0,
+}
+var _chat_memory_turn_tags: Array = []
+var _chat_memory_notes: Array = []
+var _chat_memory_next_note_id := 1
+var _chat_memory_pending_forget_id := -1
+var _chat_memory_pending_forget_until := 0
+var _chat_unread_prompt_count := 0
 
 
 func _ready() -> void:
@@ -407,6 +431,7 @@ func _configure_chat_window() -> void:
         chat_input.text_submitted.connect(func(_submitted: String) -> void:
             _send_chat_input()
         )
+    _apply_chat_text_size()
 
 
 func _draw() -> void:
@@ -895,6 +920,9 @@ func _toggle_settings_menu() -> void:
 func _toggle_chat_window() -> void:
     _chat_window_open = not _chat_window_open
     _layout_chat_window()
+    if _chat_window_open:
+        _chat_unread_prompt_count = 0
+        _refresh_settings_menu()
     if _chat_window_open and chat_input != null:
         chat_input.grab_focus()
 
@@ -1011,7 +1039,10 @@ func _refresh_settings_menu() -> void:
     settings_btn_telemetry.text = "Telemetry (F6): %s" % ("on" if _telemetry_enabled else "off")
     settings_btn_restart.text = "Restart Runtime"
     settings_btn_quit.text = "Quit Runtime"
-    settings_btn_chat.text = "Chat: %s" % ("Open" if _chat_window_open else "Closed")
+    var unread_suffix := ""
+    if _chat_unread_prompt_count > 0:
+        unread_suffix = " (%d new)" % _chat_unread_prompt_count
+    settings_btn_chat.text = "Chat: %s%s" % [("Open" if _chat_window_open else "Closed"), unread_suffix]
     if settings_floor_slider != null:
         settings_floor_slider.set_value_no_signal(_desktop_floor_offset_adjust)
     if settings_floor_value != null:
@@ -1044,10 +1075,14 @@ func _format_floor_adjust_text(value: float) -> String:
     return "%s%d px" % [sign, rounded]
 
 
-func _buddy_say(line: String) -> void:
+func _buddy_say(line: String, source_kind: String = "") -> void:
     if line == "":
         return
+    line = _normalize_buddy_reply(line)
     _chat_turn_buddy_count += 1
+    if not _chat_window_open and (source_kind == "support" or source_kind == "world"):
+        _chat_unread_prompt_count += 1
+        _refresh_settings_menu()
     _update_balloon_position()
     chat_balloon.show_text(line)
     _append_chat_line("Buddy", line, "#F4E9CF")
@@ -1056,10 +1091,21 @@ func _buddy_say(line: String) -> void:
 func _append_chat_line(speaker: String, text: String, color_hex: String) -> void:
     if chat_log == null:
         return
+    var now_unix := int(Time.get_unix_time_from_system())
+    if _chat_last_line_unix > 0 and now_unix - _chat_last_line_unix >= CHAT_SEPARATOR_IDLE_SECONDS:
+        chat_log.append_text("[color=#6A7D8F]---------- session pause ----------[/color]\n")
+    _chat_last_line_unix = now_unix
     var safe_speaker := speaker.replace("[", "").replace("]", "")
     var safe_text := text.replace("[", "\\[").replace("]", "\\]")
     var row := "[color=%s][b]%s:[/b][/color] %s\n" % [color_hex, safe_speaker, safe_text]
     chat_log.append_text(row)
+    var line_count := chat_log.get_line_count()
+    if line_count > CHAT_TRANSCRIPT_MAX_LINES:
+        var full_text := chat_log.text
+        var parts := full_text.split("\n")
+        var keep_from: int = maxi(0, parts.size() - CHAT_TRANSCRIPT_MAX_LINES)
+        var trimmed := "\n".join(parts.slice(keep_from, parts.size()))
+        chat_log.text = trimmed
     chat_log.scroll_to_line(chat_log.get_line_count())
 
 
@@ -1072,6 +1118,7 @@ func _send_chat_input() -> void:
     chat_input.text = ""
     _chat_turn_user_count += 1
     _append_chat_line("You", raw, "#9FD9FF")
+    _capture_chat_memory(raw)
     AppState.record_interaction("chat_reply")
     _productivity.note_user_activity(int(Time.get_unix_time_from_system()))
 
@@ -1090,34 +1137,38 @@ func _generate_chat_reply(user_text: String) -> String:
     var mood := str(snap.get("mood", "calm"))
     var bond_level := int(snap.get("bond_level", 1))
     var world := AppState.get_world_snapshot()
+    var tone := _tone_prefix(mood, bond_level)
 
     if msg.find("hello") >= 0 or msg.find("hi") >= 0 or msg.find("hey") >= 0:
-        return "Hey. I am here with you."
+        return "%sHey. I am here with you." % tone
     if msg.find("help") >= 0:
-        return "I can do quick things: rewards (F11), world prompts (F12), and mode toggle (F5)."
+        return "%sI can do quick things: rewards (F11), world prompts (F12), and mode toggle (F5)." % tone
     if msg.find("quest") >= 0 or msg.find("world") >= 0:
         var pending_q := str(world.get("pending_quest_id", ""))
         var pending_e := str(world.get("pending_encounter_id", ""))
         if pending_q != "" or pending_e != "":
-            return "We have something pending. Press F12 and we can resolve it."
-        return "No pending quest right now. I can ping one when events roll."
+            return "%sWe have something pending. Press F12 and we can resolve it." % tone
+        return "%sNo pending quest right now. I can ping one when events roll." % tone
     if msg.find("reward") >= 0 or msg.find("box") >= 0:
-        return "Open a reward box with F11 and I will call out what we get."
+        return "%sOpen a reward box with F11 and I will call out what we get." % tone
     if msg.find("sleep") >= 0 or msg.find("tired") >= 0:
-        return "If you want quiet mode, right-click me to sleep and I will keep calm."
+        return "%sIf you want quiet mode, right-click me to sleep and I will keep calm." % tone
     if msg.find("mode") >= 0 or msg.find("home") >= 0 or msg.find("overlay") >= 0:
         var home_mode := str(world.get("home_mode", "overlay"))
-        return "Current mode is %s. Press F5 to switch." % home_mode
+        return "%sCurrent mode is %s. Press F5 to switch." % [tone, home_mode]
     if msg.find("thanks") >= 0 or msg.find("thank you") >= 0:
-        return "Always. Bond level is %d and climbing." % bond_level
+        return "%sAlways. Bond level is %d and climbing." % [tone, bond_level]
+    if _should_ask_follow_up(msg):
+        _chat_last_followup_turn = _chat_turn_user_count
+        return "%sCan you tell me a bit more so I can help better?" % tone
 
     if mood == "sleepy":
-        return "I am a bit sleepy, but I am still listening."
+        return "%sI am a bit sleepy, but I am still listening." % tone
     if mood == "curious":
-        return "Tell me more. I am curious."
+        return "%sTell me more. I am curious." % tone
     if mood == "happy":
-        return "Nice. I like chatting with you."
-    return "Got it. Want to do rewards, quests, or just hang out?"
+        return "%sNice. I like chatting with you." % tone
+    return "%sGot it. Want to do rewards, quests, or just hang out?" % tone
 
 
 func _execute_resolved_chat(raw_text: String, resolved: Dictionary) -> Dictionary:
@@ -1155,7 +1206,7 @@ func _execute_chat_command(command: String, params: Dictionary) -> Dictionary:
         return _action_result(
             true,
             "command.help",
-            "Commands: /help /status /pending /mode home|overlay /reward /world engage|skip|complete /quiet lenient|balanced|strict /freq low|normal|high /chat close",
+            "Commands: /help /status /pending /mode home|overlay /reward /world engage|skip|complete /quiet lenient|balanced|strict /freq low|normal|high /chat close|clear [confirm]|text m|l /memory /remember <note> /forget <id> [confirm]",
             "ok"
         )
     if command == "status":
@@ -1209,9 +1260,204 @@ func _execute_chat_command(command: String, params: Dictionary) -> Dictionary:
             _chat_window_open = false
             _layout_chat_window()
             return _action_result(true, "command.chat", "Chat window closed.", "ok")
+        if action == "clear":
+            var confirm := bool(params.get("confirm", false))
+            if not confirm:
+                return _action_result(false, "command.chat", "Confirm with /chat clear confirm", "confirm_required")
+            if chat_log != null:
+                chat_log.clear()
+            return _action_result(true, "command.chat", "Chat transcript cleared.", "ok")
+        if action == "text":
+            var size := str(params.get("size", "m"))
+            AppState.settings["chatTextSize"] = size
+            AppState.flush()
+            _apply_chat_text_size()
+            return _action_result(true, "command.chat", "Chat text size set to %s." % size.to_upper(), "ok")
         return _action_result(false, "command.chat", "Unknown chat action.", "invalid_arg")
+    if command == "memory":
+        return _action_result(true, "command.memory", _build_memory_summary(), "ok")
+    if command == "remember":
+        var note := str(params.get("note", "")).strip_edges()
+        if note == "":
+            return _action_result(false, "command.remember", "Missing note text. Use /remember <note>", "missing_arg")
+        return _remember_note(note)
+    if command == "forget":
+        var note_id := int(params.get("id", -1))
+        var confirm := bool(params.get("confirm", false))
+        return _forget_note(note_id, confirm)
 
     return _action_result(false, "command.%s" % command, "Unsupported command.", "unsupported_command")
+
+
+func _tone_prefix(mood: String, bond_level: int) -> String:
+    var bond_band := 0
+    if bond_level >= 12:
+        bond_band = 2
+    elif bond_level >= 6:
+        bond_band = 1
+    if mood == "sleepy":
+        return ["", "Hey... ", "Hey friend... "][bond_band]
+    if mood == "happy":
+        return ["", "Nice! ", "Nice! I am glad you are here. "][bond_band]
+    if mood == "curious":
+        return ["", "Hmm. ", "Hmm, tell me more. "][bond_band]
+    if mood == "frustrated":
+        return ["", "Okay. ", "Okay, we can handle this. "][bond_band]
+    if mood == "calm":
+        return ["", "Alright. ", "Alright, teammate. "][bond_band]
+    return ""
+
+
+func _should_ask_follow_up(msg: String) -> bool:
+    var compact := msg.strip_edges()
+    if compact == "":
+        return false
+    if compact.begins_with("/"):
+        return false
+    if _chat_turn_user_count - _chat_last_followup_turn < CHAT_FOLLOW_UP_MIN_TURNS:
+        return false
+    var noisy_keywords := [
+        "reward",
+        "world",
+        "quest",
+        "mode",
+        "help",
+        "quiet",
+        "freq",
+        "sleep",
+        "tired",
+    ]
+    for key in noisy_keywords:
+        if compact.find(key) >= 0:
+            return false
+    var words := compact.split(" ", false)
+    return words.size() <= 3
+
+
+func _normalize_buddy_reply(line: String) -> String:
+    var normalized := line.strip_edges().to_lower()
+    if normalized == "":
+        return line
+    if _chat_recent_buddy_norm_lines.has(normalized):
+        line = _rewrite_repetitive_reply(line)
+        normalized = line.strip_edges().to_lower()
+    _chat_recent_buddy_norm_lines.append(normalized)
+    if _chat_recent_buddy_norm_lines.size() > CHAT_RECENT_REPLY_MAX:
+        _chat_recent_buddy_norm_lines.remove_at(0)
+    return line
+
+
+func _rewrite_repetitive_reply(line: String) -> String:
+    if line.find("?") >= 0:
+        return "Let me rephrase: %s" % line
+    if line.find("Press F") >= 0:
+        return "%s (shortcut reminder)" % line
+    return "%s Let us keep going." % line
+
+
+func _capture_chat_memory(raw_text: String) -> void:
+    var tags := _extract_memory_tags(raw_text)
+    for tag in tags:
+        var count := int(_chat_memory_tag_counts.get(tag, 0))
+        _chat_memory_tag_counts[tag] = count + 1
+    _chat_memory_turn_tags.append(
+        {
+            "turn": _chat_turn_user_count,
+            "text": raw_text.strip_edges(),
+            "tags": tags,
+            "ts": int(Time.get_unix_time_from_system()),
+        }
+    )
+    if _chat_memory_turn_tags.size() > 40:
+        _chat_memory_turn_tags.remove_at(0)
+
+
+func _extract_memory_tags(raw_text: String) -> Array:
+    var msg := raw_text.to_lower()
+    var tags: Array = []
+    var rules := {
+        "goal": ["plan", "goal", "next", "later", "todo"],
+        "mood": ["tired", "stressed", "happy", "sad", "upset", "excited"],
+        "task": ["work", "task", "finish", "start", "focus", "meeting"],
+        "reward": ["reward", "box", "crystal", "item", "loot"],
+        "world": ["quest", "encounter", "world", "village", "npc"],
+        "support": ["help", "remind", "check", "support"],
+    }
+    for tag_key in rules.keys():
+        var keys: Array = rules[tag_key]
+        for key_variant in keys:
+            var key := str(key_variant)
+            if msg.find(key) >= 0:
+                tags.append(tag_key)
+                break
+    return tags
+
+
+func _build_memory_summary() -> String:
+    var tags_summary := []
+    for key in _chat_memory_tag_counts.keys():
+        var value := int(_chat_memory_tag_counts.get(key, 0))
+        if value > 0:
+            tags_summary.append("%s:%d" % [key, value])
+    if tags_summary.is_empty():
+        tags_summary.append("none")
+    var notes_summary := []
+    for note_variant in _chat_memory_notes:
+        var note: Dictionary = note_variant
+        notes_summary.append("#%d %s" % [int(note.get("id", 0)), str(note.get("text", ""))])
+    if notes_summary.is_empty():
+        notes_summary.append("none")
+    return "Memory tags [%s] | notes [%s]" % [", ".join(tags_summary), " ; ".join(notes_summary)]
+
+
+func _remember_note(note_text: String) -> Dictionary:
+    if _chat_memory_notes.size() >= CHAT_MEMORY_MAX_NOTES:
+        return _action_result(false, "command.remember", "Memory notes are full (10). Forget one first.", "memory_full")
+    var note := {
+        "id": _chat_memory_next_note_id,
+        "text": note_text,
+        "ts": int(Time.get_unix_time_from_system()),
+    }
+    _chat_memory_notes.append(note)
+    _chat_memory_next_note_id += 1
+    return _action_result(true, "command.remember", "Saved note #%d." % int(note.get("id", 0)), "ok")
+
+
+func _forget_note(note_id: int, confirm: bool) -> Dictionary:
+    if note_id <= 0:
+        return _action_result(false, "command.forget", "Invalid note id.", "invalid_arg")
+    if not confirm:
+        _chat_memory_pending_forget_id = note_id
+        _chat_memory_pending_forget_until = int(Time.get_unix_time_from_system()) + 10
+        return _action_result(
+            false,
+            "command.forget",
+            "Confirm with /forget %d confirm (within 10s)." % note_id,
+            "confirm_required"
+        )
+    var now_unix := int(Time.get_unix_time_from_system())
+    if _chat_memory_pending_forget_id != note_id or now_unix > _chat_memory_pending_forget_until:
+        return _action_result(false, "command.forget", "Forget confirmation expired. Run /forget <id> again.", "confirm_expired")
+    for i in range(_chat_memory_notes.size()):
+        var note: Dictionary = _chat_memory_notes[i]
+        if int(note.get("id", -1)) == note_id:
+            _chat_memory_notes.remove_at(i)
+            _chat_memory_pending_forget_id = -1
+            _chat_memory_pending_forget_until = 0
+            return _action_result(true, "command.forget", "Forgot note #%d." % note_id, "ok")
+    return _action_result(false, "command.forget", "Note not found.", "missing_note")
+
+
+func _apply_chat_text_size() -> void:
+    if chat_log == null:
+        return
+    var mode := str(AppState.settings.get("chatTextSize", "m")).to_lower()
+    var size := CHAT_FONT_SIZE_L if mode == "l" else CHAT_FONT_SIZE_M
+    chat_log.add_theme_font_size_override("normal_font_size", size)
+    if chat_input != null:
+        chat_input.add_theme_font_size_override("font_size", size)
+    if chat_send != null:
+        chat_send.add_theme_font_size_override("font_size", size)
 
 
 func _action_result(ok: bool, action_id: String, message: String, reason_code: String) -> Dictionary:
@@ -2369,7 +2615,7 @@ func _show_auto_prompt(line: String, source_kind: String) -> bool:
         _manual_verification_report.record_prompt_metric(source_kind, "suppressed")
         return false
     _update_balloon_position()
-    _buddy_say(line)
+    _buddy_say(line, source_kind)
     _last_auto_prompt_unix = now_unix
     _last_auto_prompt_by_source[source_kind] = now_unix
     _prompt_cadence.note_emit(now_unix, source_kind)

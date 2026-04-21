@@ -1,6 +1,19 @@
 extends RefCounted
 
-const SUPPORTED_COMMANDS := ["help", "status", "pending", "mode", "reward", "world", "quiet", "freq", "chat"]
+const SUPPORTED_COMMANDS := [
+	"help",
+	"status",
+	"pending",
+	"mode",
+	"reward",
+	"world",
+	"quiet",
+	"freq",
+	"chat",
+	"memory",
+	"remember",
+	"forget",
+]
 
 
 func resolve(input_text: String) -> Dictionary:
@@ -42,7 +55,7 @@ func _resolve_slash(raw: String) -> Dictionary:
 
 
 func _validate_command(command: String, args: Array) -> Dictionary:
-	if command in ["help", "status", "pending", "reward"]:
+	if command in ["help", "status", "pending", "reward", "memory"]:
 		if not args.is_empty():
 			return _result(false, "command", command, {}, "unexpected_args", 1.0)
 		return _result(true, "command", command, {}, "ok", 1.0)
@@ -80,12 +93,48 @@ func _validate_command(command: String, args: Array) -> Dictionary:
 		return _result(true, "command", command, {"value": value}, "ok", 1.0)
 
 	if command == "chat":
-		if args.size() != 1:
+		if args.is_empty():
 			return _result(false, "command", command, {}, "missing_arg", 1.0)
 		var chat_action := str(args[0]).to_lower()
-		if chat_action not in ["close"]:
+		if chat_action == "close":
+			if args.size() != 1:
+				return _result(false, "command", command, {}, "unexpected_args", 1.0)
+			return _result(true, "command", command, {"action": chat_action}, "ok", 1.0)
+		if chat_action == "clear":
+			var confirm := args.size() > 1 and str(args[1]).to_lower() == "confirm"
+			if args.size() > 2:
+				return _result(false, "command", command, {}, "unexpected_args", 1.0)
+			return _result(true, "command", command, {"action": chat_action, "confirm": confirm}, "ok", 1.0)
+		if chat_action == "text":
+			if args.size() != 2:
+				return _result(false, "command", command, {}, "missing_arg", 1.0)
+			var text_size := str(args[1]).to_lower()
+			if text_size not in ["m", "l"]:
+				return _result(false, "command", command, {}, "invalid_arg", 1.0)
+			return _result(true, "command", command, {"action": chat_action, "size": text_size}, "ok", 1.0)
+		if chat_action not in ["close", "clear", "text"]:
 			return _result(false, "command", command, {}, "invalid_arg", 1.0)
-		return _result(true, "command", command, {"action": chat_action}, "ok", 1.0)
+		return _result(false, "command", command, {}, "invalid_arg", 1.0)
+
+	if command == "remember":
+		if args.is_empty():
+			return _result(false, "command", command, {}, "missing_arg", 1.0)
+		var note := " ".join(args).strip_edges()
+		if note == "":
+			return _result(false, "command", command, {}, "missing_arg", 1.0)
+		return _result(true, "command", command, {"note": note}, "ok", 1.0)
+
+	if command == "forget":
+		if args.is_empty():
+			return _result(false, "command", command, {}, "missing_arg", 1.0)
+		var id_text := str(args[0]).strip_edges()
+		if id_text == "" or not id_text.is_valid_int():
+			return _result(false, "command", command, {}, "invalid_arg", 1.0)
+		var note_id := int(id_text)
+		var confirm := false
+		if args.size() > 1:
+			confirm = str(args[1]).to_lower() == "confirm"
+		return _result(true, "command", command, {"id": note_id, "confirm": confirm}, "ok", 1.0)
 
 	return _result(false, "command", command, {}, "unsupported_command", 0.5)
 
@@ -105,6 +154,8 @@ func _resolve_alias(msg: String) -> Dictionary:
 		return _result(true, "command", "status", {}, "ok", 0.9)
 	if msg.find("what is pending") >= 0 or msg.find("pending tasks") >= 0:
 		return _result(true, "command", "pending", {}, "ok", 0.9)
+	if msg.find("show memory") >= 0 or msg.find("memory status") >= 0:
+		return _result(true, "command", "memory", {}, "ok", 0.9)
 	if msg.find("quiet strict") >= 0:
 		return _result(true, "command", "quiet", {"level": "strict"}, "ok", 0.9)
 	if msg.find("quiet balanced") >= 0:
