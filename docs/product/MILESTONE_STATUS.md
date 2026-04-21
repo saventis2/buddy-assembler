@@ -26,11 +26,11 @@ Updated: 2026-04-20 (world variety + prompt cadence guard)
 - [done] Exposed duplicate recycle totals in runtime telemetry/debug output
 - [done] Added `WorldEconomyFlowTest` coverage for quest/encounter/recycle loops
 
-## Plan 5 (Manual Desktop Verification Gate — 2026-04-20)
+## Plan 5 (Manual Desktop Verification Gate — 2026-04-21)
 
 - [in_progress] Automated pre-check gate passed via `run_headless_checks.ps1`
 - [in_progress] Manual checklist runbook/log created:
-  `PLAN5_MANUAL_VERIFICATION_LOG_2026-04-20.md`
+  `PLAN5_MANUAL_VERIFICATION_LOG_2026-04-21.md`
 - [done] Added guided manual checklist logger:
   `apps/runtime-godot/tests/run_manual_checklist.ps1`
 - [done] Added one-command Plan 5 gate runner:
@@ -43,7 +43,8 @@ Updated: 2026-04-20 (world variety + prompt cadence guard)
 - [done] Added explicit pack-cycle feedback text for `F9` actions
 - [done] Added vertical-slice `M` speech trigger and immediate bracket-duration validation path
 - [done] Switched vertical-slice key handling to `_input` for stronger hotkey reliability
-- [pending] Interactive desktop confirmation items in `SCENARIO_CHECKLIST.md`
+- [in_progress] Interactive desktop confirmation (TO track) now PASS=15 / FAIL=0 / PENDING=1
+- [pending] Remaining closure item: BE2 quiet-hours behavior confirmation
 
 ## Plan 6 (Companion Depth Foundation — 2026-04-20)
 

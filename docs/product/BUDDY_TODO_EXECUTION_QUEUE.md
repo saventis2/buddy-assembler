@@ -1,6 +1,6 @@
 # Buddy TODO Execution Queue
 
-Updated: 2026-04-20
+Updated: 2026-04-21
 Source of truth: `BUDDY_V1_BUILD_PLAN_MILESTONE_EXECUTION_2026-04-20.md`
 
 ## How We Use This
@@ -32,19 +32,19 @@ Tasks:
 - [x] Add guided manual checklist logger (`run_manual_checklist.ps1`)
 - [x] Add one-command gate runner (`run_plan5_gate.ps1`)
 - [x] Add runtime snapshot export (`F1`) with prompt-cadence evidence metrics
-- [ ] Run interactive desktop checklist from `tests/SCENARIO_CHECKLIST.md`
-- [ ] Verify monitor drag/clamp behavior in multi-monitor setup
-- [ ] Verify no intrusive prompt cadence in low/normal/high frequencies
-- [ ] Verify home/overlay toggle (`F5`) remains non-disruptive
-- [ ] Verify world prompt flows (`F12`, `Shift+F12`) feel clear
-- [ ] Capture issues and file them as follow-up todo items below
+- [x] Run interactive desktop checklist from `tests/SCENARIO_CHECKLIST.md` (TO track)
+- [x] Verify monitor drag/clamp behavior in multi-monitor setup
+- [x] Verify prompt/event cadence controls are verifiable (`F2/F7` + `/cadence`)
+- [x] Verify progression feedback visibility (Bond Lv/XP/Growth + unlock hint)
+- [x] Verify pack cycle evidence (`F9` slot x/y + telemetry pack id)
+- [ ] Close remaining pending checklist item: `BE2` quiet-hours behavior confirmation
 
 Done gate:
-- [ ] Checklist completed and logged with pass/fail notes
+- [ ] Checklist completed and logged with pass/fail notes (current: PASS=15, FAIL=0, PENDING=1)
 - [ ] Any blocking UX bugs are either fixed or explicitly deferred
 
 Current log:
-- `PLAN5_MANUAL_VERIFICATION_LOG_2026-04-20.md`
+- `PLAN5_MANUAL_VERIFICATION_LOG_2026-04-21.md`
 
 ### Plan 6: Companion Depth Foundation (Milestone 5 from V1 plan)
 
@@ -105,7 +105,8 @@ Verification:
 - [x] Add explicit `F9` pack-cycle chat feedback to confirm pack switching
 - [x] Improve vertical-slice manual checks: `M` speech trigger + bracket-duration immediate validation
 - [x] Improve vertical-slice key capture reliability for emote hotkeys
-- [ ] Re-run Plan 5 after gate-runner fix and capture updated log
+- [x] Re-run Plan 5 after gate-runner fix and capture updated log
+- [ ] Re-run Plan 5 once more and resolve `BE2` pending to close gate
 
 ## Verification Gate (Run After Each Plan)
 
