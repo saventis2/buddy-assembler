@@ -29,7 +29,7 @@ Updated: 2026-04-20 (world variety + prompt cadence guard)
 ## Plan 5 (Manual Desktop Verification Gate — 2026-04-21)
 
 - [in_progress] Automated pre-check gate passed via `run_headless_checks.ps1`
-- [in_progress] Manual checklist runbook/log created:
+- [done] Manual checklist runbook/log created:
   `PLAN5_MANUAL_VERIFICATION_LOG_2026-04-21.md`
 - [done] Added guided manual checklist logger:
   `apps/runtime-godot/tests/run_manual_checklist.ps1`
@@ -43,8 +43,8 @@ Updated: 2026-04-20 (world variety + prompt cadence guard)
 - [done] Added explicit pack-cycle feedback text for `F9` actions
 - [done] Added vertical-slice `M` speech trigger and immediate bracket-duration validation path
 - [done] Switched vertical-slice key handling to `_input` for stronger hotkey reliability
-- [in_progress] Interactive desktop confirmation (TO track) now PASS=15 / FAIL=0 / PENDING=1
-- [pending] Remaining closure item: BE2 quiet-hours behavior confirmation
+- [done] Interactive desktop confirmation (TO track) PASS=16 / FAIL=0 / PENDING=0
+- [done] Plan 5 gate status: PASS
 
 ## Plan 6 (Companion Depth Foundation — 2026-04-20)
 
@@ -57,7 +57,7 @@ Updated: 2026-04-20 (world variety + prompt cadence guard)
 - [done] Added prompt-frequency setting + auto-prompt cadence guard with deferred world prompt display
 - [done] Added `PromptCadenceTest` and wired it into headless checks
 - [done] Added hourly productivity-hint cap and regression coverage for non-intrusive cadence
-- [pending] Final manual UX pass to confirm hint cadence is non-intrusive in desktop usage
+- [done] Final manual UX pass confirms hint cadence is non-intrusive in desktop usage
 
 ## Plan 7 (Economy Tuning Pass 2 — 2026-04-20)
 

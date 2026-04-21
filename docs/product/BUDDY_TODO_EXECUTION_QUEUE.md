@@ -1,6 +1,6 @@
 # Buddy TODO Execution Queue
 
-Updated: 2026-04-21
+Updated: 2026-04-21 (Plan 5 gate passed)
 Source of truth: `BUDDY_V1_BUILD_PLAN_MILESTONE_EXECUTION_2026-04-20.md`
 
 ## How We Use This
@@ -25,7 +25,7 @@ Source of truth: `BUDDY_V1_BUILD_PLAN_MILESTONE_EXECUTION_2026-04-20.md`
 
 ### Plan 5: Manual Desktop Verification Gate (Required Before Deeper Features)
 
-Status: `in_progress`
+Status: `done`
 
 Tasks:
 - [x] Run automated pre-check and create manual verification log
@@ -37,18 +37,18 @@ Tasks:
 - [x] Verify prompt/event cadence controls are verifiable (`F2/F7` + `/cadence`)
 - [x] Verify progression feedback visibility (Bond Lv/XP/Growth + unlock hint)
 - [x] Verify pack cycle evidence (`F9` slot x/y + telemetry pack id)
-- [ ] Close remaining pending checklist item: `BE2` quiet-hours behavior confirmation
+- [x] Close remaining pending checklist item: `BE2` quiet-hours behavior confirmation
 
 Done gate:
-- [ ] Checklist completed and logged with pass/fail notes (current: PASS=15, FAIL=0, PENDING=1)
-- [ ] Any blocking UX bugs are either fixed or explicitly deferred
+- [x] Checklist completed and logged with pass/fail notes (PASS=16, FAIL=0, PENDING=0, Gate=PASS)
+- [x] Any blocking UX bugs are either fixed or explicitly deferred
 
 Current log:
 - `PLAN5_MANUAL_VERIFICATION_LOG_2026-04-21.md`
 
 ### Plan 6: Companion Depth Foundation (Milestone 5 from V1 plan)
 
-Status: `in_progress`
+Status: `done`
 
 Tasks:
 - [x] Add stronger real-activity reaction weighting (focus/idle/late sessions)
@@ -61,7 +61,7 @@ Tasks:
 - [x] Add hourly productivity-hint caps by interaction intensity (`cozy/balanced/deep`)
 
 Done gate:
-- [ ] User activity reactions are visible but non-intrusive (manual desktop confirm)
+- [x] User activity reactions are visible but non-intrusive (manual desktop confirm)
 - [x] Quiet settings consistently suppress high-frequency prompts
 - [x] Headless checks pass with new tests
 
@@ -106,7 +106,7 @@ Verification:
 - [x] Improve vertical-slice manual checks: `M` speech trigger + bracket-duration immediate validation
 - [x] Improve vertical-slice key capture reliability for emote hotkeys
 - [x] Re-run Plan 5 after gate-runner fix and capture updated log
-- [ ] Re-run Plan 5 once more and resolve `BE2` pending to close gate
+- [x] Re-run Plan 5 once more and resolve `BE2` pending to close gate
 
 ## Verification Gate (Run After Each Plan)
 
