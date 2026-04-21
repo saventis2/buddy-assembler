@@ -118,6 +118,10 @@ text = "Restart Runtime"
 layout_mode = 2
 text = "Quit Runtime"
 
+[node name="BtnChat" type="Button" parent="SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid"]
+layout_mode = 2
+text = "Open Chat"
+
 [node name="FloorAdjustBox" type="VBoxContainer" parent="SettingsWindow/MarginContainer/SettingsVBox"]
 layout_mode = 2
 
@@ -143,6 +147,51 @@ text = "+0 px"
 horizontal_alignment = 2
 
 [node name="WelcomeLayer" type="CanvasLayer" parent="."]
+
+[node name="ChatWindow" type="Window" parent="."]
+visible = false
+title = "Buddy Chat"
+position = Vector2i(220, 140)
+size = Vector2i(420, 320)
+min_size = Vector2i(320, 220)
+always_on_top = true
+unresizable = false
+wrap_controls = true
+
+[node name="MarginContainer" type="MarginContainer" parent="ChatWindow"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 8.0
+offset_top = 8.0
+offset_right = -8.0
+offset_bottom = -8.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="ChatVBox" type="VBoxContainer" parent="ChatWindow/MarginContainer"]
+layout_mode = 2
+
+[node name="ChatLog" type="RichTextLabel" parent="ChatWindow/MarginContainer/ChatVBox"]
+layout_mode = 2
+bbcode_enabled = true
+scroll_active = true
+fit_content = false
+size_flags_vertical = 3
+theme_override_font_sizes/font_size = 13
+text = ""
+
+[node name="ChatInputRow" type="HBoxContainer" parent="ChatWindow/MarginContainer/ChatVBox"]
+layout_mode = 2
+
+[node name="ChatInput" type="LineEdit" parent="ChatWindow/MarginContainer/ChatVBox/ChatInputRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "Type a reply..."
+
+[node name="ChatSend" type="Button" parent="ChatWindow/MarginContainer/ChatVBox/ChatInputRow"]
+layout_mode = 2
+text = "Send"
 
 [node name="WelcomeLabel" type="Label" parent="WelcomeLayer"]
 visible = false

@@ -73,8 +73,13 @@ const ManualVerificationReport = preload("res://scripts/utility/manual_verificat
 @onready var settings_btn_telemetry: Button = $SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid/BtnTelemetry
 @onready var settings_btn_restart: Button = $SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid/BtnRestart
 @onready var settings_btn_quit: Button = $SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid/BtnQuit
+@onready var settings_btn_chat: Button = $SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid/BtnChat
 @onready var settings_floor_slider: HSlider = $SettingsWindow/MarginContainer/SettingsVBox/FloorAdjustBox/FloorAdjustRow/FloorAdjustSlider
 @onready var settings_floor_value: Label = $SettingsWindow/MarginContainer/SettingsVBox/FloorAdjustBox/FloorAdjustRow/FloorAdjustValue
+@onready var chat_window: Window = $ChatWindow
+@onready var chat_log: RichTextLabel = $ChatWindow/MarginContainer/ChatVBox/ChatLog
+@onready var chat_input: LineEdit = $ChatWindow/MarginContainer/ChatVBox/ChatInputRow/ChatInput
+@onready var chat_send: Button = $ChatWindow/MarginContainer/ChatVBox/ChatInputRow/ChatSend
 @onready var chat_balloon: Node2D = $ChatBalloon
 @onready var welcome_label: Label = $WelcomeLayer/WelcomeLabel
 
@@ -129,6 +134,7 @@ var _face_texture_cache: Dictionary = {}
 var _active_emote_semantic := "default"
 var _active_face_variant := "default"
 var _settings_menu_open := false
+var _chat_window_open := false
 var _manual_emote_until_unix := 0
 var _last_face_texture_path := ""
 var _roam_speed_px_per_sec := DEFAULT_ROAM_SPEED_PX_PER_SEC
@@ -167,6 +173,7 @@ func _ready() -> void:
     _productivity.note_session_reset(int(Time.get_unix_time_from_system()))
     telemetry_label.visible = false
     _configure_settings_window()
+    _configure_chat_window()
     _refresh_telemetry()
     if AppState.is_first_run():
         _show_welcome_once()
@@ -357,11 +364,38 @@ func _configure_settings_window() -> void:
     settings_btn_quit.pressed.connect(func() -> void:
         _quit_runtime()
     )
+    settings_btn_chat.pressed.connect(func() -> void:
+        _toggle_chat_window()
+    )
     if settings_floor_slider != null:
         settings_floor_slider.value_changed.connect(func(value: float) -> void:
             _set_floor_offset_adjust(value)
         )
         settings_floor_slider.set_value_no_signal(_desktop_floor_offset_adjust)
+
+
+func _configure_chat_window() -> void:
+    if chat_window == null:
+        return
+    chat_window.transient = false
+    chat_window.exclusive = false
+    chat_window.borderless = false
+    chat_window.visible = false
+    chat_window.always_on_top = true
+    chat_window.unresizable = false
+    chat_window.title = "Buddy Chat"
+    chat_window.close_requested.connect(func() -> void:
+        chat_window.hide()
+        _chat_window_open = false
+    )
+    if chat_send != null:
+        chat_send.pressed.connect(func() -> void:
+            _send_chat_input()
+        )
+    if chat_input != null:
+        chat_input.text_submitted.connect(func(_submitted: String) -> void:
+            _send_chat_input()
+        )
 
 
 func _draw() -> void:
@@ -575,7 +609,7 @@ func _cycle_event_frequency() -> void:
     AppState.settings["eventFrequency"] = values[index]
     AppState.flush()
     _update_balloon_position()
-    chat_balloon.show_text("Event frequency: %s (Shift+F7 demo prompt)" % values[index])
+    _buddy_say("Event frequency: %s (Shift+F7 demo prompt)" % values[index])
     _refresh_telemetry()
 
 
@@ -589,7 +623,7 @@ func _cycle_prompt_frequency() -> void:
     AppState.settings["promptFrequency"] = values[index]
     AppState.flush()
     _update_balloon_position()
-    chat_balloon.show_text("Prompt frequency: %s (Shift+F2 demo prompt)" % values[index])
+    _buddy_say("Prompt frequency: %s (Shift+F2 demo prompt)" % values[index])
     _refresh_telemetry()
 
 
@@ -603,7 +637,7 @@ func _cycle_interaction_intensity() -> void:
     AppState.settings["interactionIntensity"] = values[index]
     AppState.flush()
     _update_balloon_position()
-    chat_balloon.show_text("Interaction intensity: %s" % values[index])
+    _buddy_say("Interaction intensity: %s" % values[index])
     _refresh_telemetry()
 
 
@@ -617,7 +651,7 @@ func _cycle_quiet_strictness() -> void:
     AppState.settings["quietModeStrictness"] = values[index]
     AppState.flush()
     _update_balloon_position()
-    chat_balloon.show_text("Quiet strictness: %s" % values[index])
+    _buddy_say("Quiet strictness: %s" % values[index])
     _refresh_telemetry()
 
 
@@ -693,7 +727,7 @@ func _cycle_pack() -> void:
     var ids := ContentLoader.list_cycleable_pack_ids()
     if ids.is_empty():
         _update_balloon_position()
-        chat_balloon.show_text("No valid content packs found.")
+        _buddy_say("No valid content packs found.")
         return
     if ids.size() == 1:
         var only_pack := str(ids[0])
@@ -701,7 +735,7 @@ func _cycle_pack() -> void:
         var only_manifest_variant = loaded_only.get("manifest", null)
         if typeof(only_manifest_variant) != TYPE_DICTIONARY:
             _update_balloon_position()
-            chat_balloon.show_text("Pack load failed: %s" % only_pack)
+            _buddy_say("Pack load failed: %s" % only_pack)
             return
         _active_pack_id = str(loaded_only.get("pack_id", only_pack))
         _active_manifest = only_manifest_variant as Dictionary
@@ -713,7 +747,7 @@ func _cycle_pack() -> void:
         _load_visual_assets(_active_pack_id, _active_manifest)
         AppState.apply_loaded_pack(_active_pack_id, _active_manifest)
         _update_balloon_position()
-        chat_balloon.show_text("Only valid pack available: %s" % _active_pack_id)
+        _buddy_say("Only valid pack available: %s" % _active_pack_id)
         _refresh_telemetry()
         return
 
@@ -729,7 +763,7 @@ func _cycle_pack() -> void:
     var manifest_variant = loaded.get("manifest", null)
     if typeof(manifest_variant) != TYPE_DICTIONARY:
         _update_balloon_position()
-        chat_balloon.show_text("Pack load failed: %s" % next_pack)
+        _buddy_say("Pack load failed: %s" % next_pack)
         return
 
     _active_pack_id = str(loaded.get("pack_id", next_pack))
@@ -742,7 +776,7 @@ func _cycle_pack() -> void:
     _load_visual_assets(_active_pack_id, _active_manifest)
     AppState.apply_loaded_pack(_active_pack_id, _active_manifest)
     _update_balloon_position()
-    chat_balloon.show_text(
+    _buddy_say(
         "Active pack: %s (%d available; visual deltas can be subtle)" % [_active_pack_id, ids.size()]
     )
     _refresh_telemetry()
@@ -836,6 +870,13 @@ func _toggle_settings_menu() -> void:
     _refresh_settings_menu()
 
 
+func _toggle_chat_window() -> void:
+    _chat_window_open = not _chat_window_open
+    _layout_chat_window()
+    if _chat_window_open and chat_input != null:
+        chat_input.grab_focus()
+
+
 func _layout_settings_window() -> void:
     if settings_window == null:
         return
@@ -862,6 +903,29 @@ func _layout_settings_window() -> void:
         settings_window.grab_focus()
     else:
         settings_window.hide()
+
+
+func _layout_chat_window() -> void:
+    if chat_window == null:
+        return
+    if _chat_window_open:
+        var main_screen := DisplayServer.window_get_current_screen()
+        var usable := DisplayServer.screen_get_usable_rect(main_screen)
+        var target_size := chat_window.size
+        target_size.x = clampi(target_size.x, 320, maxi(320, int(usable.size.x * 0.6)))
+        target_size.y = clampi(target_size.y, 220, maxi(220, int(usable.size.y * 0.6)))
+        chat_window.size = target_size
+        var main_pos: Vector2i = DisplayServer.window_get_position()
+        var target_pos := main_pos + Vector2i(72, 72)
+        var max_x := usable.position.x + maxi(0, usable.size.x - target_size.x)
+        var max_y := usable.position.y + maxi(0, usable.size.y - target_size.y)
+        target_pos.x = clampi(target_pos.x, usable.position.x, max_x)
+        target_pos.y = clampi(target_pos.y, usable.position.y, max_y)
+        chat_window.position = target_pos
+        chat_window.show()
+        chat_window.grab_focus()
+    else:
+        chat_window.hide()
 
 
 func _refresh_settings_menu() -> void:
@@ -925,6 +989,7 @@ func _refresh_settings_menu() -> void:
     settings_btn_telemetry.text = "Telemetry (F6): %s" % ("on" if _telemetry_enabled else "off")
     settings_btn_restart.text = "Restart Runtime"
     settings_btn_quit.text = "Quit Runtime"
+    settings_btn_chat.text = "Chat: %s" % ("Open" if _chat_window_open else "Closed")
     if settings_floor_slider != null:
         settings_floor_slider.set_value_no_signal(_desktop_floor_offset_adjust)
     if settings_floor_value != null:
@@ -955,6 +1020,75 @@ func _format_floor_adjust_text(value: float) -> String:
     var rounded := int(roundf(value))
     var sign := "+" if rounded >= 0 else ""
     return "%s%d px" % [sign, rounded]
+
+
+func _buddy_say(line: String) -> void:
+    if line == "":
+        return
+    _update_balloon_position()
+    chat_balloon.show_text(line)
+    _append_chat_line("Buddy", line, "#F4E9CF")
+
+
+func _append_chat_line(speaker: String, text: String, color_hex: String) -> void:
+    if chat_log == null:
+        return
+    var safe_speaker := speaker.replace("[", "").replace("]", "")
+    var safe_text := text.replace("[", "\\[").replace("]", "\\]")
+    var row := "[color=%s][b]%s:[/b][/color] %s\n" % [color_hex, safe_speaker, safe_text]
+    chat_log.append_text(row)
+    chat_log.scroll_to_line(chat_log.get_line_count())
+
+
+func _send_chat_input() -> void:
+    if chat_input == null:
+        return
+    var raw := chat_input.text.strip_edges()
+    if raw == "":
+        return
+    chat_input.text = ""
+    _append_chat_line("You", raw, "#9FD9FF")
+    AppState.record_interaction("chat_reply")
+    _productivity.note_user_activity(int(Time.get_unix_time_from_system()))
+    var reply := _generate_chat_reply(raw)
+    _buddy_say(reply)
+    _refresh_telemetry()
+
+
+func _generate_chat_reply(user_text: String) -> String:
+    var msg := user_text.to_lower()
+    var snap := AppState.get_telemetry_snapshot()
+    var mood := str(snap.get("mood", "calm"))
+    var bond_level := int(snap.get("bond_level", 1))
+    var world := AppState.get_world_snapshot()
+
+    if msg.find("hello") >= 0 or msg.find("hi") >= 0 or msg.find("hey") >= 0:
+        return "Hey. I am here with you."
+    if msg.find("help") >= 0:
+        return "I can do quick things: rewards (F11), world prompts (F12), and mode toggle (F5)."
+    if msg.find("quest") >= 0 or msg.find("world") >= 0:
+        var pending_q := str(world.get("pending_quest_id", ""))
+        var pending_e := str(world.get("pending_encounter_id", ""))
+        if pending_q != "" or pending_e != "":
+            return "We have something pending. Press F12 and we can resolve it."
+        return "No pending quest right now. I can ping one when events roll."
+    if msg.find("reward") >= 0 or msg.find("box") >= 0:
+        return "Open a reward box with F11 and I will call out what we get."
+    if msg.find("sleep") >= 0 or msg.find("tired") >= 0:
+        return "If you want quiet mode, right-click me to sleep and I will keep calm."
+    if msg.find("mode") >= 0 or msg.find("home") >= 0 or msg.find("overlay") >= 0:
+        var home_mode := str(world.get("home_mode", "overlay"))
+        return "Current mode is %s. Press F5 to switch." % home_mode
+    if msg.find("thanks") >= 0 or msg.find("thank you") >= 0:
+        return "Always. Bond level is %d and climbing." % bond_level
+
+    if mood == "sleepy":
+        return "I am a bit sleepy, but I am still listening."
+    if mood == "curious":
+        return "Tell me more. I am curious."
+    if mood == "happy":
+        return "Nice. I like chatting with you."
+    return "Got it. Want to do rewards, quests, or just hang out?"
 
 
 func _restart_runtime() -> void:
@@ -1840,7 +1974,7 @@ func _maybe_show_bond_phrase() -> void:
     _bond_phrase_active = true
     _last_idle_phrase_unix = now_unix
     _update_balloon_position()
-    chat_balloon.show_text(phrase)
+    _buddy_say(phrase)
     await get_tree().create_timer(4.0).timeout
     chat_balloon.hide_bubble()
     _bond_phrase_active = false
@@ -1875,7 +2009,7 @@ func _show_while_away_report_once() -> void:
     if summary == "":
         return
     _update_balloon_position()
-    chat_balloon.show_text(summary)
+    _buddy_say(summary)
     await get_tree().create_timer(5.0).timeout
     chat_balloon.hide_bubble()
     AppState.clear_last_active_summary()
@@ -1890,7 +2024,7 @@ func _show_continuity_hint_once() -> void:
     if hint == "":
         return
     _update_balloon_position()
-    chat_balloon.show_text(hint)
+    _buddy_say(hint)
     await get_tree().create_timer(4.0).timeout
     chat_balloon.hide_bubble()
 
@@ -1899,7 +2033,7 @@ func _open_debug_reward_box() -> void:
     var box_ids := AppState.get_reward_box_ids()
     if box_ids.is_empty():
         _update_balloon_position()
-        chat_balloon.show_text("No reward boxes configured.")
+        _buddy_say("No reward boxes configured.")
         return
     var preferred := "cozy_box" if box_ids.has("cozy_box") else str(box_ids[0])
     var result := AppState.open_reward_box(preferred)
@@ -1909,15 +2043,15 @@ func _open_debug_reward_box() -> void:
         var item_rarity := str(result.get("item_rarity", "common"))
         if bool(result.get("duplicate", false)):
             var recycle := int(result.get("recycle_crystals", 0))
-            chat_balloon.show_text(
+            _buddy_say(
                 "Opened %s: %s [%s] (duplicate +%d crystals)"
                 % [preferred, item_name, item_rarity, recycle]
             )
         else:
-            chat_balloon.show_text("Opened %s: %s [%s]" % [preferred, item_name, item_rarity])
+            _buddy_say("Opened %s: %s [%s]" % [preferred, item_name, item_rarity])
     else:
         var reason := str(result.get("reason", "unavailable"))
-        chat_balloon.show_text("Could not open %s (%s)" % [preferred, reason])
+        _buddy_say("Could not open %s (%s)" % [preferred, reason])
 
 
 func _show_world_prompt(prompt: Dictionary) -> bool:
@@ -1949,9 +2083,9 @@ func _resolve_world_prompt(engage_encounter: bool) -> void:
             var reward_text := "+%d crystals" % crystals
             if item_name != "":
                 reward_text += " + %s" % item_name
-            chat_balloon.show_text("%s encounter %s: %s" % [npc, action_word, reward_text])
+            _buddy_say("%s encounter %s: %s" % [npc, action_word, reward_text])
         else:
-            chat_balloon.show_text("No encounter to resolve.")
+            _buddy_say("No encounter to resolve.")
         _refresh_telemetry()
         return
 
@@ -1964,13 +2098,13 @@ func _resolve_world_prompt(engage_encounter: bool) -> void:
             var item := str(quest_result.get("item_name", ""))
             if item != "":
                 reward_line += " + %s" % item
-            chat_balloon.show_text("%s quest complete: %s" % [npc_name, reward_line])
+            _buddy_say("%s quest complete: %s" % [npc_name, reward_line])
         else:
-            chat_balloon.show_text("No quest to complete.")
+            _buddy_say("No quest to complete.")
         _refresh_telemetry()
         return
 
-    chat_balloon.show_text("No pending world prompt.")
+    _buddy_say("No pending world prompt.")
 
 
 func _cycle_home_mode() -> void:
@@ -1991,9 +2125,9 @@ func _cycle_home_mode() -> void:
         var suffix := ""
         if wall_decor != "":
             suffix = " wall decor: %s" % wall_decor
-        chat_balloon.show_text("Home mode active (%s)%s" % [home_name, suffix])
+        _buddy_say("Home mode active (%s)%s" % [home_name, suffix])
     else:
-        chat_balloon.show_text("Overlay mode active.")
+        _buddy_say("Overlay mode active.")
     _refresh_telemetry()
 
 
@@ -2042,7 +2176,7 @@ func _show_progress_feedback(before: Dictionary, after: Dictionary) -> void:
     if after_unlocks > before_unlocks:
         msg += " unlock +%d" % (after_unlocks - before_unlocks)
     _update_balloon_position()
-    chat_balloon.show_text(msg)
+    _buddy_say(msg)
 
 
 func _show_auto_prompt(line: String, source_kind: String) -> bool:
@@ -2060,7 +2194,7 @@ func _show_auto_prompt(line: String, source_kind: String) -> bool:
         _manual_verification_report.record_prompt_metric(source_kind, "suppressed")
         return false
     _update_balloon_position()
-    chat_balloon.show_text(line)
+    _buddy_say(line)
     _last_auto_prompt_unix = now_unix
     _manual_verification_report.record_prompt_metric(source_kind, "shown")
     return true
@@ -2097,7 +2231,7 @@ func _export_manual_verification_snapshot() -> void:
     var mkdir_code := DirAccess.make_dir_recursive_absolute(absolute_dir)
     if mkdir_code != OK:
         _update_balloon_position()
-        chat_balloon.show_text("Snapshot export failed (mkdir).")
+        _buddy_say("Snapshot export failed (mkdir).")
         return
     var dt := Time.get_datetime_dict_from_unix_time(now_unix)
     var filename := "plan5_snapshot_%04d%02d%02d_%02d%02d%02d.json" % [
@@ -2112,9 +2246,9 @@ func _export_manual_verification_snapshot() -> void:
     var file := FileAccess.open(user_path, FileAccess.WRITE)
     if file == null:
         _update_balloon_position()
-        chat_balloon.show_text("Snapshot export failed (write).")
+        _buddy_say("Snapshot export failed (write).")
         return
     file.store_string(JSON.stringify(snapshot, "\t"))
     file.close()
     _update_balloon_position()
-    chat_balloon.show_text("Manual snapshot exported: %s" % user_path)
+    _buddy_say("Manual snapshot exported: %s" % user_path)
