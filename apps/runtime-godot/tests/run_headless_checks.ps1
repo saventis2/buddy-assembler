@@ -112,6 +112,16 @@ if ($promptCadenceCode -ne 0) {
 }
 Write-Host "Prompt cadence test PASSED."
 
+# --- Chat command router test ---
+Write-Host ""
+Write-Host "=== Chat command router test ==="
+$chatRouterCode = Invoke-GodotHeadless -ExtraArgs @("--scene", "res://tests/ChatCommandRouterTest.tscn") -Label "chat-command-router"
+if ($chatRouterCode -ne 0) {
+    Write-Host "Chat command router test FAILED (exit $chatRouterCode)"
+    exit $chatRouterCode
+}
+Write-Host "Chat command router test PASSED."
+
 # --- Manual verification report test ---
 Write-Host ""
 Write-Host "=== Manual verification report test ==="

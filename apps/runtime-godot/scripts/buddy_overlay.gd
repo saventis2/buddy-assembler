@@ -188,6 +188,8 @@ var _chat_unread_prompt_count := 0
 var _chat_cmd_latency_last_ms := 0
 var _chat_cmd_latency_total_ms := 0
 var _chat_cmd_latency_samples := 0
+var _settings_undo_snapshot := {}
+var _settings_undo_until_unix := 0
 
 
 func _ready() -> void:
@@ -1215,7 +1217,7 @@ func _execute_chat_command(command: String, params: Dictionary) -> Dictionary:
         return _action_result(
             true,
             "command.help",
-            "Commands: /help /status /pending /mode home|overlay /reward /world engage|skip|complete /quiet lenient|balanced|strict /freq low|normal|high /chat close|clear [confirm]|text m|l /memory /remember <note> /forget <id> [confirm] /cadence /debug chat /settings-check",
+            "Commands: /help /status /pending /mode home|overlay /reward /world engage|skip|complete /quiet lenient|balanced|strict /freq low|normal|high /chat close|clear [confirm]|text m|l /memory /remember <note> /forget <id> [confirm] /cadence /debug chat /settings-check /preset cozy|balanced|deep /settings reset [confirm]|undo",
             "ok"
         )
     if command == "status":
@@ -1303,6 +1305,17 @@ func _execute_chat_command(command: String, params: Dictionary) -> Dictionary:
         return _action_result(false, "command.debug", "Unknown debug area.", "invalid_arg")
     if command == "settings-check":
         return _action_result(true, "command.settings-check", _run_settings_check(), "ok")
+    if command == "preset":
+        var preset := str(params.get("preset", "balanced"))
+        return _apply_settings_preset(preset)
+    if command == "settings":
+        var settings_action := str(params.get("action", ""))
+        if settings_action == "reset":
+            var confirm := bool(params.get("confirm", false))
+            return _reset_settings_with_undo(confirm)
+        if settings_action == "undo":
+            return _undo_settings_reset()
+        return _action_result(false, "command.settings", "Unknown settings action.", "invalid_arg")
 
     return _action_result(false, "command.%s" % command, "Unsupported command.", "unsupported_command")
 
@@ -1528,6 +1541,7 @@ func _run_settings_check() -> String:
     var event_freq := str(AppState.settings.get("eventFrequency", "normal"))
     var quiet := str(AppState.settings.get("quietModeStrictness", "balanced"))
     var intensity := str(AppState.settings.get("interactionIntensity", "balanced"))
+    var chat_text_size := str(AppState.settings.get("chatTextSize", "m")).to_lower()
     if freq not in ["low", "normal", "high"]:
         issues.append("promptFrequency invalid")
     if event_freq not in ["low", "normal", "high"]:
@@ -1536,9 +1550,102 @@ func _run_settings_check() -> String:
         issues.append("quietModeStrictness invalid")
     if intensity not in ["cozy", "balanced", "deep"]:
         issues.append("interactionIntensity invalid")
+    if chat_text_size not in ["m", "l"]:
+        issues.append("chatTextSize invalid")
     if issues.is_empty():
         return "Settings check passed."
     return "Settings check warnings: %s" % ", ".join(issues)
+
+
+func _apply_settings_preset(preset: String) -> Dictionary:
+    var chosen := preset.to_lower()
+    var preset_values := {}
+    if chosen == "cozy":
+        preset_values = {
+            "eventFrequency": "low",
+            "promptFrequency": "low",
+            "interactionIntensity": "cozy",
+            "quietModeStrictness": "strict",
+        }
+    elif chosen == "deep":
+        preset_values = {
+            "eventFrequency": "high",
+            "promptFrequency": "high",
+            "interactionIntensity": "deep",
+            "quietModeStrictness": "lenient",
+        }
+    else:
+        chosen = "balanced"
+        preset_values = {
+            "eventFrequency": "normal",
+            "promptFrequency": "normal",
+            "interactionIntensity": "balanced",
+            "quietModeStrictness": "balanced",
+        }
+
+    _capture_settings_undo_snapshot()
+    for key in preset_values.keys():
+        AppState.settings[key] = preset_values[key]
+    AppState.flush()
+    _refresh_settings_menu()
+    _refresh_telemetry()
+    return _action_result(
+        true,
+        "command.preset",
+        "Preset applied: %s (use /settings undo within 10s)." % chosen,
+        "ok"
+    )
+
+
+func _reset_settings_with_undo(confirm: bool) -> Dictionary:
+    if not confirm:
+        return _action_result(false, "command.settings", "Confirm with /settings reset confirm", "confirm_required")
+    _capture_settings_undo_snapshot()
+    AppState.settings["eventFrequency"] = "normal"
+    AppState.settings["promptFrequency"] = "normal"
+    AppState.settings["interactionIntensity"] = "balanced"
+    AppState.settings["quietModeStrictness"] = "balanced"
+    AppState.settings["chatTextSize"] = "m"
+    AppState.flush()
+    _apply_chat_text_size()
+    _refresh_settings_menu()
+    _refresh_telemetry()
+    return _action_result(
+        true,
+        "command.settings",
+        "Settings reset to defaults (use /settings undo within 10s).",
+        "ok"
+    )
+
+
+func _undo_settings_reset() -> Dictionary:
+    var now_unix := int(Time.get_unix_time_from_system())
+    if _settings_undo_snapshot.is_empty():
+        return _action_result(false, "command.settings", "No settings undo snapshot available.", "missing_undo")
+    if now_unix > _settings_undo_until_unix:
+        _settings_undo_snapshot.clear()
+        _settings_undo_until_unix = 0
+        return _action_result(false, "command.settings", "Settings undo window expired.", "undo_expired")
+    for key in _settings_undo_snapshot.keys():
+        AppState.settings[key] = _settings_undo_snapshot[key]
+    AppState.flush()
+    _apply_chat_text_size()
+    _refresh_settings_menu()
+    _refresh_telemetry()
+    _settings_undo_snapshot.clear()
+    _settings_undo_until_unix = 0
+    return _action_result(true, "command.settings", "Settings restored from undo snapshot.", "ok")
+
+
+func _capture_settings_undo_snapshot() -> void:
+    _settings_undo_snapshot = {
+        "eventFrequency": str(AppState.settings.get("eventFrequency", "normal")),
+        "promptFrequency": str(AppState.settings.get("promptFrequency", "normal")),
+        "interactionIntensity": str(AppState.settings.get("interactionIntensity", "balanced")),
+        "quietModeStrictness": str(AppState.settings.get("quietModeStrictness", "balanced")),
+        "chatTextSize": str(AppState.settings.get("chatTextSize", "m")),
+    }
+    _settings_undo_until_unix = int(Time.get_unix_time_from_system()) + 10
 
 
 func _action_result(ok: bool, action_id: String, message: String, reason_code: String) -> Dictionary:

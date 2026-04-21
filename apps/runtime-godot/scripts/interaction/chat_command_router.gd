@@ -16,6 +16,8 @@ const SUPPORTED_COMMANDS := [
 	"cadence",
 	"debug",
 	"settings-check",
+	"preset",
+	"settings",
 ]
 
 
@@ -62,6 +64,29 @@ func _validate_command(command: String, args: Array) -> Dictionary:
 		if not args.is_empty():
 			return _result(false, "command", command, {}, "unexpected_args", 1.0)
 		return _result(true, "command", command, {}, "ok", 1.0)
+
+	if command == "preset":
+		if args.size() != 1:
+			return _result(false, "command", command, {}, "missing_arg", 1.0)
+		var preset := str(args[0]).to_lower()
+		if preset not in ["cozy", "balanced", "deep"]:
+			return _result(false, "command", command, {}, "invalid_arg", 1.0)
+		return _result(true, "command", command, {"preset": preset}, "ok", 1.0)
+
+	if command == "settings":
+		if args.is_empty():
+			return _result(false, "command", command, {}, "missing_arg", 1.0)
+		var action := str(args[0]).to_lower()
+		if action == "undo":
+			if args.size() != 1:
+				return _result(false, "command", command, {}, "unexpected_args", 1.0)
+			return _result(true, "command", command, {"action": "undo"}, "ok", 1.0)
+		if action == "reset":
+			if args.size() > 2:
+				return _result(false, "command", command, {}, "unexpected_args", 1.0)
+			var confirm := args.size() == 2 and str(args[1]).to_lower() == "confirm"
+			return _result(true, "command", command, {"action": "reset", "confirm": confirm}, "ok", 1.0)
+		return _result(false, "command", command, {}, "invalid_arg", 1.0)
 
 	if command == "mode":
 		if args.size() != 1:
@@ -167,6 +192,12 @@ func _resolve_alias(msg: String) -> Dictionary:
 		return _result(true, "command", "pending", {}, "ok", 0.9)
 	if msg.find("show memory") >= 0 or msg.find("memory status") >= 0:
 		return _result(true, "command", "memory", {}, "ok", 0.9)
+	if msg.find("set cozy preset") >= 0:
+		return _result(true, "command", "preset", {"preset": "cozy"}, "ok", 0.9)
+	if msg.find("set balanced preset") >= 0:
+		return _result(true, "command", "preset", {"preset": "balanced"}, "ok", 0.9)
+	if msg.find("set deep preset") >= 0:
+		return _result(true, "command", "preset", {"preset": "deep"}, "ok", 0.9)
 	if msg.find("quiet strict") >= 0:
 		return _result(true, "command", "quiet", {"level": "strict"}, "ok", 0.9)
 	if msg.find("quiet balanced") >= 0:
