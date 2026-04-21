@@ -28,8 +28,13 @@ func min_interval_seconds(
 	elif interaction_intensity == "deep":
 		base = int(round(float(base) * 0.80))
 
+	var quiet_strictness := str(settings.get("quietModeStrictness", "balanced"))
+	if quiet_strictness == "strict":
+		base = int(round(float(base) * 1.25))
+	elif quiet_strictness == "lenient":
+		base = int(round(float(base) * 0.90))
+
 	if quiet_mode:
-		var quiet_strictness := str(settings.get("quietModeStrictness", "balanced"))
 		if quiet_strictness == "strict":
 			base = maxi(base, 180)
 		elif quiet_strictness == "balanced":

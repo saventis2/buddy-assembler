@@ -80,7 +80,7 @@ $items = @(
     (New-ChecklistItem -Id "MM3" -Section "Multi-Monitor" -Prompt "Restart restores monitor + window position."),
 
     (New-ChecklistItem -Id "BE1" -Section "Behavior and Encounters" -Prompt "Idle transitions over several ticks feel correct."),
-    (New-ChecklistItem -Id "BE2" -Section "Behavior and Encounters" -Prompt "Quiet-hours lowers active events."),
+    (New-ChecklistItem -Id "BE2" -Section "Behavior and Encounters" -Prompt "F3 quiet strictness changes cadence suppression (verify with /cadence strict > balanced/lenient)."),
     (New-ChecklistItem -Id "BE3" -Section "Behavior and Encounters" -Prompt "F7 cycles event frequency; verify via Shift+F7 demo + /cadence summary."),
     (New-ChecklistItem -Id "BE4" -Section "Behavior and Encounters" -Prompt "F2 cycles prompt frequency; verify via Shift+F2 demo + /cadence summary."),
     (New-ChecklistItem -Id "BE5" -Section "Behavior and Encounters" -Prompt "Event budgets suppress repeat encounter spam."),

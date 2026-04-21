@@ -54,7 +54,9 @@ pwsh ./run_plan5_gate.ps1 -SkipRuntimeLaunch -UseDefaults -DefaultResult pending
 ## Behavior and Encounters
 
 1. Observe idle transitions over several ticks.
-2. Confirm quiet-hours behavior lowers active events.
+2. Confirm quiet suppression behavior lowers active events.
+   - Immediate check: press `F3` to cycle quiet strictness and run `/cadence`.
+   - Pass when strict mode clearly increases interval/cap versus lenient/balanced.
 3. Press `F7` to cycle event frequency (`low` -> `normal` -> `high`) and verify effect.
    - Immediate check: `Shift+F7` emits a demo world prompt.
    - Evidence check: run `/cadence` and confirm world cadence values change with frequency.
