@@ -71,6 +71,8 @@ const ManualVerificationReport = preload("res://scripts/utility/manual_verificat
 @onready var settings_btn_demo_world: Button = $SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid/BtnDemoWorld
 @onready var settings_btn_reward: Button = $SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid/BtnReward
 @onready var settings_btn_telemetry: Button = $SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid/BtnTelemetry
+@onready var settings_btn_restart: Button = $SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid/BtnRestart
+@onready var settings_btn_quit: Button = $SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid/BtnQuit
 @onready var settings_floor_slider: HSlider = $SettingsWindow/MarginContainer/SettingsVBox/FloorAdjustBox/FloorAdjustRow/FloorAdjustSlider
 @onready var settings_floor_value: Label = $SettingsWindow/MarginContainer/SettingsVBox/FloorAdjustBox/FloorAdjustRow/FloorAdjustValue
 @onready var chat_balloon: Node2D = $ChatBalloon
@@ -348,6 +350,12 @@ func _configure_settings_window() -> void:
     settings_btn_telemetry.pressed.connect(func() -> void:
         _telemetry_enabled = not _telemetry_enabled
         _refresh_telemetry()
+    )
+    settings_btn_restart.pressed.connect(func() -> void:
+        _restart_runtime()
+    )
+    settings_btn_quit.pressed.connect(func() -> void:
+        _quit_runtime()
     )
     if settings_floor_slider != null:
         settings_floor_slider.value_changed.connect(func(value: float) -> void:
@@ -915,6 +923,8 @@ func _refresh_settings_menu() -> void:
     settings_btn_demo_world.text = "Demo World (Shift+F7)"
     settings_btn_reward.text = "Open Reward Box (F11)"
     settings_btn_telemetry.text = "Telemetry (F6): %s" % ("on" if _telemetry_enabled else "off")
+    settings_btn_restart.text = "Restart Runtime"
+    settings_btn_quit.text = "Quit Runtime"
     if settings_floor_slider != null:
         settings_floor_slider.set_value_no_signal(_desktop_floor_offset_adjust)
     if settings_floor_value != null:
@@ -945,6 +955,19 @@ func _format_floor_adjust_text(value: float) -> String:
     var rounded := int(roundf(value))
     var sign := "+" if rounded >= 0 else ""
     return "%s%d px" % [sign, rounded]
+
+
+func _restart_runtime() -> void:
+    AppState.flush()
+    if settings_window != null:
+        settings_window.hide()
+    _settings_menu_open = false
+    get_tree().reload_current_scene()
+
+
+func _quit_runtime() -> void:
+    AppState.flush()
+    get_tree().quit()
 
 
 func _load_visual_assets(pack_id: String, manifest: Dictionary) -> void:

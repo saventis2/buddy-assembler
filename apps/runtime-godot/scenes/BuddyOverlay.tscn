@@ -110,6 +110,14 @@ text = "Open Reward Box"
 layout_mode = 2
 text = "Toggle Telemetry"
 
+[node name="BtnRestart" type="Button" parent="SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid"]
+layout_mode = 2
+text = "Restart Runtime"
+
+[node name="BtnQuit" type="Button" parent="SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid"]
+layout_mode = 2
+text = "Quit Runtime"
+
 [node name="FloorAdjustBox" type="VBoxContainer" parent="SettingsWindow/MarginContainer/SettingsVBox"]
 layout_mode = 2
 
