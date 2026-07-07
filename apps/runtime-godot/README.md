@@ -40,19 +40,35 @@ A separate architecture-first slice is available at:
 
 ## Runtime Controls
 
+Everything below is reachable by keyboard for developers, but a real user
+should never need to memorize F-keys. The `F10` settings popout is the
+click-only path: open it once and Pause/Resume, Quiet strictness, content
+pack, Restart, and Quit are all buttons, no hotkeys required.
+
 - Left click + drag: move companion
-- Right click: sleep toggle
+- Right click: sleep/pause toggle (also a "Pause Buddy" / "Resume Buddy"
+  button in the `F10` settings popout)
 - `F6`: toggle telemetry overlay
 - `F1`: export manual verification snapshot to `user://manual_verification/`
 - `F2`: cycle prompt frequency (`low`, `normal`, `high`)
 - `Shift+F2`: emit demo support prompt for cadence checks
-- `F3`: cycle quiet strictness (`lenient`, `balanced`, `strict`)
+- `F3`: cycle quiet strictness (`lenient`, `balanced`, `strict`) (also a
+  button in the `F10` popout)
 - `F4`: cycle interaction intensity (`cozy`, `balanced`, `deep`)
 - `F7`: cycle event frequency (`low`, `normal`, `high`)
 - `Shift+F7`: emit demo world prompt for cadence checks
 - `F8`: move companion to next monitor
-- `F9`: cycle available content packs
-- `F10`: toggle separate movable settings popout window (categorized runtime settings + debug shortcuts)
+- `F9`: cycle available content packs (also a "Cycle Content Pack" button
+  in the `F10` popout)
+- `F10`: toggle separate movable settings popout window (categorized runtime
+  settings + debug shortcuts). The popout also has a "Quit Runtime" button,
+  so closing the buddy never requires a hotkey either.
+
+The remaining F-key shortcuts are developer/debug tools (telemetry,
+manual-verification export, demo prompts, reward-box, world-prompt
+resolution, emote debug keys). A full audit of which of those deserve a
+click target too is intentionally out of scope here and left for a
+follow-up pass.
 
 ## Character Sprite + Animation Export
 
