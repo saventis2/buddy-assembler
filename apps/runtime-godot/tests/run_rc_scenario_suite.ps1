@@ -122,7 +122,7 @@ $skippedCount = ($results | Where-Object { $_.Result -eq "skipped" }).Count
 $pendingCount = ($results | Where-Object { $_.Result -notin @("pass", "fail", "skipped") }).Count
 
 $gateStatus = "IN_PROGRESS"
-if ($failCount -eq 0 -and $pendingCount -eq 0) {
+if ($failCount -eq 0 -and $pendingCount -eq 0 -and $skippedCount -eq 0) {
     $gateStatus = "PASS"
 } elseif ($failCount -gt 0) {
     $gateStatus = "FAIL"
