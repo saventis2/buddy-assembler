@@ -76,7 +76,6 @@ DEFAULT_BASELINE_DOC = (
 # so the timestamp may or may not have a fractional part. Accept both.
 FILENAME_RE = re.compile(r"idle_profile_(\d+)(?:\.\d+)?(?:\.fail)?\.log$")
 
-SPAWN_RE = re.compile(r"^idle_profile: spawning (\d+) actor; duration=(\d+) s$")
 NO_FRAMES_RE = re.compile(r"^idle_profile: no frames recorded$")
 SAMPLE_RE = re.compile(r"^sample t=([\d.]+)s mem=(\d+) KB frames=(\d+)$")
 REPORT_START_RE = re.compile(r"^=== Idle burn-in report ===$")

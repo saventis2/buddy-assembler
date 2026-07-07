@@ -78,6 +78,25 @@ Mem drift:  0 KB
 ===========================
 """
 
+# A run shorter than SAMPLE_INTERVAL_SECONDS (5s) never calls
+# _sample_memory(), so _mem_samples stays empty and idle_profile.gd's own
+# fallback (`_mem_samples[0] if not empty else 0`) makes Mem min/max/drift
+# all 0 — with zero "sample ..." lines in the log at all. The report block
+# itself is still written normally since frame_deltas is non-empty.
+ZERO_SAMPLES_LOG = """idle_profile: spawning 1 actor; duration=2 s
+
+=== Idle burn-in report ===
+Duration:   2 s
+Frames:     120
+Min dt:     16.60 ms (60.2 fps)
+Max dt:     16.70 ms (59.9 fps)
+Avg dt:     16.65 ms (60.1 fps)
+Mem min:    0 KB
+Mem max:    0 KB
+Mem drift:  0 KB
+===========================
+"""
+
 FAKE_BASELINE_DOC = """# Fake baseline doc (test fixture only)
 
 ## Baseline (to be filled on release rehearsal)
@@ -129,6 +148,14 @@ class ParseLogTests(unittest.TestCase):
         sample_derived = max(report.sample_mem_kb) - min(report.sample_mem_kb)
         self.assertEqual(sample_derived, 1)
         self.assertNotEqual(sample_derived, report.mem_drift_kb)
+
+    def test_zero_samples_still_parses_report(self) -> None:
+        # A run shorter than the 5s sample interval has no "sample ..."
+        # lines at all; the report block must still parse cleanly.
+        report = rpb.parse_log(ZERO_SAMPLES_LOG)
+        self.assertEqual(report.sample_mem_kb, [])
+        self.assertEqual(report.mem_drift_kb, 0)
+        self.assertEqual(report.duration_s, 2)
 
 
 class DeriveDateTests(unittest.TestCase):
@@ -273,6 +300,13 @@ class MainCliTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("[WARN]", err)
         self.assertIn("| 0 |", out)  # authoritative "Mem drift: 0 KB", not the sample-derived 1
+
+    def test_zero_samples_log_no_spurious_warning(self) -> None:
+        log_path = self._write("idle_profile_1745020800.log", ZERO_SAMPLES_LOG)
+        code, out, err = self._run_main([str(log_path), "--build", "x", "--verbose"])
+        self.assertEqual(code, 0)
+        self.assertNotIn("[WARN]", err)
+        self.assertIn("| 0 |", out)
 
     def test_update_baseline_end_to_end(self) -> None:
         doc_path = self._write("fake_baseline.md", FAKE_BASELINE_DOC)
