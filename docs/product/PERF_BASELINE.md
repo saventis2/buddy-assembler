@@ -33,6 +33,28 @@ Output log:
   Drift > ~5 MB over 10 minutes is a red flag; investigate before
   release.
 
+## Recording a result
+
+Turning the log into a row for the table below used to be manual
+transcription. Instead, format it with:
+
+```powershell
+python apps\runtime-godot\tools\record_perf_baseline.py `
+  "$env:APPDATA\Godot\app_userdata\Buddy Runtime\perf\idle_profile_<unix>.log" `
+  --build "exported v0.1-rc"
+```
+
+(or `apps\runtime-godot\tools\record_perf_baseline.ps1` with the same
+arguments, if you'd rather not type `python` explicitly). Add
+`--update-baseline` to patch this file's table in place — it replaces
+a matching `_TBD_` placeholder row for the same duration, or appends a
+new row; it never overwrites a row that already has a real date. Set
+`--build` honestly (`exported v0.1-rc` for a real release run, or
+something explicitly labeled like `editor-play (dev)` for
+informational-only numbers) — the script has no way to know which one
+produced the log. See `apps/runtime-godot/tools/record_perf_baseline.py`
+--help for the full option list.
+
 ## Baseline (to be filled on release rehearsal)
 
 Populate this table on release-rehearsal runs against the exported
