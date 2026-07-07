@@ -71,6 +71,7 @@ const ManualVerificationReport = preload("res://scripts/utility/manual_verificat
 @onready var telemetry_label: Label = $Telemetry/Label
 @onready var settings_window: Window = $SettingsWindow
 @onready var settings_label: RichTextLabel = $SettingsWindow/MarginContainer/SettingsVBox/SettingsLabel
+@onready var settings_btn_pause: Button = $SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid/BtnPause
 @onready var settings_btn_event_freq: Button = $SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid/BtnEventFreq
 @onready var settings_btn_prompt_freq: Button = $SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid/BtnPromptFreq
 @onready var settings_btn_quiet: Button = $SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid/BtnQuietStrict
@@ -241,6 +242,17 @@ func _update_mouse_region() -> void:
     DisplayServer.window_set_mouse_passthrough(PackedVector2Array())
 
 
+func _toggle_sleep_state() -> void:
+    # Shared by the right-click-on-sprite gesture and the settings popout's
+    # Pause/Resume button so both entry points stay in sync.
+    _state = "sleep" if _state != "sleep" else "idle"
+    _set_emote_from_state(_state)
+    _set_visual_for_state(_state)
+    AppState.record_interaction("toggle_sleep")
+    _productivity.note_user_activity(int(Time.get_unix_time_from_system()))
+    queue_redraw()
+
+
 func _input(event: InputEvent) -> void:
     if event is InputEventKey:
         var key_event := event as InputEventKey
@@ -312,12 +324,7 @@ func _input(event: InputEvent) -> void:
                 _return_to_idle_after_drag()
         elif button_event.button_index == MOUSE_BUTTON_RIGHT and button_event.pressed:
             if _hit_test(button_event.position):
-                _state = "sleep" if _state != "sleep" else "idle"
-                _set_emote_from_state(_state)
-                _set_visual_for_state(_state)
-                AppState.record_interaction("toggle_sleep")
-                _productivity.note_user_activity(int(Time.get_unix_time_from_system()))
-                queue_redraw()
+                _toggle_sleep_state()
 
     if event is InputEventMouseMotion and _dragging:
         var mouse_pos := DisplayServer.mouse_get_position()
@@ -364,6 +371,11 @@ func _configure_settings_window() -> void:
         settings_window.hide()
         _settings_menu_open = false
     )
+    settings_btn_pause.pressed.connect(func() -> void:
+        _toggle_sleep_state()
+        _refresh_telemetry()
+    )
+    settings_btn_pause.tooltip_text = "Pauses your buddy in place (same as right-click). Click again to resume."
     settings_btn_event_freq.pressed.connect(func() -> void:
         _cycle_event_frequency()
     )
@@ -1063,6 +1075,7 @@ func _refresh_settings_menu() -> void:
     settings_label.bbcode_enabled = true
     settings_label.text = text
 
+    settings_btn_pause.text = "Resume Buddy" if _state == "sleep" else "Pause Buddy"
     settings_btn_event_freq.text = "Event Freq (F7): %s" % str(AppState.settings.get("eventFrequency", "normal"))
     settings_btn_prompt_freq.text = "Prompt Freq (F2): %s" % str(AppState.settings.get("promptFrequency", "normal"))
     settings_btn_quiet.text = "Quiet (F3): %s" % str(AppState.settings.get("quietModeStrictness", "balanced"))
