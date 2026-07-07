@@ -15,16 +15,24 @@ higher items are higher leverage.
    users should never need F-keys to control the buddy.
 2. Launch-at-Windows-startup opt-in toggle in the settings popout.
 3. Single-instance guard so a double-launch doesn't spawn two buddies.
-4. Persist buddy position **and monitor** across restarts (today `F8`
-   cycles monitors manually; nothing restores placement).
+4. ~~Persist buddy position and monitor across restarts~~ — **already
+   implemented**, not a gap: `AppState.set_window_state()`/
+   `get_window_state()` persist `preferredScreen`/`lastWindowPosition`,
+   `_restore_window_state()` runs in `_ready()`, and `_move_to_next_monitor()`
+   (`F8`) persists after cycling
+   (`apps/runtime-godot/scripts/autoload/app_state.gd:178-193`,
+   `apps/runtime-godot/scripts/buddy_overlay.gd:203,610-620,725-736`).
 5. Per-monitor DPI awareness plus a user-facing buddy size slider.
 6. Optional click-through mode (buddy visible but never steals clicks).
 7. Fullscreen / game / presentation detection → auto-hide or
    auto-quiet while the foreground app is fullscreen.
 8. Quiet-hours schedule (time ranges where prompts are suppressed),
    layered on the existing quiet-strictness knob.
-9. Respect the Windows work area (taskbar) rather than raw screen
-   bounds for floor lock and wander limits.
+9. ~~Respect the Windows work area (taskbar) rather than raw screen
+   bounds~~ — **already implemented**, not a gap: `_screen_rect()`
+   returns `DisplayServer.screen_get_usable_rect()`, and
+   `_update_window_roam()` uses it for `floor_y`/`min_x`/`max_x`
+   (`apps/runtime-godot/scripts/buddy_overlay.gd:634-636,745-778`).
 10. Fade in/out transitions for hide/show instead of popping.
 11. Drag continuity across monitor boundaries during a single drag.
 12. Split debug hotkeys (`F1`–`F12`) behind a `--debug` flag and move
