@@ -24,7 +24,7 @@ import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeGuard
 
 MANIFEST_ROOT = "manifest"
 SCHEMA_ROOT = "schema"
@@ -70,11 +70,11 @@ def is_bool(value: Any) -> bool:
     return isinstance(value, bool)
 
 
-def is_int(value: Any) -> bool:
+def is_int(value: Any) -> TypeGuard[int]:
     return isinstance(value, int) and not is_bool(value)
 
 
-def is_number(value: Any) -> bool:
+def is_number(value: Any) -> TypeGuard[int | float]:
     return isinstance(value, (int, float)) and not is_bool(value)
 
 
