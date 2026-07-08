@@ -49,6 +49,9 @@ extracted source trees. They are not part of the shipped runtime.
 - `analyze_character_assets.py` — reverse-engineering and dataset analysis
 - `audit_dataset_metadata.py` — metadata coverage audit
 - `build_wz_index.py` / `export_effect_sprites.py` — WZ catalog / Effect.wz export helpers
+- `build_asset_inventory.py` — unified flat-file manifest + 83-vs-83-complete
+  completeness cross-check + merged logical-asset index (sqlite3 + CSV),
+  orchestrating the catalogue/index scripts above rather than reimplementing them
 
 Run:
 
