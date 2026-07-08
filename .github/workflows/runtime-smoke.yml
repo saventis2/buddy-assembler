@@ -99,6 +99,55 @@ jobs:
           timeout 90s godot --headless --path . res://tests/PackValidationTest.tscn 2>&1 | tee ../../pack-validation.log
           grep -E "pack_validation_test: PASS" ../../pack-validation.log
 
+      - name: World + economy flow test
+        working-directory: ${{ env.RUNTIME_DIR }}
+        run: |
+          set -euo pipefail
+          timeout 90s godot --headless --path . res://tests/WorldEconomyFlowTest.tscn 2>&1 | tee ../../world-economy-flow.log
+          grep -E "world_economy_flow_test: PASS" ../../world-economy-flow.log
+
+      - name: Companion depth cadence test
+        working-directory: ${{ env.RUNTIME_DIR }}
+        run: |
+          set -euo pipefail
+          timeout 90s godot --headless --path . res://tests/CompanionDepthTest.tscn 2>&1 | tee ../../companion-depth.log
+          grep -E "companion_depth_test: PASS" ../../companion-depth.log
+
+      - name: Economy tuning test
+        working-directory: ${{ env.RUNTIME_DIR }}
+        run: |
+          set -euo pipefail
+          timeout 90s godot --headless --path . res://tests/EconomyTuningTest.tscn 2>&1 | tee ../../economy-tuning.log
+          grep -E "economy_tuning_test: PASS" ../../economy-tuning.log
+
+      - name: World variety test
+        working-directory: ${{ env.RUNTIME_DIR }}
+        run: |
+          set -euo pipefail
+          timeout 90s godot --headless --path . res://tests/WorldVarietyTest.tscn 2>&1 | tee ../../world-variety.log
+          grep -E "world_variety_test: PASS" ../../world-variety.log
+
+      - name: Prompt cadence test
+        working-directory: ${{ env.RUNTIME_DIR }}
+        run: |
+          set -euo pipefail
+          timeout 90s godot --headless --path . res://tests/PromptCadenceTest.tscn 2>&1 | tee ../../prompt-cadence.log
+          grep -E "prompt_cadence_test: PASS" ../../prompt-cadence.log
+
+      - name: Chat command router test
+        working-directory: ${{ env.RUNTIME_DIR }}
+        run: |
+          set -euo pipefail
+          timeout 90s godot --headless --path . res://tests/ChatCommandRouterTest.tscn 2>&1 | tee ../../chat-command-router.log
+          grep -E "chat_command_router_test: PASS" ../../chat-command-router.log
+
+      - name: Manual verification report test
+        working-directory: ${{ env.RUNTIME_DIR }}
+        run: |
+          set -euo pipefail
+          timeout 90s godot --headless --path . res://tests/ManualVerificationReportTest.tscn 2>&1 | tee ../../manual-verification-report.log
+          grep -E "manual_verification_report_test: PASS" ../../manual-verification-report.log
+
       - name: Upload logs (always)
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -110,6 +159,13 @@ jobs:
             smoke.log
             save-store.log
             pack-validation.log
+            world-economy-flow.log
+            companion-depth.log
+            economy-tuning.log
+            world-variety.log
+            prompt-cadence.log
+            chat-command-router.log
+            manual-verification-report.log
           retention-days: 14
           if-no-files-found: warn
 
