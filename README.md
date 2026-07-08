@@ -55,6 +55,10 @@ extracted source trees. They are not part of the shipped runtime.
   completeness cross-check + merged logical-asset index (sqlite3 + CSV),
   orchestrating the catalogue/index scripts above rather than reimplementing them
 
+Runtime dependencies for these scripts are pinned in `requirements.txt`.
+Contributors who want lint/type-check/test tooling should also install
+`requirements-dev.txt` (ruff, mypy, pytest).
+
 Run:
 
 ```powershell
