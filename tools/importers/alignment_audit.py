@@ -11,7 +11,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional, Tuple
+from typing import Any, Iterable, Optional, Tuple
 import xml.etree.ElementTree as ET
 
 

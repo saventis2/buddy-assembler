@@ -70,6 +70,10 @@ text = "Settings Menu (F10)"
 layout_mode = 2
 columns = 2
 
+[node name="BtnPause" type="Button" parent="SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid"]
+layout_mode = 2
+text = "Pause Buddy"
+
 [node name="BtnEventFreq" type="Button" parent="SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid"]
 layout_mode = 2
 text = "Event Frequency"

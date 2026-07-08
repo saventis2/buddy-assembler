@@ -3,9 +3,11 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import math
 import csv
+import os
 import random
 import zlib
 import threading
@@ -27,8 +29,30 @@ from build_itemwz_catalogue import build_catalogue as build_itemwz_catalogue
 from alignment_audit import run_alignment_audit
 
 
-DEFAULT_BASE_WZ = r"C:\Users\GGPC\OneDrive\Desktop\83 complete\Base.wz"
-DEFAULT_ANALYSIS_DIR = r"C:\Users\GGPC\OneDrive\Desktop\83 complete\analysis"
+# Path override mechanism (precedence: CLI arg > env var > hardcoded default)
+# is documented once in Character-Tooling.md rather than repeated per script.
+BASE_WZ_ENV_VAR = "BUDDY_ASSEMBLER_BASE_WZ"
+ANALYSIS_DIR_ENV_VAR = "BUDDY_ASSEMBLER_ANALYSIS_DIR"
+_FALLBACK_BASE_WZ = r"C:\Users\GGPC\OneDrive\Desktop\83 complete\Base.wz"
+_FALLBACK_ANALYSIS_DIR = r"C:\Users\GGPC\OneDrive\Desktop\83 complete\analysis"
+
+
+def resolve_default_path(cli_value: str | None, env_var: str, fallback: str) -> str:
+    """Resolve a default path shown in the GUI.
+
+    Precedence: explicit CLI value > environment variable > hardcoded
+    fallback (the maintainer's local machine path). See Character-Tooling.md.
+    """
+    if cli_value:
+        return cli_value
+    env_value = os.environ.get(env_var)
+    if env_value:
+        return env_value
+    return fallback
+
+
+DEFAULT_BASE_WZ = resolve_default_path(None, BASE_WZ_ENV_VAR, _FALLBACK_BASE_WZ)
+DEFAULT_ANALYSIS_DIR = resolve_default_path(None, ANALYSIS_DIR_ENV_VAR, _FALLBACK_ANALYSIS_DIR)
 CATALOGUE_MODE_CHARACTER = "Character (Equip)"
 CATALOGUE_MODE_ITEMWZ = "Item.wz (Other Items)"
 
@@ -309,7 +333,8 @@ class App(tk.Tk):
                 self.after(0, lambda: on_done(True, result))
             except Exception as exc:  # noqa: BLE001
                 tb = traceback.format_exc()
-                self.after(0, lambda: on_done(False, (exc, tb)))
+                captured_exc = exc
+                self.after(0, lambda: on_done(False, (captured_exc, tb)))
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -1460,7 +1485,7 @@ class App(tk.Tk):
     def _update_render_cmd_preview(self) -> None:
         cmd = [
             "python",
-            "render_character_frame.py",
+            "tools/importers/render_character_frame.py",
             "--base-wz",
             f"\"{self.render_base_wz.get()}\"",
             "--action",
@@ -1860,7 +1885,7 @@ class App(tk.Tk):
     def _update_diff_cmd_preview(self) -> None:
         cmd = [
             "python",
-            "diff_character_assets.py",
+            "tools/importers/diff_character_assets.py",
             "--old-base-wz",
             f"\"{self.diff_old.get()}\"",
             "--new-base-wz",
@@ -3523,6 +3548,33 @@ class App(tk.Tk):
 
 
 def main() -> None:
+    global DEFAULT_BASE_WZ, DEFAULT_ANALYSIS_DIR
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--base-wz",
+        default=None,
+        help=(
+            "Initial Base.wz path pre-filled in the GUI. Falls back to the "
+            f"{BASE_WZ_ENV_VAR} environment variable, then to the "
+            "maintainer's local default if neither is set."
+        ),
+    )
+    parser.add_argument(
+        "--analysis-dir",
+        default=None,
+        help=(
+            "Initial analysis output directory pre-filled in the GUI. Falls "
+            f"back to the {ANALYSIS_DIR_ENV_VAR} environment variable, then "
+            "to the maintainer's local default if neither is set."
+        ),
+    )
+    args = parser.parse_args()
+    DEFAULT_BASE_WZ = resolve_default_path(args.base_wz, BASE_WZ_ENV_VAR, _FALLBACK_BASE_WZ)
+    DEFAULT_ANALYSIS_DIR = resolve_default_path(
+        args.analysis_dir, ANALYSIS_DIR_ENV_VAR, _FALLBACK_ANALYSIS_DIR
+    )
+
     app = App()
     app.mainloop()
 

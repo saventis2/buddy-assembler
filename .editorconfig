@@ -1,0 +1,36 @@
+# EditorConfig helps maintain consistent coding styles across editors/IDEs.
+# https://editorconfig.org
+#
+# Indentation conventions below were derived from what's actually in the
+# repo (sampled a cross-section of real files), not from tool defaults:
+#   - GDScript (apps/runtime-godot/): tabs, matching gdtoolkit's/Godot's
+#     own default and the majority of existing .gd files.
+#   - Python (repo root, packages/content-validator/,
+#     apps/runtime-godot/tools/): 4 spaces, used consistently with no
+#     tab-indented files found.
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.gd]
+indent_style = tab
+indent_size = 4
+
+[*.py]
+indent_style = space
+indent_size = 4
+
+[*.{yml,yaml,json,toml}]
+indent_style = space
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+[Makefile]
+indent_style = tab

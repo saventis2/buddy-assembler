@@ -35,6 +35,28 @@ P / F / S (pass / fail / skipped) with a one-line note on fail.
 | 8 | Corrupted settings recovery      |   |   |
 | 9 | Exported build launches cleanly  |   |   |
 
+## Guided runner
+
+Optional interactive log generator — asks p/f/s per scenario, captures
+a short note when a scenario fails, and writes a dated results log
+matching the table above:
+
+```powershell
+pwsh -NoLogo -File apps/runtime-godot/tests/run_rc_scenario_suite.ps1
+```
+
+Non-interactive template generation (no prompts; every scenario is
+stamped `PENDING`):
+
+```powershell
+pwsh -NoLogo -File apps/runtime-godot/tests/run_rc_scenario_suite.ps1 -UseDefaults -DefaultResult pending
+```
+
+Writes `docs/product/RC_SCENARIO_SUITE_LOG_<date>.md` by default (pass
+`-OutputPath` to override). The script only carries a short one-line
+prompt per scenario — the numbered steps below remain the source of
+truth for what to actually click through.
+
 ---
 
 ## 1. First run

@@ -29,3 +29,6 @@ apps/runtime-godot/content/core_pack/item_bindings_full.csv
 apps/runtime-godot/content/core_pack/item_bindings_full.json
 apps/runtime-godot/content/core_pack/item_bindings_full.*.csv
 apps/runtime-godot/content/core_pack/item_bindings_full.*.json
+
+# Claude Code local state (settings, agent worktree isolation scratch)
+.claude/

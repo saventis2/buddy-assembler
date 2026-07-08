@@ -25,7 +25,7 @@ For catalogue naming and some metadata-rich flows, `String/String.wz/Eqp.img.xml
 Launch the desktop GUI:
 
 ```powershell
-python character_tooling_gui.py
+python tools/importers/character_tooling_gui.py
 ```
 
 The GUI is the main operator surface and is organized around a left-to-right workflow:

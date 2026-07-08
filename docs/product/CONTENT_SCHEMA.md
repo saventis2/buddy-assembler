@@ -5,8 +5,9 @@
 
 The runtime only speaks the internal pack format described here. WZ/NX and all
 MapleStory-specific formats are handled exclusively by importer tooling
-(`tools/importers/`) which produces content conforming to this spec. The
-runtime has no WZ/NX awareness.
+(the Python scripts under `tools/importers/`, relocated there from the
+repo root in PR-12 — see `README.md`) which produces content conforming
+to this spec. The runtime has no WZ/NX awareness.
 
 ---
 
