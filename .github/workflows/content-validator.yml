@@ -20,8 +20,11 @@ jobs:
 
       - name: Validate core content packs
         run: |
-          python packages/content-validator/validate_pack.py apps/runtime-godot/content/core_pack/manifest.json
-          python packages/content-validator/validate_pack.py apps/runtime-godot/content/night_pack/manifest.json
+          set -euo pipefail
+          for f in apps/runtime-godot/content/*/manifest.json; do
+            echo "Validating $f"
+            python packages/content-validator/validate_pack.py "$f"
+          done
 
       - name: Run fixture checks
         run: |
