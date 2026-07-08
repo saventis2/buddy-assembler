@@ -50,6 +50,10 @@ extracted source trees. They are not part of the shipped runtime.
 - `audit_dataset_metadata.py` — metadata coverage audit
 - `build_wz_index.py` / `export_effect_sprites.py` — WZ catalog / Effect.wz export helpers
 
+Runtime dependencies for these scripts are pinned in `requirements.txt`.
+Contributors who want lint/type-check/test tooling should also install
+`requirements-dev.txt` (ruff, mypy, pytest).
+
 Run:
 
 ```powershell
