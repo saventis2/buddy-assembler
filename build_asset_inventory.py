@@ -306,13 +306,18 @@ def walk_opaque_entry(
 def _category_root(source_root: Path) -> Path:
     """Sibling scripts point --base-wz at a `Base.wz` folder *inside* the
     tree root (confirmed via committed analysis/*.json `base_wz` fields).
-    If a `Base.wz` entry exists, treat its children as the categories;
-    otherwise fall back to the tree root's own immediate children. This
-    keeps both trees on the same category vocabulary when they share the
-    Base.wz wrapper, while staying defensive if "83" does not.
+    If a `Base.wz` *directory* exists, treat its children as the
+    categories; otherwise fall back to the tree root's own immediate
+    children. This keeps both trees on the same category vocabulary when
+    they share the Base.wz wrapper, while staying defensive if "83" does
+    not -- including the case where "83" has a raw `Base.wz` *file*
+    (an unextracted WZ binary blob) rather than a directory, which must
+    fall through to source_root and be picked up by the classify_entry()
+    dispatch (as an opaque blob) instead of being handed to iterdir(),
+    which would raise NotADirectoryError.
     """
     candidate = source_root / "Base.wz"
-    if candidate.exists():
+    if candidate.is_dir():
         return candidate
     return source_root
 
