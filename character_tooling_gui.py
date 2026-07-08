@@ -309,7 +309,8 @@ class App(tk.Tk):
                 self.after(0, lambda: on_done(True, result))
             except Exception as exc:  # noqa: BLE001
                 tb = traceback.format_exc()
-                self.after(0, lambda: on_done(False, (exc, tb)))
+                captured_exc = exc
+                self.after(0, lambda: on_done(False, (captured_exc, tb)))
 
         threading.Thread(target=worker, daemon=True).start()
 
