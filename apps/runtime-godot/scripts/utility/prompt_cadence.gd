@@ -25,6 +25,8 @@ func min_interval_seconds(
 	var interaction_intensity := str(settings.get("interactionIntensity", "balanced"))
 	if interaction_intensity == "cozy":
 		base = int(round(float(base) * 1.20))
+	elif interaction_intensity == "idle":
+		base = int(round(float(base) * 1.45))
 	elif interaction_intensity == "deep":
 		base = int(round(float(base) * 0.80))
 
@@ -104,6 +106,8 @@ func _burst_cap_per_10m(settings: Dictionary, source_kind: String, quiet_mode: b
 	var intensity := str(settings.get("interactionIntensity", "balanced"))
 	if intensity == "cozy":
 		base -= 1
+	elif intensity == "idle":
+		base -= 2
 	elif intensity == "deep":
 		base += 1
 

@@ -26,6 +26,12 @@ def parse_args():
         default=0,
         help="Cap number of missing items appended (0 = no cap).",
     )
+    p.add_argument(
+        "--categories",
+        type=str,
+        default="",
+        help="Optional comma-separated category allow-list (e.g. gear,food,materials).",
+    )
     return p.parse_args()
 
 
@@ -39,11 +45,23 @@ def _to_int_or_none(value: str):
         return None
 
 
-def load_bindings(bindings_path: Path):
+def _parse_category_filter(raw: str):
+    out = set()
+    for piece in (raw or "").split(","):
+        key = piece.strip().lower()
+        if key:
+            out.add(key)
+    return out
+
+
+def load_bindings(bindings_path: Path, allowed_categories: set[str]):
     out = {}
     with bindings_path.open("r", encoding="utf-8", newline="") as f:
         reader = csv.DictReader(f)
         for row in reader:
+            category = (row.get("category") or "").strip().lower()
+            if allowed_categories and category not in allowed_categories:
+                continue
             runtime_id = (row.get("runtime_id") or "").strip()
             if not runtime_id:
                 continue
@@ -100,7 +118,8 @@ def main():
     with manifest_path.open("r", encoding="utf-8") as f:
         manifest = json.load(f)
 
-    bindings = load_bindings(bindings_path)
+    allowed_categories = _parse_category_filter(args.categories)
+    bindings = load_bindings(bindings_path, allowed_categories)
     items = manifest.get("items", [])
     if not isinstance(items, list):
         items = []
@@ -144,6 +163,7 @@ def main():
     print(f"updated_items={changed}")
     print(f"added_items={added}")
     print(f"dry_run={args.dry_run}")
+    print(f"categories={','.join(sorted(allowed_categories)) if allowed_categories else 'all'}")
     print(f"manifest={manifest_path}")
     print(f"bindings={bindings_path}")
 

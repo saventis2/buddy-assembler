@@ -10,6 +10,14 @@ used to build internal content packs; they are not part of the runtime
 and will move under `tools/importers/` in a later PR (see `PR_PLAN.md`
 → PR-12).
 
+## Quick start (double-click)
+
+| File | What it does |
+|------|--------------|
+| `Launch Buddy.bat` | Start the companion overlay (normal mode) |
+| `Launch Buddy Dev.bat` | Start vertical-slice dev mode with test hotkeys |
+| `Run Tests.bat` | Run the full headless verification gate |
+
 ## Start here
 
 - `PROJECT_STATUS.md` — what is landed and what is not

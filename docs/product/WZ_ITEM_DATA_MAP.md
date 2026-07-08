@@ -68,6 +68,8 @@ The mapping is split across domains and must be joined by item id.
   - `.../info/icon.png`
   - alternate extracted layouts such as `.../icon.png` and `.../iconRaw/0.png`
 - Current full ingest result:
-  - `copied=6008`
+  - `copied=11122`
   - `missing=0` (for all catalog-backed rows in `item_bindings_full.csv`)
+- Canonical category coverage now includes gear:
+  - `gear=5114`, `materials=2944`, `food=2286`, `gifts=484`, `decor=294`
 - Remaining gap report: `0` rows (no current manifest icon gaps).

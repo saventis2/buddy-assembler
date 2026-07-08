@@ -82,6 +82,18 @@ text = "Prompt Frequency"
 layout_mode = 2
 text = "Quiet Strictness"
 
+[node name="BtnDnd15" type="Button" parent="SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid"]
+layout_mode = 2
+text = "DND 15m"
+
+[node name="BtnDnd30" type="Button" parent="SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid"]
+layout_mode = 2
+text = "DND 30m"
+
+[node name="BtnDndOff" type="Button" parent="SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid"]
+layout_mode = 2
+text = "DND Off"
+
 [node name="BtnIntensity" type="Button" parent="SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid"]
 layout_mode = 2
 text = "Interaction Intensity"
@@ -106,6 +118,18 @@ text = "Demo World Prompt"
 layout_mode = 2
 text = "Open Reward Box"
 
+[node name="BtnSeedInventory" type="Button" parent="SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid"]
+layout_mode = 2
+text = "Seed Test Inventory"
+
+[node name="BtnRepairInventory" type="Button" parent="SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid"]
+layout_mode = 2
+text = "Repair Inventory"
+
+[node name="BtnClearInventory" type="Button" parent="SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid"]
+layout_mode = 2
+text = "Clear Inventory"
+
 [node name="BtnTelemetry" type="Button" parent="SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid"]
 layout_mode = 2
 text = "Toggle Telemetry"
@@ -121,6 +145,18 @@ text = "Quit Runtime"
 [node name="BtnChat" type="Button" parent="SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid"]
 layout_mode = 2
 text = "Open Chat"
+
+[node name="BtnStats" type="Button" parent="SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid"]
+layout_mode = 2
+text = "Open Stats"
+
+[node name="BtnInventory" type="Button" parent="SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid"]
+layout_mode = 2
+text = "Open Inventory"
+
+[node name="BtnWardrobe" type="Button" parent="SettingsWindow/MarginContainer/SettingsVBox/ControlsGrid"]
+layout_mode = 2
+text = "Open Wardrobe"
 
 [node name="FloorAdjustBox" type="VBoxContainer" parent="SettingsWindow/MarginContainer/SettingsVBox"]
 layout_mode = 2
@@ -147,6 +183,365 @@ text = "+0 px"
 horizontal_alignment = 2
 
 [node name="WelcomeLayer" type="CanvasLayer" parent="."]
+
+[node name="StatsWindow" type="Window" parent="."]
+visible = false
+title = "Maple Buddy Stats"
+position = Vector2i(260, 140)
+size = Vector2i(360, 430)
+min_size = Vector2i(320, 360)
+always_on_top = true
+unresizable = false
+wrap_controls = true
+
+[node name="MarginContainer" type="MarginContainer" parent="StatsWindow"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 10.0
+offset_top = 10.0
+offset_right = -10.0
+offset_bottom = -10.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 6
+theme_override_constants/margin_top = 6
+theme_override_constants/margin_right = 6
+theme_override_constants/margin_bottom = 6
+
+[node name="StatsVBox" type="VBoxContainer" parent="StatsWindow/MarginContainer"]
+layout_mode = 2
+
+[node name="StatsLabel" type="RichTextLabel" parent="StatsWindow/MarginContainer/StatsVBox"]
+bbcode_enabled = true
+scroll_active = true
+fit_content = false
+size_flags_vertical = 3
+theme_override_font_sizes/font_size = 13
+theme_override_colors/font_color = Color(0.96, 0.91, 0.81, 0.98)
+theme_override_colors/font_outline_color = Color(0.13, 0.09, 0.05, 0.95)
+theme_override_constants/outline_size = 2
+text = "Stats Menu (Shift+F10)"
+
+[node name="StatsGrid" type="GridContainer" parent="StatsWindow/MarginContainer/StatsVBox"]
+layout_mode = 2
+columns = 2
+
+[node name="BtnStrength" type="Button" parent="StatsWindow/MarginContainer/StatsVBox/StatsGrid"]
+layout_mode = 2
+text = "STR +1"
+
+[node name="BtnDexterity" type="Button" parent="StatsWindow/MarginContainer/StatsVBox/StatsGrid"]
+layout_mode = 2
+text = "DEX +1"
+
+[node name="BtnCharisma" type="Button" parent="StatsWindow/MarginContainer/StatsVBox/StatsGrid"]
+layout_mode = 2
+text = "CHA +1"
+
+[node name="BtnEndurance" type="Button" parent="StatsWindow/MarginContainer/StatsVBox/StatsGrid"]
+layout_mode = 2
+text = "END +1"
+
+[node name="BtnWisdom" type="Button" parent="StatsWindow/MarginContainer/StatsVBox/StatsGrid"]
+layout_mode = 2
+text = "WIS +1"
+
+[node name="BtnKnowledge" type="Button" parent="StatsWindow/MarginContainer/StatsVBox/StatsGrid"]
+layout_mode = 2
+text = "KNO +1"
+
+[node name="StatsActions" type="HBoxContainer" parent="StatsWindow/MarginContainer/StatsVBox"]
+layout_mode = 2
+
+[node name="BtnStatsClose" type="Button" parent="StatsWindow/MarginContainer/StatsVBox/StatsActions"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Close Stats"
+
+[node name="InventoryWindow" type="Window" parent="."]
+visible = false
+title = "Maple Buddy Inventory"
+position = Vector2i(300, 160)
+size = Vector2i(420, 430)
+min_size = Vector2i(320, 300)
+always_on_top = true
+unresizable = false
+wrap_controls = true
+
+[node name="MarginContainer" type="MarginContainer" parent="InventoryWindow"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 10.0
+offset_top = 10.0
+offset_right = -10.0
+offset_bottom = -10.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 6
+theme_override_constants/margin_top = 6
+theme_override_constants/margin_right = 6
+theme_override_constants/margin_bottom = 6
+
+[node name="InventoryVBox" type="VBoxContainer" parent="InventoryWindow/MarginContainer"]
+layout_mode = 2
+
+[node name="InventoryHeader" type="RichTextLabel" parent="InventoryWindow/MarginContainer/InventoryVBox"]
+layout_mode = 2
+bbcode_enabled = true
+scroll_active = false
+fit_content = true
+theme_override_font_sizes/font_size = 13
+theme_override_colors/font_color = Color(0.96, 0.91, 0.81, 0.98)
+theme_override_colors/font_outline_color = Color(0.13, 0.09, 0.05, 0.95)
+theme_override_constants/outline_size = 2
+text = "Inventory"
+
+[node name="TabRow" type="HBoxContainer" parent="InventoryWindow/MarginContainer/InventoryVBox"]
+layout_mode = 2
+
+[node name="BtnInvTabAll" type="Button" parent="InventoryWindow/MarginContainer/InventoryVBox/TabRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "All"
+
+[node name="BtnInvTabEquip" type="Button" parent="InventoryWindow/MarginContainer/InventoryVBox/TabRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Equip"
+
+[node name="BtnInvTabUse" type="Button" parent="InventoryWindow/MarginContainer/InventoryVBox/TabRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Use"
+
+[node name="BtnInvTabEtc" type="Button" parent="InventoryWindow/MarginContainer/InventoryVBox/TabRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Etc"
+
+[node name="BtnInvTabDecor" type="Button" parent="InventoryWindow/MarginContainer/InventoryVBox/TabRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Decor"
+
+[node name="FilterRow" type="HBoxContainer" parent="InventoryWindow/MarginContainer/InventoryVBox"]
+layout_mode = 2
+
+[node name="FilterLabel" type="Label" parent="InventoryWindow/MarginContainer/InventoryVBox/FilterRow"]
+layout_mode = 2
+text = "Category:"
+
+[node name="CategoryFilter" type="OptionButton" parent="InventoryWindow/MarginContainer/InventoryVBox/FilterRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="BodySplit" type="HSplitContainer" parent="InventoryWindow/MarginContainer/InventoryVBox"]
+layout_mode = 2
+size_flags_vertical = 3
+split_offset = 220
+
+[node name="InventoryList" type="ItemList" parent="InventoryWindow/MarginContainer/InventoryVBox/BodySplit"]
+layout_mode = 2
+size_flags_vertical = 3
+allow_reselect = true
+same_column_width = true
+
+[node name="DetailVBox" type="VBoxContainer" parent="InventoryWindow/MarginContainer/InventoryVBox/BodySplit"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="DetailScroll" type="ScrollContainer" parent="InventoryWindow/MarginContainer/InventoryVBox/BodySplit/DetailVBox"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="DetailContent" type="VBoxContainer" parent="InventoryWindow/MarginContainer/InventoryVBox/BodySplit/DetailVBox/DetailScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="PaperDollPanel" type="VBoxContainer" parent="InventoryWindow/MarginContainer/InventoryVBox/BodySplit/DetailVBox/DetailScroll/DetailContent"]
+layout_mode = 2
+
+[node name="PaperDollTitle" type="Label" parent="InventoryWindow/MarginContainer/InventoryVBox/BodySplit/DetailVBox/DetailScroll/DetailContent/PaperDollPanel"]
+layout_mode = 2
+text = "Equipped Slots"
+
+[node name="PaperSlotGearRow" type="HBoxContainer" parent="InventoryWindow/MarginContainer/InventoryVBox/BodySplit/DetailVBox/DetailScroll/DetailContent/PaperDollPanel"]
+layout_mode = 2
+
+[node name="PaperSlotGearLabel" type="Label" parent="InventoryWindow/MarginContainer/InventoryVBox/BodySplit/DetailVBox/DetailScroll/DetailContent/PaperDollPanel/PaperSlotGearRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Gear: (empty)"
+
+[node name="BtnPaperUnequipGear" type="Button" parent="InventoryWindow/MarginContainer/InventoryVBox/BodySplit/DetailVBox/DetailScroll/DetailContent/PaperDollPanel/PaperSlotGearRow"]
+layout_mode = 2
+text = "Unequip"
+
+[node name="PaperSlotCharmRow" type="HBoxContainer" parent="InventoryWindow/MarginContainer/InventoryVBox/BodySplit/DetailVBox/DetailScroll/DetailContent/PaperDollPanel"]
+layout_mode = 2
+
+[node name="PaperSlotCharmLabel" type="Label" parent="InventoryWindow/MarginContainer/InventoryVBox/BodySplit/DetailVBox/DetailScroll/DetailContent/PaperDollPanel/PaperSlotCharmRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Charm: (empty)"
+
+[node name="BtnPaperUnequipCharm" type="Button" parent="InventoryWindow/MarginContainer/InventoryVBox/BodySplit/DetailVBox/DetailScroll/DetailContent/PaperDollPanel/PaperSlotCharmRow"]
+layout_mode = 2
+text = "Unequip"
+
+[node name="PaperSlotRelicRow" type="HBoxContainer" parent="InventoryWindow/MarginContainer/InventoryVBox/BodySplit/DetailVBox/DetailScroll/DetailContent/PaperDollPanel"]
+layout_mode = 2
+
+[node name="PaperSlotRelicLabel" type="Label" parent="InventoryWindow/MarginContainer/InventoryVBox/BodySplit/DetailVBox/DetailScroll/DetailContent/PaperDollPanel/PaperSlotRelicRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Relic: (empty)"
+
+[node name="BtnPaperUnequipRelic" type="Button" parent="InventoryWindow/MarginContainer/InventoryVBox/BodySplit/DetailVBox/DetailScroll/DetailContent/PaperDollPanel/PaperSlotRelicRow"]
+layout_mode = 2
+text = "Unequip"
+
+[node name="InventoryIconRow" type="HBoxContainer" parent="InventoryWindow/MarginContainer/InventoryVBox/BodySplit/DetailVBox/DetailScroll/DetailContent"]
+layout_mode = 2
+
+[node name="InventoryIconLabel" type="Label" parent="InventoryWindow/MarginContainer/InventoryVBox/BodySplit/DetailVBox/DetailScroll/DetailContent/InventoryIconRow"]
+layout_mode = 2
+text = "Icon"
+
+[node name="InventoryIconPreview" type="TextureRect" parent="InventoryWindow/MarginContainer/InventoryVBox/BodySplit/DetailVBox/DetailScroll/DetailContent/InventoryIconRow"]
+custom_minimum_size = Vector2(72, 72)
+layout_mode = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="InventoryDetail" type="RichTextLabel" parent="InventoryWindow/MarginContainer/InventoryVBox/BodySplit/DetailVBox/DetailScroll/DetailContent"]
+layout_mode = 2
+bbcode_enabled = true
+scroll_active = true
+fit_content = false
+size_flags_vertical = 3
+theme_override_font_sizes/font_size = 13
+theme_override_colors/font_color = Color(0.96, 0.91, 0.81, 0.98)
+theme_override_colors/font_outline_color = Color(0.13, 0.09, 0.05, 0.95)
+theme_override_constants/outline_size = 2
+text = "Select an item."
+
+[node name="InventoryActions" type="GridContainer" parent="InventoryWindow/MarginContainer/InventoryVBox/BodySplit/DetailVBox/DetailScroll/DetailContent"]
+layout_mode = 2
+columns = 2
+
+[node name="BtnInventoryUse" type="Button" parent="InventoryWindow/MarginContainer/InventoryVBox/BodySplit/DetailVBox/DetailScroll/DetailContent/InventoryActions"]
+layout_mode = 2
+text = "Use"
+
+[node name="BtnInventoryEquip" type="Button" parent="InventoryWindow/MarginContainer/InventoryVBox/BodySplit/DetailVBox/DetailScroll/DetailContent/InventoryActions"]
+layout_mode = 2
+text = "Equip"
+
+[node name="BtnInventoryUnequip" type="Button" parent="InventoryWindow/MarginContainer/InventoryVBox/BodySplit/DetailVBox/DetailScroll/DetailContent/InventoryActions"]
+layout_mode = 2
+text = "Unequip"
+
+[node name="BtnInventoryClose" type="Button" parent="InventoryWindow/MarginContainer/InventoryVBox/BodySplit/DetailVBox/DetailScroll/DetailContent/InventoryActions"]
+layout_mode = 2
+text = "Close"
+
+[node name="WardrobeWindow" type="Window" parent="."]
+visible = false
+title = "Maple Buddy Wardrobe"
+position = Vector2i(340, 180)
+size = Vector2i(520, 460)
+min_size = Vector2i(360, 320)
+always_on_top = true
+unresizable = false
+wrap_controls = true
+
+[node name="MarginContainer" type="MarginContainer" parent="WardrobeWindow"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 10.0
+offset_top = 10.0
+offset_right = -10.0
+offset_bottom = -10.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 6
+theme_override_constants/margin_top = 6
+theme_override_constants/margin_right = 6
+theme_override_constants/margin_bottom = 6
+
+[node name="WardrobeVBox" type="VBoxContainer" parent="WardrobeWindow/MarginContainer"]
+layout_mode = 2
+
+[node name="WardrobeHeader" type="RichTextLabel" parent="WardrobeWindow/MarginContainer/WardrobeVBox"]
+layout_mode = 2
+bbcode_enabled = true
+scroll_active = false
+fit_content = true
+theme_override_font_sizes/font_size = 13
+theme_override_colors/font_color = Color(0.96, 0.91, 0.81, 0.98)
+theme_override_colors/font_outline_color = Color(0.13, 0.09, 0.05, 0.95)
+theme_override_constants/outline_size = 2
+text = "Wardrobe"
+
+[node name="BodySplit" type="HSplitContainer" parent="WardrobeWindow/MarginContainer/WardrobeVBox"]
+layout_mode = 2
+size_flags_vertical = 3
+split_offset = 280
+
+[node name="WardrobeList" type="ItemList" parent="WardrobeWindow/MarginContainer/WardrobeVBox/BodySplit"]
+layout_mode = 2
+size_flags_vertical = 3
+allow_reselect = true
+same_column_width = true
+
+[node name="WardrobeDetailVBox" type="VBoxContainer" parent="WardrobeWindow/MarginContainer/WardrobeVBox/BodySplit"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="WardrobePreviewTitle" type="Label" parent="WardrobeWindow/MarginContainer/WardrobeVBox/BodySplit/WardrobeDetailVBox"]
+layout_mode = 2
+text = "Draft Loadout"
+
+[node name="WardrobePreview" type="RichTextLabel" parent="WardrobeWindow/MarginContainer/WardrobeVBox/BodySplit/WardrobeDetailVBox"]
+layout_mode = 2
+bbcode_enabled = true
+scroll_active = true
+fit_content = false
+size_flags_vertical = 3
+theme_override_font_sizes/font_size = 13
+theme_override_colors/font_color = Color(0.96, 0.91, 0.81, 0.98)
+theme_override_colors/font_outline_color = Color(0.13, 0.09, 0.05, 0.95)
+theme_override_constants/outline_size = 2
+text = "Select an equippable item."
+
+[node name="WardrobeActions" type="GridContainer" parent="WardrobeWindow/MarginContainer/WardrobeVBox/BodySplit/WardrobeDetailVBox"]
+layout_mode = 2
+columns = 2
+
+[node name="BtnWardrobeDraftToggle" type="Button" parent="WardrobeWindow/MarginContainer/WardrobeVBox/BodySplit/WardrobeDetailVBox/WardrobeActions"]
+layout_mode = 2
+text = "Toggle Draft Slot"
+
+[node name="BtnWardrobeClearDraft" type="Button" parent="WardrobeWindow/MarginContainer/WardrobeVBox/BodySplit/WardrobeDetailVBox/WardrobeActions"]
+layout_mode = 2
+text = "Clear Draft Slot"
+
+[node name="BtnWardrobeEquipDraft" type="Button" parent="WardrobeWindow/MarginContainer/WardrobeVBox/BodySplit/WardrobeDetailVBox/WardrobeActions"]
+layout_mode = 2
+text = "Equip Draft"
+
+[node name="BtnWardrobeRevert" type="Button" parent="WardrobeWindow/MarginContainer/WardrobeVBox/BodySplit/WardrobeDetailVBox/WardrobeActions"]
+layout_mode = 2
+text = "Revert Draft"
+
+[node name="BtnWardrobeClose" type="Button" parent="WardrobeWindow/MarginContainer/WardrobeVBox/BodySplit/WardrobeDetailVBox"]
+layout_mode = 2
+text = "Close Wardrobe"
 
 [node name="ChatWindow" type="Window" parent="."]
 visible = false

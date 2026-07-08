@@ -110,6 +110,36 @@ content/<pack_id>/
 - For V1, use a controlled shortlist (`sourceType: "wz_whitelist_v1"`) and avoid broad ingest.
 - `rewardBoxes[].possibleItems` should reference these curated IDs.
 
+### Item overlay tuning (TO runtime)
+
+To mirror WZ-style per-item placement tuning, item rows may include:
+
+- `equipSlot` (string): preferred slot key (WZ-style keys like `weapon`, `hat`,
+  `overall`, `top`, `bottom`, `shoes`, `gloves`, `cape`, `ring1`, `pendant1`,
+  etc.; legacy `gear/charm/relic` remains supported).
+- `overlayOffset` (array `[x, y]`): per-item pixel offset from slot anchor.
+- `overlayScale` (number): per-item scale multiplier for overlay icon draw size.
+- `iconAsset` / `assetRef` / `iconPath` / `icon` (string): icon texture path inside pack.
+- `description` (string): item description shown in inventory detail.
+- `price` (number): optional shop/value number shown in inventory detail.
+- `slotMax` (number): optional stack max shown in inventory detail.
+- `wzId` / `wzRoot` / `wzGroup` (string): optional source linkage to WZ catalog rows.
+- `wzIconPath` (string): optional WZ-relative icon path, resolved at runtime when
+  `wzIconRoot` is configured.
+
+These are optional and backward-compatible; runtime uses slot/category fallbacks when omitted.
+
+### Item binding spreadsheet
+
+- Runtime pack includes `content/core_pack/item_bindings.csv` as the source-of-truth
+  binding table for curated items.
+- It maps runtime IDs to WZ metadata fields:
+  `wz_id`, `wz_name`, `wz_desc`, `wz_price`, `wz_slot_max`, `wz_icon_relpath`,
+  plus runtime-facing `category`, `equip_slot`, and fallback `icon_asset`.
+- Use:
+  `python apps/runtime-godot/tools/sync_manifest_items_from_bindings.py`
+  to sync `manifest.json` item rows from that sheet.
+
 ---
 
 ## Animation JSON format

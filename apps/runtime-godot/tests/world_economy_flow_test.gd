@@ -21,6 +21,8 @@ func _run_all() -> void:
 	_case("quest_and_encounter_engage_flow", func(): return _test_quest_and_encounter_engage_flow())
 	_case("encounter_skip_flow", func(): return _test_encounter_skip_flow())
 	_case("duplicate_recycle_flow", func(): return _test_duplicate_recycle_flow())
+	_case("legacy_inventory_ids_remap_to_catalog", func(): return _test_legacy_inventory_ids_remap_to_catalog())
+	_case("strict_catalog_quarantine_and_repair", func(): return _test_strict_catalog_quarantine_and_repair())
 
 
 func _case(name: String, body: Callable) -> void:
@@ -210,4 +212,87 @@ func _test_duplicate_recycle_flow() -> Variant:
 	var recycles: Array = world.get("duplicate_recycles", [])
 	if recycles.is_empty():
 		return "expected duplicate recycle history row"
+	return null
+
+
+func _test_legacy_inventory_ids_remap_to_catalog() -> Variant:
+	var manifest := _new_manifest()
+	manifest["items"] = (manifest.get("items", []) as Array).duplicate(true)
+	manifest["items"].append(
+		{
+			"id": "wz-green-halloween-stick-candy",
+			"name": "Green Halloween Stick Candy",
+			"description": "A green Halloween candy.",
+			"category": "gifts",
+			"rarity": "common",
+			"iconAsset": "icons/items/wz-green-halloween-stick-candy.png",
+		}
+	)
+	manifest["items"].append(
+		{
+			"id": "wz-rocky-mask-doll",
+			"name": "Rocky Mask Doll",
+			"description": "A doll modeled after Stone Mask.",
+			"category": "decor",
+			"rarity": "common",
+			"iconAsset": "icons/items/wz-rocky-mask-doll.png",
+		}
+	)
+	var economy_service := EconomyService.new()
+	var world := _seed_world(manifest)
+	world["inventory"] = [
+		{"id": "cozy-lamp", "iconAsset": "effects/chair_basic/frames/000.png"},
+		{"id": "plush-heart", "iconAsset": "effects/happy_sparkle/frames/000.png"},
+	]
+	world = economy_service.ensure_world_state(world)
+	var inventory: Array = world.get("inventory", [])
+	if inventory.size() != 2:
+		return "expected 2 inventory rows after normalization"
+	var first: Dictionary = inventory[0]
+	var second: Dictionary = inventory[1]
+	if str(first.get("id", "")) != "wz-rocky-mask-doll":
+		return "expected cozy-lamp remap to wz-rocky-mask-doll, got %s" % [first.get("id", "")]
+	if str(second.get("id", "")) != "wz-green-halloween-stick-candy":
+		return "expected plush-heart remap to wz-green-halloween-stick-candy, got %s" % [second.get("id", "")]
+	if str(first.get("iconAsset", "")) == "effects/chair_basic/frames/000.png":
+		return "expected remapped catalog icon for rocky-mask-doll"
+	if str(second.get("iconAsset", "")) == "effects/happy_sparkle/frames/000.png":
+		return "expected remapped catalog icon for halloween-stick-candy"
+	return null
+
+
+func _test_strict_catalog_quarantine_and_repair() -> Variant:
+	var manifest := _new_manifest()
+	var economy_service := EconomyService.new()
+	var world := _seed_world(manifest)
+	world["inventory"] = [
+		{"id": "unknown-item-x", "iconAsset": "effects/gift_box/frames/000.png"},
+	]
+	world = economy_service.ensure_world_state(world)
+	var snapshot_before := economy_service.get_inventory_snapshot(world)
+	if int(snapshot_before.get("inventory_count", 0)) != 0:
+		return "expected unresolved item to be removed from active inventory"
+	if int(snapshot_before.get("quarantine_count", 0)) <= 0:
+		return "expected unresolved item to be quarantined"
+
+	# Add the formerly unknown item to catalog and repair.
+	var catalog: Dictionary = world.get("item_catalog", {}).duplicate(true)
+	catalog["unknown-item-x"] = {
+		"id": "unknown-item-x",
+		"name": "Recovered Item",
+		"description": "Recovered from quarantine.",
+		"category": "materials",
+		"rarity": "common",
+		"iconAsset": "icons/items/wz-stone-golem-rubble.png",
+	}
+	world["item_catalog"] = catalog
+	var repaired := economy_service.repair_inventory_from_catalog(world)
+	if not bool(repaired.get("ok", false)):
+		return "expected repair_inventory_from_catalog to succeed"
+	world = repaired.get("world_state", {})
+	var snapshot_after := economy_service.get_inventory_snapshot(world)
+	if int(snapshot_after.get("inventory_count", 0)) != 1:
+		return "expected repaired item to return to inventory"
+	if int(snapshot_after.get("quarantine_count", 0)) != 0:
+		return "expected quarantine to be empty after successful repair"
 	return null

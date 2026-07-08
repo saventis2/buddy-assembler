@@ -1,6 +1,6 @@
 # Milestone Status
 
-Updated: 2026-04-20 (world variety + prompt cadence guard)
+Updated: 2026-04-23 (Plan 9 inventory/progression/drop coupling)
 
 > Update (2026-04-20): buddy-system milestone tracking is now coordinated with
 > `BUDDY_V1_BUILD_PLAN_MILESTONE_EXECUTION_2026-04-20.md` for identity/economy/world
@@ -74,6 +74,69 @@ Updated: 2026-04-20 (world variety + prompt cadence guard)
 - [done] Added optional encounter variants with distinct reward profiles
 - [done] Upgraded anti-repeat picker to avoid recent category-group reuse (not only ID reuse)
 - [done] Added `WorldVarietyTest` and wired it into `run_headless_checks.ps1`
+
+## Plan 9A (WZ Equipment Data Spine — 2026-04-23)
+
+- [done] Extended canonical WZ map builder to ingest Character equipment rows
+- [done] Added equip-slot mapping in canonical bindings output
+- [done] Rebuilt `item_bindings_full.csv/json` with gear category rows included
+- [done] Synced manifest via full bindings add-missing path (+gear rows)
+- [done] Imported icons for full manifest rows with `missing=0`
+
+## Plan 9C (Progression Consistency — 2026-04-23)
+
+- [done] Added load-time XP->level reconciliation via bond service
+- [done] Added stat-point reconciliation floor (earned minus spent)
+- [done] Exposed XP progress fields to telemetry/stats snapshots
+- [done] Updated `/status` and stats window with XP progress + next unlock hint
+- [done] Added targeted progression regression checks (`ProgressionConsistencyTest`)
+
+## Plan 9B (Inventory/Paper-Doll Expansion — 2026-04-23)
+
+- [done] Expanded inventory paper-doll panel into grouped Maple-style slot families
+- [done] Added group-level unequip controls for combat/style/accessory slot groups
+- [done] Kept item-level use/equip/unequip actions while broadening equipped-state visibility
+
+## Plan 9D (Job/Drop Coupling Upgrade — 2026-04-23)
+
+- [done] Added `job_drop_bias` propagation from manifest jobs into profile state
+- [done] Included `job_primary_stat` + `job_drop_bias` in encounter drop-roll context
+- [done] Upgraded drop weighting using job affinity, category bias, primary-stat, and slot hints
+- [done] Added economy regression case validating context-sensitive drop bias
+
+## Plan 10A (Controlled WZ Ingest Pipeline — 2026-04-23)
+
+- [done] Added category-scoped manifest sync via `--categories`
+- [done] Added batch ingest JSON reporting (`WZ_INGEST_LAST_RUN.json`)
+- [done] Documented repeatable ingest flow in `PLAN10_WZ_INGEST_PIPELINE.md`
+
+## Plan 10B (Content Expansion Batches — 2026-04-23)
+
+- [in_progress] Execute first category-bounded ingest batch and validate runtime behavior
+- [done] First bounded ingest dry-run executed (`gear`, delta=0, report emitted)
+- [done] First non-dry-run bounded ingest executed (`food,materials`, delta=0)
+- [done] Headless verification gate passed post-ingest (no regressions)
+
+## Plan 10C (Next Expansion Source Pass — 2026-04-23)
+
+- [in_progress] Regenerate/expand canonical source bindings to discover net-new ingest rows
+- [done] Rebuilt canonical bindings from current source set (`rows=11122`)
+- [done] Verified saturation on sync dry-run (`added_items=0`)
+- [done] Added multi-root canonical ingest support in tooling
+- [done] Confirmed current extracted `Base.wz` is super-root (contains Character/Item/String/etc)
+- [done] Closed duplicate-extraction branch for active planning
+
+## Plan 11A (Runtime Depth from Existing Dataset — 2026-04-23)
+
+- [in_progress] Shift execution focus from ingest expansion to runtime depth/clarity improvements
+- [done] Improved cadence visibility in TO/settings and setting-change speech feedback
+- [done] Added progression readability in stats window (session deltas + upcoming unlock preview)
+- [done] Added inventory quick iteration controls (sort cycling + quick activate/use/unequip)
+- [done] Headless verification gate passed after runtime UI updates
+
+## Plan 11B (TO Manual UX Verification Sweep — 2026-04-23)
+
+- [in_progress] Run manual TO UX sweep focused on cadence/progression/inventory quick controls
 
 ## Phase 5 (Visual polish & WZ asset expansion — 2026-04-19)
 

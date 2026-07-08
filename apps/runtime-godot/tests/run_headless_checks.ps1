@@ -122,6 +122,16 @@ if ($chatRouterCode -ne 0) {
 }
 Write-Host "Chat command router test PASSED."
 
+# --- Progression consistency test ---
+Write-Host ""
+Write-Host "=== Progression consistency test ==="
+$progressionCode = Invoke-GodotHeadless -ExtraArgs @("--scene", "res://tests/ProgressionConsistencyTest.tscn") -Label "progression-consistency"
+if ($progressionCode -ne 0) {
+    Write-Host "Progression consistency test FAILED (exit $progressionCode)"
+    exit $progressionCode
+}
+Write-Host "Progression consistency test PASSED."
+
 # --- Manual verification report test ---
 Write-Host ""
 Write-Host "=== Manual verification report test ==="

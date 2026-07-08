@@ -23,3 +23,9 @@ catalogue/
 # Local runtime noise
 .DS_Store
 Thumbs.db
+
+# WZ ingest local artifacts (keep source extracts outside repo)
+apps/runtime-godot/content/core_pack/item_bindings_full.csv
+apps/runtime-godot/content/core_pack/item_bindings_full.json
+apps/runtime-godot/content/core_pack/item_bindings_full.*.csv
+apps/runtime-godot/content/core_pack/item_bindings_full.*.json
