@@ -67,7 +67,7 @@ import re
 import sqlite3
 import sys
 import zipfile
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Iterator, Optional
@@ -837,7 +837,7 @@ def write_index_md(
     lines.append(f"- Total files indexed: **{len(manifest_records)}**")
     for tree, count in sorted(by_tree.items()):
         lines.append(f"  - `{tree}`: {count}")
-    lines.append(f"- Full CSV: `file_manifest.csv`")
+    lines.append("- Full CSV: `file_manifest.csv`")
     lines.append(f"- sqlite table: `file_manifest` in `{db_path.name}`")
     lines.append("")
 
@@ -856,7 +856,7 @@ def write_index_md(
                   "`missing_in_83`, `missing_in_complete`, and `opaque_not_comparable` "
                   "(the 83-side entry is an unreadable single blob -- a raw WZ binary "
                   "vs many extracted files is expected, not evidence of loss).")
-    lines.append(f"- Full CSV: `completeness_cross_check.csv`")
+    lines.append("- Full CSV: `completeness_cross_check.csv`")
     lines.append("")
 
     by_source: dict[str, int] = {}
@@ -875,7 +875,7 @@ def write_index_md(
         "is nearby. Deepening any of these to Item/Effect/Character-level detail is "
         "follow-up work -- see the PR's Next-PR handoff."
     )
-    lines.append(f"- Full CSV: `logical_asset_index.csv`")
+    lines.append("- Full CSV: `logical_asset_index.csv`")
     lines.append(f"- sqlite table: `logical_asset` in `{db_path.name}`")
     lines.append("")
     lines.append("## Querying")
