@@ -658,7 +658,7 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    repo_root = Path(__file__).resolve().parent
+    repo_root = Path(__file__).resolve().parents[2]
     combo_path = (repo_root / args.combo_json).resolve()
     out_dir = (repo_root / args.output_dir).resolve()
     meta_dir = (repo_root / args.metadata_dir).resolve()

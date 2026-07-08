@@ -41,7 +41,7 @@ def resolve_base_wz(cli_value: str | None = None) -> Path:
 
 
 BASE_WZ = resolve_base_wz()
-OUT_ROOT = Path(__file__).resolve().parent / "analysis" / "wz_index"
+OUT_ROOT = Path(__file__).resolve().parents[2] / "analysis" / "wz_index"
 
 
 def _find_imgdirs(node: ET.Element, path: list[str]) -> ET.Element | None:

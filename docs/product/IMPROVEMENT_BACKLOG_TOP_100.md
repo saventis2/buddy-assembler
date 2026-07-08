@@ -93,9 +93,15 @@ higher items are higher leverage.
 
 ## E. Content pipeline & assembler tooling (43–58)
 
-43. Finish the PR-12 promise: relocate the 14 root Python scripts under
+43. ~~Finish the PR-12 promise: relocate the 14 root Python scripts under
     `tools/importers/` (README still says "will move"; PROJECT_STATUS
-    says PR-12 merged — reconcile and complete).
+    says PR-12 merged — reconcile and complete).~~ — **done**: all 15
+    importer/analysis scripts (the original 14 plus `build_asset_inventory.py`,
+    added after the PR-12 framing) were relocated via `git mv` into
+    `tools/importers/`, the 4 scripts that anchored repo-root paths to
+    `Path(__file__)` were fixed to `parents[2]`, and CI (`python-lint.yml`),
+    pre-commit, and all living docs were repointed. Closes PR-12's
+    importer-boundary half.
 44. Break up `character_tooling_gui.py` (3,531 lines) into modules:
     UI shell, render orchestration, catalogue IO, export.
 45. Replace hardcoded machine paths (`C:\Users\GGPC\...` appears in 10

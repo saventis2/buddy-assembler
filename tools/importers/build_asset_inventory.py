@@ -86,7 +86,7 @@ import xml.etree.ElementTree as ET
 DEFAULT_SOURCE_COMPLETE = r"C:\Users\GGPC\OneDrive\Desktop\83 complete"
 DEFAULT_SOURCE_83 = r"C:\Users\GGPC\OneDrive\Desktop\83"
 
-REPO_ROOT = Path(__file__).resolve().parent
+REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_OUTPUT_DIR = REPO_ROOT / "analysis" / "asset_inventory"
 
 # Categories called out explicitly in the task / mirrored from
@@ -553,15 +553,16 @@ def build_completeness_check(manifest_records: list[FileRecord]) -> list[dict[st
 # ==========================================================================
 
 def _load_sibling_module(module_name: str):
-    """Import a sibling flat-at-root script as a module. All four category
-    scripts live next to this file; importing (rather than shelling out)
-    lets us reuse their return values / functions directly instead of
-    reimplementing WZ-XML parsing.
+    """Import a sibling importer script as a module. All four category
+    scripts live next to this file (under `tools/importers/`); importing
+    (rather than shelling out) lets us reuse their return values /
+    functions directly instead of reimplementing WZ-XML parsing.
     """
     import importlib
 
-    if str(REPO_ROOT) not in sys.path:
-        sys.path.insert(0, str(REPO_ROOT))
+    sibling_dir = str(Path(__file__).resolve().parent)
+    if sibling_dir not in sys.path:
+        sys.path.insert(0, sibling_dir)
     return importlib.import_module(module_name)
 
 

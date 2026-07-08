@@ -6,7 +6,7 @@ on:
     branches:
       - main
 
-# Scope: repo-root importer/analysis *.py scripts, packages/content-validator/,
+# Scope: tools/importers/ importer/analysis scripts, packages/content-validator/,
 # and apps/runtime-godot/tools/. This is the first time this Python tooling
 # has been linted or type-checked in CI (backlog #54).
 #
@@ -20,7 +20,7 @@ on:
 #   - packages/content-validator/ and apps/runtime-godot/tools/ are already
 #     clean under `--ignore-missing-imports` (0 errors), so that check is
 #     blocking there.
-#   - the root-level *.py importer/analysis scripts currently have ~71
+#   - the tools/importers/ importer/analysis scripts currently have ~71
 #     pre-existing type errors (untyped historical code) - fixing them all
 #     is out of scope for this PR, so that check runs non-blocking
 #     (continue-on-error) for visibility only. Tightening this is future
@@ -49,13 +49,13 @@ jobs:
 
       - name: ruff check (blocking)
         run: |
-          ruff check *.py packages/content-validator apps/runtime-godot/tools
+          ruff check tools/importers packages/content-validator apps/runtime-godot/tools
 
       - name: mypy - packages/content-validator, apps/runtime-godot/tools (blocking)
         run: |
           mypy packages/content-validator apps/runtime-godot/tools --ignore-missing-imports
 
-      - name: mypy - root importer/analysis scripts (non-blocking, informational)
+      - name: mypy - importer/analysis scripts (non-blocking, informational)
         continue-on-error: true
         run: |
-          mypy *.py --ignore-missing-imports
+          mypy tools/importers --ignore-missing-imports
