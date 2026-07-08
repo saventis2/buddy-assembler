@@ -1,5 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Reference schema only. packages/content-validator/validate_pack.py is a dependency-free, hand-rolled checker that mirrors this document's intent -- it does not load or evaluate this file through a JSON Schema engine. Keep the two in sync manually. Run `python validate_pack.py --check-schema` to confirm this document is itself a structurally valid draft 2020-12 schema.",
   "$id": "https://buddy-assembler.dev/schemas/buddy-pack.schema.json",
   "title": "Buddy Content Pack",
   "type": "object",

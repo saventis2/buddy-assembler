@@ -1,0 +1,14 @@
+{
+  "title": "Malformed Schema Fixture",
+  "type": 123,
+  "required": "id",
+  "properties": {
+    "id": {
+      "type": "not-a-real-type"
+    },
+    "nested": {
+      "type": "object",
+      "properties": "not-an-object"
+    }
+  }
+}
