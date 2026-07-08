@@ -1,0 +1,61 @@
+name: Python lint
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+# Scope: repo-root importer/analysis *.py scripts, packages/content-validator/,
+# and apps/runtime-godot/tools/. This is the first time this Python tooling
+# has been linted or type-checked in CI (backlog #54).
+#
+# ruff: blocking. Rule selection is ruff's default set (E4, E7, E9, F -
+# pyflakes correctness rules + a handful of pycodestyle error checks), not
+# `ALL`. That default set was 0 violations after fixing 4 pre-existing ones
+# (2 unused imports, 1 unused variable, 1 real bug - see PR description), so
+# it gates on real correctness issues without demanding a style rewrite.
+#
+# mypy: split by scope.
+#   - packages/content-validator/ and apps/runtime-godot/tools/ are already
+#     clean under `--ignore-missing-imports` (0 errors), so that check is
+#     blocking there.
+#   - the root-level *.py importer/analysis scripts currently have ~71
+#     pre-existing type errors (untyped historical code) - fixing them all
+#     is out of scope for this PR, so that check runs non-blocking
+#     (continue-on-error) for visibility only. Tightening this is future
+#     work - see PR description.
+#
+# Versions are pinned to match items #53 (requirements-dev.txt) and #98
+# (pre-commit hooks) so all three converge on the same ruff/mypy versions.
+# Installed directly here (not via requirements-dev.txt) since that file may
+# not exist on this branch yet.
+
+jobs:
+  python-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ruff and mypy
+        run: |
+          pip install ruff==0.6.9 mypy==1.11.2
+
+      - name: ruff check (blocking)
+        run: |
+          ruff check *.py packages/content-validator apps/runtime-godot/tools
+
+      - name: mypy - packages/content-validator, apps/runtime-godot/tools (blocking)
+        run: |
+          mypy packages/content-validator apps/runtime-godot/tools --ignore-missing-imports
+
+      - name: mypy - root importer/analysis scripts (non-blocking, informational)
+        continue-on-error: true
+        run: |
+          mypy *.py --ignore-missing-imports
