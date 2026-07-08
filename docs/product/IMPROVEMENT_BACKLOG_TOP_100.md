@@ -220,9 +220,14 @@ higher items are higher leverage.
 100. Publish a user-facing guide/FAQ (controls, privacy posture, save
      location, uninstall) separate from developer docs.
 
-## Suggested first five
+## Suggested first five — done
 
-If picking by leverage-per-effort right now: **85** (RC suite — gates
-the tag), **77** (perf baseline — gates the tag), **56** (pack CI gap —
-silent coverage hole), **89** (run all tests in CI — cheap safety), and
-**1+12** (tray icon + de-F-keying — biggest end-user experience gap).
+**85** (RC suite scaffolding), **77** (perf baseline scaffolding),
+**56** (pack CI gap), **89** (run all tests in CI), and **1+12** (tray
+icon + de-F-keying) were the first batch. Shipped: 56 (PR #23), 89
+(PR #24), 85-scaffolding (PR #25), 77-scaffolding (PR #27), and
+12-partial (PR #26 — Pause/Resume button; full F-key audit deferred,
+tray icon itself descoped, needs Godot 4.3+). See
+`IMPROVEMENT_BACKLOG_BUILD_SEQUENCE.md` for the dependency-ordered
+sequence for everything after this — it explains why the next batch
+is what it is instead of just re-sorting by leverage again.
