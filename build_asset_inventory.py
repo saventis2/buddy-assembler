@@ -650,6 +650,21 @@ def collect_itemwz_catalogue(base_wz: Path, component_dir: Path) -> list[dict[st
     return out
 
 
+def _relativize(base_wz: Path, raw_path: str) -> Optional[str]:
+    """build_wz_index.py's own rows store first_frame as an absolute path
+    (it always has, even in this repo's committed analysis/wz_index/*.csv --
+    a pre-existing quirk of that script, not something we're introducing).
+    Relativize it against base_wz here so this unified table's paths are
+    consistent with every other source_script's relpath convention.
+    """
+    if not raw_path:
+        return None
+    try:
+        return str(Path(raw_path).relative_to(base_wz)).replace("\\", "/")
+    except ValueError:
+        return raw_path.replace("\\", "/")
+
+
 def collect_wz_index(base_wz: Path) -> list[dict[str, Any]]:
     """build_wz_index.py's index_effect_img()/index_install_chairs() read
     a module-level BASE_WZ constant rather than taking it as a parameter.
@@ -671,7 +686,7 @@ def collect_wz_index(base_wz: Path) -> list[dict[str, Any]]:
                     "subcategory": img_name.replace(".img", ""),
                     "source_script": "build_wz_index",
                     "frame_count": row.get("frame_count"),
-                    "first_frame_path": row.get("first_frame") or None,
+                    "first_frame_path": _relativize(base_wz, row.get("first_frame")),
                     "xml_relpath": None,
                     "extra": row,
                 })
@@ -683,7 +698,7 @@ def collect_wz_index(base_wz: Path) -> list[dict[str, Any]]:
                 "subcategory": "Install/0301 (chairs)",
                 "source_script": "build_wz_index",
                 "frame_count": row.get("frame_count"),
-                "first_frame_path": row.get("first_frame") or None,
+                "first_frame_path": _relativize(base_wz, row.get("first_frame")),
                 "xml_relpath": None,
                 "extra": row,
             })
