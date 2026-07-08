@@ -13,11 +13,34 @@ For each leaf we emit: id, name/path, frame_count, first_frame_png, size range.
 
 from __future__ import annotations
 
+import argparse
 import csv
+import os
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-BASE_WZ = Path(r"C:\Users\GGPC\OneDrive\Desktop\83 complete\Base.wz")
+# Path override mechanism (precedence: CLI arg > env var > hardcoded default)
+# is documented once in Character-Tooling.md rather than repeated per script.
+BASE_WZ_ENV_VAR = "BUDDY_ASSEMBLER_BASE_WZ"
+_FALLBACK_BASE_WZ = r"C:\Users\GGPC\OneDrive\Desktop\83 complete\Base.wz"
+
+
+def resolve_base_wz(cli_value: str | None = None) -> Path:
+    """Resolve the Base.wz directory path.
+
+    Precedence: explicit --base-wz CLI value > BUDDY_ASSEMBLER_BASE_WZ
+    environment variable > hardcoded fallback (the maintainer's local
+    machine path). See Character-Tooling.md.
+    """
+    if cli_value:
+        return Path(cli_value)
+    env_value = os.environ.get(BASE_WZ_ENV_VAR)
+    if env_value:
+        return Path(env_value)
+    return Path(_FALLBACK_BASE_WZ)
+
+
+BASE_WZ = resolve_base_wz()
 OUT_ROOT = Path(__file__).resolve().parent / "analysis" / "wz_index"
 
 
@@ -175,6 +198,21 @@ def write_index_md(summaries: dict[str, tuple[Path, int]]) -> None:
 
 
 def main() -> None:
+    global BASE_WZ
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--base-wz",
+        default=None,
+        help=(
+            "Path to extracted Base.wz directory. Falls back to the "
+            f"{BASE_WZ_ENV_VAR} environment variable, then to the "
+            "maintainer's local default if neither is set."
+        ),
+    )
+    args = parser.parse_args()
+    BASE_WZ = resolve_base_wz(args.base_wz)
+
     OUT_ROOT.mkdir(parents=True, exist_ok=True)
     summaries: dict[str, tuple[Path, int]] = {}
 
