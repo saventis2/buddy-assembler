@@ -1,0 +1,37 @@
+# See https://pre-commit.com for usage and config reference.
+#
+# This adds tooling only (backlog #98). It intentionally does NOT run in
+# autofix/reformat mode: ruff-format and gdformat are pinned to --check so
+# they report pre-existing style issues without rewriting files. A full
+# repo-wide reformat is a separate, follow-up PR (see PR description).
+#
+# Versions are pinned to match items #53 (requirements-dev.txt) and #54
+# (ruff+mypy CI job) so all three converge on the same tool versions:
+#   ruff==0.6.9
+#   mypy==1.11.2
+
+repos:
+  # Python linting/formatting for repo-root scripts, packages/content-validator/,
+  # and apps/runtime-godot/tools/ (the only locations that contain .py files).
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9  # matches ruff==0.6.9
+    hooks:
+      - id: ruff
+        name: ruff (lint)
+        files: ^(?:[^/]+\.py|packages/content-validator/.*\.py|apps/runtime-godot/tools/.*\.py)$
+      - id: ruff-format
+        name: ruff-format (check only, no rewrite)
+        files: ^(?:[^/]+\.py|packages/content-validator/.*\.py|apps/runtime-godot/tools/.*\.py)$
+        args: [--check]
+
+  # GDScript linting/formatting for apps/runtime-godot/.
+  # gdtoolkit is installed from PyPI; no Godot editor binary is required.
+  - repo: https://github.com/Scony/godot-gdscript-toolkit
+    rev: 4.5.0  # matches gdtoolkit==4.5.0
+    hooks:
+      - id: gdlint
+        files: ^apps/runtime-godot/.*\.gd$
+      - id: gdformat
+        name: gdformat (check only, no rewrite)
+        files: ^apps/runtime-godot/.*\.gd$
+        args: [--check]
