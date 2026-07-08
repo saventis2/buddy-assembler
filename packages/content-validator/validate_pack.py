@@ -1,30 +1,141 @@
 #!/usr/bin/env python3
-"""Minimal dependency-free validator for Buddy content packs."""
+"""Minimal dependency-free validator for Buddy content packs.
+
+Design note (see README.md for the full write-up): this module is a
+hand-rolled, dependency-free structural checker. It does NOT load
+``buddy-pack.schema.json`` and evaluate it with a real JSON Schema engine
+(e.g. the ``jsonschema`` PyPI package) -- there is no such engine in this
+codebase. The checks below are written by hand to mirror that schema's
+intent, and the two files must be kept in sync manually.
+
+``buddy-pack.schema.json`` pins its JSON Schema draft explicitly via
+``"$schema": "https://json-schema.org/draft/2020-12/schema"``. That pin is
+enforced and structurally checked by ``validate_schema_document`` below
+(exposed as ``--check-schema`` on the CLI) -- it does not mean manifest
+validation in this file follows draft 2020-12 keyword-for-keyword; it means
+the *reference schema document* is unambiguous about which draft its
+authors intended, and that intent is checked automatically instead of
+silently rotting.
+"""
 
 from __future__ import annotations
 
 import json
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+MANIFEST_ROOT = "manifest"
+SCHEMA_ROOT = "schema"
+
+# The JSON Schema draft that packages/content-schema/buddy-pack.schema.json
+# is expected to declare via its own top-level "$schema" key. Kept as a
+# constant so `--check-schema` fails loudly (with a clear hint) if the two
+# ever drift apart.
+EXPECTED_SCHEMA_DRAFT = "https://json-schema.org/draft/2020-12/schema"
+
+JSON_SCHEMA_PRIMITIVE_TYPES = {
+    "null",
+    "boolean",
+    "object",
+    "array",
+    "number",
+    "string",
+    "integer",
+}
+
+DEFAULT_SCHEMA_PATH = (
+    Path(__file__).resolve().parents[1] / "content-schema" / "buddy-pack.schema.json"
+)
+
+
+@dataclass
+class ValidationError:
+    """One validation failure, with enough context to fix it without cross-referencing the schema."""
+
+    path: str
+    problem: str
+    hint: str
+
+    def format(self) -> str:
+        return f"{self.path}: {self.problem} (hint: {self.hint})"
 
 
 def load_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def expect_type(value: Any, expected: type, field: str, errors: list[str]) -> None:
+def is_bool(value: Any) -> bool:
+    return isinstance(value, bool)
+
+
+def is_int(value: Any) -> bool:
+    return isinstance(value, int) and not is_bool(value)
+
+
+def is_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not is_bool(value)
+
+
+def describe(value: Any) -> str:
+    """Short human-readable description of a JSON value's shape, for error text."""
+    if value is None:
+        return "missing"
+    if isinstance(value, str):
+        return "an empty/blank string" if not value.strip() else f"string {value!r}"
+    if isinstance(value, bool):
+        return f"boolean {value!r}"
+    return f"{type(value).__name__} {value!r}" if not isinstance(value, (dict, list)) else type(value).__name__
+
+
+def add_error(errors: list[ValidationError], path: str, problem: str, hint: str) -> None:
+    errors.append(ValidationError(path=path, problem=problem, hint=hint))
+
+
+def expect_type(
+    value: Any,
+    expected: type,
+    path: str,
+    errors: list[ValidationError],
+    hint: str | None = None,
+) -> bool:
     if not isinstance(value, expected):
-        errors.append(f"{field} must be {expected.__name__}")
+        add_error(
+            errors,
+            path,
+            f"must be {expected.__name__}, found {describe(value)}",
+            hint or f'Set "{path}" to a {expected.__name__}.',
+        )
+        return False
+    return True
 
 
-def expect_non_empty_string(value: Any, field: str, errors: list[str]) -> None:
+def expect_non_empty_string(
+    value: Any,
+    path: str,
+    errors: list[ValidationError],
+    hint: str | None = None,
+) -> bool:
     if not isinstance(value, str) or not value.strip():
-        errors.append(f"{field} must be a non-empty string")
+        add_error(
+            errors,
+            path,
+            f"must be a non-empty string, found {describe(value)}",
+            hint or f'Set "{path}" to a non-empty string.',
+        )
+        return False
+    return True
 
 
-def validate_manifest(manifest: dict[str, Any]) -> list[str]:
-    errors: list[str] = []
+# ---------------------------------------------------------------------------
+# Manifest validation (packages/content-schema/buddy-pack.schema.json V1)
+# ---------------------------------------------------------------------------
+
+
+def validate_manifest(manifest: dict[str, Any]) -> list[ValidationError]:
+    errors: list[ValidationError] = []
+    root = MANIFEST_ROOT
 
     required_root = [
         "schemaVersion",
@@ -39,103 +150,495 @@ def validate_manifest(manifest: dict[str, Any]) -> list[str]:
     ]
     for key in required_root:
         if key not in manifest:
-            errors.append(f"Missing required field: {key}")
+            add_error(
+                errors,
+                f"{root}.{key}",
+                "is missing",
+                f'Add a top-level "{key}" field to the manifest '
+                "(see docs/product/CONTENT_SCHEMA.md for the expected shape).",
+            )
 
     if errors:
         return errors
 
-    if not isinstance(manifest["schemaVersion"], int) or manifest["schemaVersion"] < 1:
-        errors.append("schemaVersion must be integer >= 1")
-    expect_non_empty_string(manifest["id"], "id", errors)
-    expect_non_empty_string(manifest["name"], "name", errors)
-    expect_non_empty_string(manifest["version"], "version", errors)
+    schema_version = manifest["schemaVersion"]
+    if not is_int(schema_version) or schema_version < 1:
+        add_error(
+            errors,
+            f"{root}.schemaVersion",
+            f"must be an integer >= 1, found {describe(schema_version)}",
+            'Set "schemaVersion" to 1 (the current CONTENT_SCHEMA_VERSION) '
+            "unless this pack intentionally targets a newer runtime.",
+        )
+
+    expect_non_empty_string(
+        manifest["id"],
+        f"{root}.id",
+        errors,
+        'Set "id" to a non-empty string matching the pack\'s directory name, e.g. "night_pack".',
+    )
+    expect_non_empty_string(
+        manifest["name"],
+        f"{root}.name",
+        errors,
+        'Set "name" to the human-readable display name for this pack, e.g. "Night Pack".',
+    )
+    expect_non_empty_string(
+        manifest["version"],
+        f"{root}.version",
+        errors,
+        'Set "version" to a semver string, e.g. "1.0.0".',
+    )
 
     companion = manifest["companion"]
-    expect_type(companion, dict, "companion", errors)
-    if isinstance(companion, dict):
-        expect_non_empty_string(companion.get("id"), "companion.id", errors)
-        expect_non_empty_string(companion.get("displayName"), "companion.displayName", errors)
+    companion_path = f"{root}.companion"
+    if expect_type(
+        companion,
+        dict,
+        companion_path,
+        errors,
+        'Define "companion" as an object with "id", "displayName", and "traits".',
+    ):
+        expect_non_empty_string(
+            companion.get("id"),
+            f"{companion_path}.id",
+            errors,
+            'Set "companion.id" to a non-empty string identifying this companion, e.g. "night_buddy".',
+        )
+        expect_non_empty_string(
+            companion.get("displayName"),
+            f"{companion_path}.displayName",
+            errors,
+            'Set "companion.displayName" to the name shown to players, e.g. "Night Buddy".',
+        )
         traits = companion.get("traits")
-        expect_type(traits, list, "companion.traits", errors)
-        if isinstance(traits, list):
+        traits_path = f"{companion_path}.traits"
+        if expect_type(
+            traits,
+            list,
+            traits_path,
+            errors,
+            'Set "companion.traits" to an array of short trait strings, e.g. ["calm", "playful"].',
+        ):
             for i, trait in enumerate(traits):
-                expect_non_empty_string(trait, f"companion.traits[{i}]", errors)
+                expect_non_empty_string(
+                    trait,
+                    f"{traits_path}[{i}]",
+                    errors,
+                    "Each trait must be a non-empty string, e.g. \"calm\".",
+                )
 
     visual = manifest.get("visual")
     if visual is not None:
-        expect_type(visual, dict, "visual", errors)
-        if isinstance(visual, dict):
+        visual_path = f"{root}.visual"
+        if expect_type(
+            visual,
+            dict,
+            visual_path,
+            errors,
+            'Define "visual" as an object, or omit the "visual" key entirely to use the code-drawn placeholder.',
+        ):
             scale = visual.get("scale")
-            if scale is not None and (not isinstance(scale, (float, int)) or float(scale) <= 0):
-                errors.append("visual.scale must be > 0 when set")
+            if scale is not None and (not is_number(scale) or float(scale) <= 0):
+                add_error(
+                    errors,
+                    f"{visual_path}.scale",
+                    f"must be > 0 when set, found {describe(scale)}",
+                    'Set "visual.scale" to a number greater than 0 (e.g. 1.0), or remove the "scale" key to use the default.',
+                )
 
             anchor = visual.get("anchor")
             if anchor is not None:
-                expect_type(anchor, list, "visual.anchor", errors)
-                if isinstance(anchor, list):
+                anchor_path = f"{visual_path}.anchor"
+                if expect_type(
+                    anchor,
+                    list,
+                    anchor_path,
+                    errors,
+                    'Set "visual.anchor" to a two-number array [x, y], e.g. [0.5, 1.0], or remove the key.',
+                ):
                     if len(anchor) != 2:
-                        errors.append("visual.anchor must have exactly 2 numbers")
+                        add_error(
+                            errors,
+                            anchor_path,
+                            f"must have exactly 2 numbers, found {len(anchor)}",
+                            'Set "visual.anchor" to normalized [x, y] coordinates, e.g. [0.5, 1.0].',
+                        )
                     else:
                         for i, value in enumerate(anchor):
-                            if not isinstance(value, (float, int)):
-                                errors.append(f"visual.anchor[{i}] must be numeric")
+                            if not is_number(value):
+                                add_error(
+                                    errors,
+                                    f"{anchor_path}[{i}]",
+                                    f"must be numeric, found {describe(value)}",
+                                    "Each anchor coordinate must be a number, typically between 0 and 1.",
+                                )
 
             animations = visual.get("animations")
             if animations is not None:
-                expect_type(animations, dict, "visual.animations", errors)
-                if isinstance(animations, dict):
+                animations_path = f"{visual_path}.animations"
+                if expect_type(
+                    animations,
+                    dict,
+                    animations_path,
+                    errors,
+                    'Set "visual.animations" to an object mapping action names to animation JSON paths.',
+                ):
                     for key, value in animations.items():
-                        expect_non_empty_string(key, "visual.animations key", errors)
-                        expect_non_empty_string(value, f"visual.animations[{key}]", errors)
+                        expect_non_empty_string(
+                            key,
+                            f"{animations_path} key",
+                            errors,
+                            "Animation keys must be non-empty action-name strings, e.g. \"idle\".",
+                        )
+                        expect_non_empty_string(
+                            value,
+                            f"{animations_path}[{key}]",
+                            errors,
+                            'Set this to a path like "character/animations/idle.json".',
+                        )
 
             sprites = visual.get("sprites")
             if sprites is not None:
-                expect_type(sprites, dict, "visual.sprites", errors)
-                if isinstance(sprites, dict):
+                sprites_path = f"{visual_path}.sprites"
+                if expect_type(
+                    sprites,
+                    dict,
+                    sprites_path,
+                    errors,
+                    'Set "visual.sprites" to an object mapping action names to sprite image paths.',
+                ):
                     for key, value in sprites.items():
-                        expect_non_empty_string(key, "visual.sprites key", errors)
-                        expect_non_empty_string(value, f"visual.sprites[{key}]", errors)
+                        expect_non_empty_string(
+                            key,
+                            f"{sprites_path} key",
+                            errors,
+                            "Sprite keys must be non-empty action-name strings, e.g. \"idle\".",
+                        )
+                        expect_non_empty_string(
+                            value,
+                            f"{sprites_path}[{key}]",
+                            errors,
+                            'Set this to a path like "character/idle.png".',
+                        )
 
     for field in ("idleActions", "reactionActions", "encounterActions"):
         value = manifest[field]
-        expect_type(value, list, field, errors)
-        if isinstance(value, list):
+        field_path = f"{root}.{field}"
+        if expect_type(
+            value,
+            list,
+            field_path,
+            errors,
+            f'Set "{field}" to an array of action id strings.',
+        ):
             if field != "encounterActions" and not value:
-                errors.append(f"{field} must not be empty")
+                add_error(
+                    errors,
+                    field_path,
+                    "must not be empty",
+                    f'Add at least one action id to "{field}", e.g. ["idle"].',
+                )
             for i, item in enumerate(value):
-                expect_non_empty_string(item, f"{field}[{i}]", errors)
+                expect_non_empty_string(
+                    item,
+                    f"{field_path}[{i}]",
+                    errors,
+                    f'Each entry in "{field}" must be a non-empty action id string.',
+                )
 
     event_rules = manifest["eventRules"]
-    expect_type(event_rules, list, "eventRules", errors)
-    if isinstance(event_rules, list):
+    event_rules_path = f"{root}.eventRules"
+    if expect_type(
+        event_rules,
+        list,
+        event_rules_path,
+        errors,
+        'Set "eventRules" to an array (it may be empty, e.g. []).',
+    ):
         for i, event in enumerate(event_rules):
+            event_path = f"{event_rules_path}[{i}]"
             if not isinstance(event, dict):
-                errors.append(f"eventRules[{i}] must be object")
+                add_error(
+                    errors,
+                    event_path,
+                    f"must be an object, found {describe(event)}",
+                    'Each event rule must be an object with "id", "action", "weight", and "cooldownSeconds".',
+                )
                 continue
-            expect_non_empty_string(event.get("id"), f"eventRules[{i}].id", errors)
-            expect_non_empty_string(event.get("action"), f"eventRules[{i}].action", errors)
+
+            expect_non_empty_string(
+                event.get("id"),
+                f"{event_path}.id",
+                errors,
+                'Set "id" to a unique non-empty string naming this event rule.',
+            )
+            expect_non_empty_string(
+                event.get("action"),
+                f"{event_path}.action",
+                errors,
+                'Add an "action" field naming the action id this rule triggers; it should match an entry '
+                "in idleActions/reactionActions/encounterActions.",
+            )
             weight = event.get("weight")
-            if not isinstance(weight, (float, int)) or float(weight) <= 0:
-                errors.append(f"eventRules[{i}].weight must be > 0")
+            if not is_number(weight) or float(weight) <= 0:
+                add_error(
+                    errors,
+                    f"{event_path}.weight",
+                    f"must be > 0, found {describe(weight)}",
+                    'Set "weight" to a number greater than 0 controlling this event\'s relative pick '
+                    "frequency, e.g. 1.0.",
+                )
             cooldown = event.get("cooldownSeconds")
-            if not isinstance(cooldown, int) or cooldown < 1:
-                errors.append(f"eventRules[{i}].cooldownSeconds must be integer >= 1")
+            if not is_int(cooldown) or cooldown < 1:
+                add_error(
+                    errors,
+                    f"{event_path}.cooldownSeconds",
+                    f"must be an integer >= 1, found {describe(cooldown)}",
+                    'Set "cooldownSeconds" to the minimum number of seconds between repeats of this event.',
+                )
             per_hour = event.get("perHour")
-            if per_hour is not None and (not isinstance(per_hour, int) or per_hour < 1):
-                errors.append(f"eventRules[{i}].perHour must be integer >= 1 when set")
+            if per_hour is not None and (not is_int(per_hour) or per_hour < 1):
+                add_error(
+                    errors,
+                    f"{event_path}.perHour",
+                    f"must be an integer >= 1 when set, found {describe(per_hour)}",
+                    'Set "perHour" to a positive integer cap, or omit the key entirely for no cap.',
+                )
             per_day = event.get("perDay")
-            if per_day is not None and (not isinstance(per_day, int) or per_day < 1):
-                errors.append(f"eventRules[{i}].perDay must be integer >= 1 when set")
+            if per_day is not None and (not is_int(per_day) or per_day < 1):
+                add_error(
+                    errors,
+                    f"{event_path}.perDay",
+                    f"must be an integer >= 1 when set, found {describe(per_day)}",
+                    'Set "perDay" to a positive integer cap, or omit the key entirely for no cap.',
+                )
 
     return errors
 
 
-def main() -> int:
-    if len(sys.argv) != 2:
-        print("Usage: python validate_pack.py <manifest.json>")
+# ---------------------------------------------------------------------------
+# Schema self-validation (--check-schema)
+#
+# This is NOT a general-purpose JSON Schema meta-validator: it structurally
+# checks only the keyword subset that buddy-pack.schema.json actually uses
+# (type, properties, required, items, additionalProperties, minLength/
+# maxLength/minItems/maxItems, minimum/maximum/exclusiveMinimum/
+# exclusiveMaximum, enum, $id/title/description), per draft 2020-12
+# semantics for those keywords. It exists to catch typos and structural
+# mistakes in the schema document itself -- e.g. a "required" entry with no
+# matching "properties" key, or "type" set to something that isn't a real
+# JSON Schema type name -- without adding a `jsonschema` dependency to a
+# validator this package's README explicitly says is dependency-free.
+# ---------------------------------------------------------------------------
+
+
+def validate_schema_document(schema: Any) -> list[ValidationError]:
+    errors: list[ValidationError] = []
+    _check_schema_node(schema, SCHEMA_ROOT, errors, is_root=True)
+    return errors
+
+
+def _check_schema_node(
+    node: Any,
+    path: str,
+    errors: list[ValidationError],
+    is_root: bool = False,
+) -> None:
+    # Per JSON Schema 2020-12, a schema is either a JSON object or a boolean.
+    # A boolean is only valid here as a *nested* sub-schema (e.g.
+    # "additionalProperties": false) -- the root document must still be an
+    # object declaring "$schema", so a top-level `true`/`false` schema is
+    # rejected rather than silently passing this self-check.
+    if isinstance(node, bool):
+        if is_root:
+            add_error(
+                errors,
+                f"{path}.$schema",
+                "is missing or not a string",
+                f'Add "$schema": "{EXPECTED_SCHEMA_DRAFT}" at the top of the schema so tooling and readers '
+                "know which JSON Schema draft the keywords below follow.",
+            )
+        return
+    if not isinstance(node, dict):
+        add_error(
+            errors,
+            path,
+            f"must be a JSON object (or boolean) schema, found {describe(node)}",
+            "A schema node must be `{...}` (or `true`/`false`). Check for a stray value where an object was expected.",
+        )
+        return
+
+    if is_root:
+        declared = node.get("$schema")
+        if not isinstance(declared, str) or not declared.strip():
+            add_error(
+                errors,
+                f"{path}.$schema",
+                "is missing or not a string",
+                f'Add "$schema": "{EXPECTED_SCHEMA_DRAFT}" at the top of the schema so tooling and readers '
+                "know which JSON Schema draft the keywords below follow.",
+            )
+        elif declared != EXPECTED_SCHEMA_DRAFT:
+            add_error(
+                errors,
+                f"{path}.$schema",
+                f"declares {declared!r}, but this self-check is pinned to {EXPECTED_SCHEMA_DRAFT!r}",
+                f'Set "$schema" to "{EXPECTED_SCHEMA_DRAFT}" (draft 2020-12), or update EXPECTED_SCHEMA_DRAFT '
+                "in validate_pack.py if the pack schema intentionally moved to a different draft.",
+            )
+
+    type_value = node.get("type")
+    if type_value is not None:
+        _check_type_keyword(type_value, f"{path}.type", errors)
+
+    required_value = node.get("required")
+    if required_value is not None:
+        if not isinstance(required_value, list) or not all(isinstance(x, str) for x in required_value):
+            add_error(
+                errors,
+                f"{path}.required",
+                f"must be an array of strings, found {describe(required_value)}",
+                'Set "required" to a list of property-name strings, e.g. ["id", "name"].',
+            )
+        else:
+            properties = node.get("properties")
+            if isinstance(properties, dict):
+                for name in required_value:
+                    if name not in properties:
+                        add_error(
+                            errors,
+                            f"{path}.required",
+                            f'lists "{name}" but "properties" has no matching key',
+                            f'Add a "{name}" entry under "{path}.properties", or remove "{name}" from '
+                            '"required" if it was a typo.',
+                        )
+
+    properties_value = node.get("properties")
+    if properties_value is not None:
+        if not isinstance(properties_value, dict):
+            add_error(
+                errors,
+                f"{path}.properties",
+                f"must be an object mapping property names to sub-schemas, found {describe(properties_value)}",
+                'Set "properties" to `{"fieldName": {...schema...}, ...}`.',
+            )
+        else:
+            for name, sub_schema in properties_value.items():
+                _check_schema_node(sub_schema, f"{path}.properties.{name}", errors)
+
+    items_value = node.get("items")
+    if items_value is not None:
+        _check_schema_node(items_value, f"{path}.items", errors)
+
+    additional_props = node.get("additionalProperties")
+    if additional_props is not None and not isinstance(additional_props, bool):
+        _check_schema_node(additional_props, f"{path}.additionalProperties", errors)
+
+    for length_key in ("minLength", "maxLength", "minItems", "maxItems"):
+        value = node.get(length_key)
+        if value is not None and (not is_int(value) or value < 0):
+            add_error(
+                errors,
+                f"{path}.{length_key}",
+                f"must be a non-negative integer, found {describe(value)}",
+                f'Set "{length_key}" to an integer >= 0.',
+            )
+
+    for numeric_key in ("minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum"):
+        value = node.get(numeric_key)
+        if value is not None and not is_number(value):
+            add_error(
+                errors,
+                f"{path}.{numeric_key}",
+                f"must be a number, found {describe(value)}",
+                f'Set "{numeric_key}" to a numeric bound.',
+            )
+
+    enum_value = node.get("enum")
+    if enum_value is not None and (not isinstance(enum_value, list) or not enum_value):
+        add_error(
+            errors,
+            f"{path}.enum",
+            f"must be a non-empty array of allowed values, found {describe(enum_value)}",
+            'Set "enum" to a non-empty list of allowed literal values.',
+        )
+
+    for key in ("$id", "title", "description"):
+        value = node.get(key)
+        if value is not None and not isinstance(value, str):
+            add_error(
+                errors,
+                f"{path}.{key}",
+                f"must be a string, found {describe(value)}",
+                f'Set "{key}" to a plain string.',
+            )
+
+
+def _check_type_keyword(type_value: Any, path: str, errors: list[ValidationError]) -> None:
+    if isinstance(type_value, list):
+        if not type_value:
+            add_error(
+                errors,
+                path,
+                "is an empty array",
+                'List at least one JSON Schema type, e.g. ["string", "null"].',
+            )
+            return
+        candidates = type_value
+    else:
+        candidates = [type_value]
+
+    for candidate in candidates:
+        if not isinstance(candidate, str) or candidate not in JSON_SCHEMA_PRIMITIVE_TYPES:
+            add_error(
+                errors,
+                path,
+                f"contains invalid type name {candidate!r}",
+                f"Use one of: {', '.join(sorted(JSON_SCHEMA_PRIMITIVE_TYPES))}.",
+            )
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+
+def run_check_schema(path: Path) -> int:
+    if not path.exists():
+        print(f"ERROR: schema file not found: {path}")
         return 2
 
-    path = Path(sys.argv[1]).resolve()
+    try:
+        raw = load_json(path)
+    except Exception as exc:  # noqa: BLE001
+        print(f"ERROR: invalid JSON: {exc}")
+        return 2
+
+    errors = validate_schema_document(raw)
+    if errors:
+        print(f"INVALID schema document -> {path}")
+        for err in errors:
+            print(f"- {err.format()}")
+        return 1
+
+    print(f"OK: schema document is a structurally valid draft 2020-12 schema -> {path}")
+    return 0
+
+
+def main() -> int:
+    argv = sys.argv[1:]
+
+    if argv and argv[0] == "--check-schema":
+        schema_path = Path(argv[1]).resolve() if len(argv) > 1 else DEFAULT_SCHEMA_PATH
+        return run_check_schema(schema_path)
+
+    if len(argv) != 1:
+        print("Usage: python validate_pack.py <manifest.json>")
+        print("       python validate_pack.py --check-schema [schema.json]")
+        return 2
+
+    path = Path(argv[0]).resolve()
     if not path.exists():
         print(f"ERROR: file not found: {path}")
         return 2
@@ -152,9 +655,9 @@ def main() -> int:
 
     errors = validate_manifest(raw)
     if errors:
-        print("INVALID manifest:")
+        print(f"INVALID manifest -> {path}")
         for err in errors:
-            print(f"- {err}")
+            print(f"- {err.format()}")
         return 1
 
     print(f"OK: manifest valid -> {path}")
