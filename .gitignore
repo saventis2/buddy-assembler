@@ -30,5 +30,8 @@ apps/runtime-godot/content/core_pack/item_bindings_full.json
 apps/runtime-godot/content/core_pack/item_bindings_full.*.csv
 apps/runtime-godot/content/core_pack/item_bindings_full.*.json
 
+# WZ-extracted item icons (regenerate locally via tools/import_item_icons_from_wz_root.py)
+apps/runtime-godot/content/core_pack/icons/items/*.png
+
 # Claude Code local state (settings, agent worktree isolation scratch)
 .claude/
