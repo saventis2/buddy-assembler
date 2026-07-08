@@ -446,7 +446,19 @@ def _check_schema_node(
     is_root: bool = False,
 ) -> None:
     # Per JSON Schema 2020-12, a schema is either a JSON object or a boolean.
+    # A boolean is only valid here as a *nested* sub-schema (e.g.
+    # "additionalProperties": false) -- the root document must still be an
+    # object declaring "$schema", so a top-level `true`/`false` schema is
+    # rejected rather than silently passing this self-check.
     if isinstance(node, bool):
+        if is_root:
+            add_error(
+                errors,
+                f"{path}.$schema",
+                "is missing or not a string",
+                f'Add "$schema": "{EXPECTED_SCHEMA_DRAFT}" at the top of the schema so tooling and readers '
+                "know which JSON Schema draft the keywords below follow.",
+            )
         return
     if not isinstance(node, dict):
         add_error(
