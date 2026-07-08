@@ -101,6 +101,7 @@ var _productivity := ProductivityTracker.new()
 var _prompt_cadence := PromptCadence.new()
 var _manual_verification_report := ManualVerificationReport.new()
 var _state := "idle"
+var _is_paused := false
 var _dragging := false
 var _drag_offset := Vector2i.ZERO
 var _bob_time := 0.0
@@ -246,6 +247,12 @@ func _toggle_sleep_state() -> void:
     # Shared by the right-click-on-sprite gesture and the settings popout's
     # Pause/Resume button so both entry points stay in sync.
     _state = "sleep" if _state != "sleep" else "idle"
+    # _is_paused tracks an explicit user-initiated pause, independent of
+    # `_state == "sleep"` (which can also be reached via natural/forced
+    # home-mode behavior). While paused, _on_tick_timer_timeout() must not
+    # let a forced_action (productivity nudge, home-mode action, encounter)
+    # silently un-pause the buddy; only this toggle may clear it.
+    _is_paused = _state == "sleep"
     _set_emote_from_state(_state)
     _set_visual_for_state(_state)
     AppState.record_interaction("toggle_sleep")
@@ -549,34 +556,39 @@ func _on_tick_timer_timeout() -> void:
         context[key] = activity_context[key]
     var home_mode := str(context.get("home_mode", "overlay"))
 
-    var productivity_event := _productivity.tick(now_unix, AppState.settings)
-    if not productivity_event.is_empty():
-        var prod_event_id := str(productivity_event.get("id", ""))
-        var prod_action := str(productivity_event.get("action", "happy"))
-        context["forced_action"] = prod_action
-        _last_event_id = prod_event_id
-        AppState.record_event_trigger(prod_event_id, prod_action)
-        _show_support_hint(productivity_event)
+    # While the user has explicitly paused the buddy, no forced_action may be
+    # computed or applied to context: doing so would both silently un-pause
+    # the buddy on the next tick and pollute engine/tracker cooldown state
+    # (e.g. mark a productivity event as "sent" or consume an encounter's
+    # event budget) for an action the user never actually saw play out.
+    if not _is_paused:
+        var productivity_event := _productivity.tick(now_unix, AppState.settings)
+        if not productivity_event.is_empty():
+            var prod_event_id := str(productivity_event.get("id", ""))
+            var prod_action := str(productivity_event.get("action", "happy"))
+            context["forced_action"] = prod_action
+            _last_event_id = prod_event_id
+            AppState.record_event_trigger(prod_event_id, prod_action)
+            _show_support_hint(productivity_event)
 
-    if home_mode == "home":
-        if not context.has("forced_action"):
-            context["forced_action"] = _select_home_mode_action(now_unix)
-    else:
-        var selected_event := _encounters.tick(now_unix, context)
-        if not selected_event.is_empty():
-            var event_id := str(selected_event.get("id", ""))
-            var action_id := str(selected_event.get("action", "gift"))
-            var per_hour := int(selected_event.get("per_hour", 1))
-            var per_day := int(selected_event.get("per_day", 4))
-            if not context.has("forced_action") and AppState.try_consume_event_budget(event_id, per_hour, per_day):
-                context["forced_action"] = action_id
-                _last_event_id = event_id
-                AppState.record_event_trigger(event_id, action_id)
+        if home_mode == "home":
+            if not context.has("forced_action"):
+                context["forced_action"] = _select_home_mode_action(now_unix)
+        else:
+            var selected_event := _encounters.tick(now_unix, context)
+            if not selected_event.is_empty():
+                var event_id := str(selected_event.get("id", ""))
+                var action_id := str(selected_event.get("action", "gift"))
+                var per_hour := int(selected_event.get("per_hour", 1))
+                var per_day := int(selected_event.get("per_day", 4))
+                if not context.has("forced_action") and AppState.try_consume_event_budget(event_id, per_hour, per_day):
+                    context["forced_action"] = action_id
+                    _last_event_id = event_id
+                    AppState.record_event_trigger(event_id, action_id)
 
-    var was_sleeping := _state == "sleep"
     var action := _engine.tick(now_unix, context)
     var new_state := str(action.get("id", "idle"))
-    if was_sleeping and not context.has("forced_action"):
+    if _is_paused:
         new_state = "sleep"
     _state = new_state
     _set_emote_from_state(_state)
