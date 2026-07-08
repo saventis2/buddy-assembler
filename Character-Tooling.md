@@ -4,6 +4,41 @@ Session records:
 
 - `Session-Log-2026-04-15.md` (detailed implementation/investigation log)
 
+## Overriding Base.wz / analysis paths (all root scripts)
+
+All 14 root importer/analysis scripts default to the maintainer's local
+`83 complete` extraction (e.g. `C:\Users\GGPC\OneDrive\Desktop\83 complete\Base.wz`),
+so the existing zero-flag workflow keeps working unchanged. Every script that
+takes a WZ/analysis path resolves it with the same precedence:
+
+1. **Explicit CLI flag** — e.g. `--base-wz`, `--output-dir` (most scripts
+   already had this; `build_wz_index.py` gained a `--base-wz` flag and
+   `character_tooling_gui.py` gained `--base-wz`/`--analysis-dir` flags to
+   pre-fill the GUI fields).
+2. **Environment variable** — `BUDDY_ASSEMBLER_BASE_WZ` (and, for
+   `character_tooling_gui.py`'s analysis-output default,
+   `BUDDY_ASSEMBLER_ANALYSIS_DIR`). Set these to point scripts at a different
+   extraction tree (a second machine, a test fixture, CI) without passing
+   flags on every invocation.
+3. **Hardcoded fallback default** — the maintainer's local path, unchanged,
+   used only when neither of the above is set.
+
+`build_wz_index.py` and `character_tooling_gui.py` previously hardcoded their
+Base.wz/analysis paths as module-level constants with no override at all;
+they now follow this same precedence via a small `resolve_base_wz()` /
+`resolve_default_path()` helper in each file. Scripts that already exposed
+`--base-wz`/`--output-dir` (etc.) via `argparse` — e.g.
+`build_item_catalogue.py`, `build_itemwz_catalogue.py`,
+`import_runtime_ground_tile.py`, `analyze_npc_animation_links.py`,
+`render_character_frame.py`, `export_effect_sprites.py`,
+`weapon_action_compatibility_report.py`, `analyze_character_assets.py` — were
+left as-is; their CLI flag already provides an override, so no env var was
+added to avoid a redundant second mechanism. Scripts whose path args are
+`required=True` with no default (`diff_character_assets.py`,
+`alignment_audit.py`, `audit_dataset_metadata.py`) and
+`export_runtime_character_sprites.py` (repo-relative defaults, no hardcoded
+machine path) needed no changes.
+
 ## 0) Desktop GUI (Render + Diff)
 
 Script: `character_tooling_gui.py`
