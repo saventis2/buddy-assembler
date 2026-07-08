@@ -223,6 +223,32 @@ class UpdateBaselineDocTests(unittest.TestCase):
         # Trailing content outside the table must survive.
         self.assertIn("Trailing section, must survive edits untouched.", text)
 
+    def test_informational_build_does_not_clobber_release_placeholder(self) -> None:
+        # Bug regression: an editor-play/informational run whose Duration
+        # happens to match a release-rehearsal `_TBD_` placeholder (600 s,
+        # reserved for "exported v0.1-rc") must NOT claim that placeholder's
+        # slot. It should be appended as its own separate row instead, and
+        # the release-rehearsal placeholder must survive untouched so a
+        # real release-rehearsal run can still fill it in later.
+        row = ["2026-07-08", "editor-play (dev)", "600 s", "60.0", "18.20", "128", "smoke"]
+        action = rpb.update_baseline_doc(self.doc_path, row)
+        self.assertIn("appended", action)
+
+        text = self.doc_path.read_text(encoding="utf-8")
+        rows = [_row for _row in (rpb._split_row(line) for line in text.splitlines()) if _row and _row[0]]
+        # The release-rehearsal placeholder for 600 s must still be intact
+        # (column widths may be re-padded when a wider Build value is
+        # added, so compare parsed cells rather than a literal substring).
+        self.assertIn(["_TBD_", "exported v0.1-rc", "600 s", "", "", "", ""], rows)
+        # The other placeholder is untouched too.
+        self.assertIn(["_TBD_", "exported v0.1-rc", "10800 s", "", "", "", ""], rows)
+        # The informational run was recorded as its own new row.
+        self.assertIn(
+            ["2026-07-08", "editor-play (dev)", "600 s", "60.0", "18.20", "128", "smoke"],
+            rows,
+        )
+        self.assertEqual(text.count("_TBD_"), 2)
+
     def test_appends_when_no_duration_matches(self) -> None:
         row = ["2026-07-07", "editor-play (dev)", "60 s", "60.0", "17.00", "0", "smoke"]
         rpb.update_baseline_doc(self.doc_path, row)

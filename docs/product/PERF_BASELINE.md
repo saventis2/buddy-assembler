@@ -47,8 +47,11 @@ python apps\runtime-godot\tools\record_perf_baseline.py `
 (or `apps\runtime-godot\tools\record_perf_baseline.ps1` with the same
 arguments, if you'd rather not type `python` explicitly). Add
 `--update-baseline` to patch this file's table in place — it replaces
-a matching `_TBD_` placeholder row for the same duration, or appends a
-new row; it never overwrites a row that already has a real date. Set
+a matching `_TBD_` placeholder row for the same duration AND the same
+Build text, or appends a new row; it never overwrites a row that
+already has a real date, and it never lets an informational run claim
+a release-rehearsal placeholder's slot just because the duration
+matches. Set
 `--build` honestly (`exported v0.1-rc` for a real release run, or
 something explicitly labeled like `editor-play (dev)` for
 informational-only numbers) — the script has no way to know which one

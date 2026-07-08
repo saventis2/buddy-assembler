@@ -254,10 +254,21 @@ def update_baseline_doc(doc_path: Path, new_row: list[str]) -> str:
     """Insert new_row into the PERF_BASELINE.md results table in place.
 
     If an unfilled `_TBD_` placeholder row with a matching Duration cell
-    exists, that row is replaced. Otherwise the row is appended. A row
-    that already has a real (non-`_TBD_`) date is never overwritten, so
-    re-running this against a doc that already has real results for a
-    given duration adds a new row instead of clobbering history.
+    AND a matching Build cell exists, that row is replaced. Otherwise the
+    row is appended. A row that already has a real (non-`_TBD_`) date is
+    never overwritten, so re-running this against a doc that already has
+    real results for a given duration adds a new row instead of
+    clobbering history.
+
+    The Build check matters because PERF_BASELINE.md's placeholder rows
+    (e.g. `exported v0.1-rc`) are reserved for release-rehearsal runs
+    against the exported build. Without it, an informational
+    `--build "editor-play (dev)"` run at a duration that happens to match
+    a placeholder's Duration would silently claim that placeholder's
+    slot, making the table look like the real release-rehearsal
+    measurement had been recorded when it hadn't. A build that doesn't
+    match the placeholder's Build cell always appends as its own row
+    instead.
 
     Returns a short human-readable description of the action taken.
     """
@@ -285,10 +296,16 @@ def update_baseline_doc(doc_path: Path, new_row: list[str]) -> str:
     header_cells = _split_row(lines[header_idx])
     data_rows = [_split_row(line) for line in lines[data_start:data_end]]
 
+    build_cell = new_row[1]
     duration_cell = new_row[2]
     replaced = False
     for i, row in enumerate(data_rows):
-        if len(row) >= 3 and row[0].strip() == "_TBD_" and row[2].strip() == duration_cell:
+        if (
+            len(row) >= 3
+            and row[0].strip() == "_TBD_"
+            and row[1].strip() == build_cell.strip()
+            and row[2].strip() == duration_cell
+        ):
             data_rows[i] = new_row
             replaced = True
             break
