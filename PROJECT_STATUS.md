@@ -22,9 +22,16 @@ the runtime does **not** depend on WZ/NX schemas at runtime.
 
 ## PR queue status
 
-- PR-00 through PR-15 are merged.
-- Remaining work is **release rehearsal and evidence capture**, not major
-  feature implementation. Source of truth: `RELEASE_CHECKLIST.md`.
+- PR-00 through PR-11 and PR-13 through PR-15 are merged. **PR-12 is only
+  partially landed**: the content schema freeze half merged 2026-04-20
+  (`CONTENT_SCHEMA_VERSION = 1`, rejection of unsupported `schemaVersion`,
+  `docs/product/CONTENT_SCHEMA.md`) — but the importer-boundary half
+  (relocating the 14 root Python scripts to `tools/importers/`) has **not**
+  happened. `tools/importers/` does not exist; the scripts still live at
+  repo root. See `README.md` for the current script inventory.
+- Remaining work is **release rehearsal and evidence capture**, plus the
+  still-open PR-12 script relocation, not major feature implementation.
+  Source of truth: `RELEASE_CHECKLIST.md`.
 
 ## Temporary Maple83 dependency contract (current phase)
 

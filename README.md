@@ -6,9 +6,11 @@ distracting.
 
 The shipping product is the Godot runtime under `apps/runtime-godot/`.
 The Python scripts at the repo root are **dev-host importer / tooling**
-used to build internal content packs; they are not part of the runtime
-and will move under `tools/importers/` in a later PR (see `PR_PLAN.md`
-→ PR-12).
+used to build internal content packs; they are not part of the runtime.
+PR-12's content-schema-freeze half has landed (see
+`docs/product/CONTENT_SCHEMA.md`), but its importer-boundary half has not:
+these scripts still live at repo root as of this writing and have not yet
+moved under `tools/importers/` (see `PR_PLAN.md` → PR-12).
 
 ## Start here
 
