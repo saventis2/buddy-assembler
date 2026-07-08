@@ -23,3 +23,6 @@ catalogue/
 # Local runtime noise
 .DS_Store
 Thumbs.db
+
+# Claude Code local state (settings, agent worktree isolation scratch)
+.claude/
