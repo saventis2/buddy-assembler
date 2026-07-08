@@ -1485,7 +1485,7 @@ class App(tk.Tk):
     def _update_render_cmd_preview(self) -> None:
         cmd = [
             "python",
-            "render_character_frame.py",
+            "tools/importers/render_character_frame.py",
             "--base-wz",
             f"\"{self.render_base_wz.get()}\"",
             "--action",
@@ -1885,7 +1885,7 @@ class App(tk.Tk):
     def _update_diff_cmd_preview(self) -> None:
         cmd = [
             "python",
-            "diff_character_assets.py",
+            "tools/importers/diff_character_assets.py",
             "--old-base-wz",
             f"\"{self.diff_old.get()}\"",
             "--new-base-wz",

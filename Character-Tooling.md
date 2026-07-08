@@ -4,9 +4,9 @@ Session records:
 
 - `Session-Log-2026-04-15.md` (detailed implementation/investigation log)
 
-## Overriding Base.wz / analysis paths (all root scripts)
+## Overriding Base.wz / analysis paths (all importer scripts)
 
-All 14 root importer/analysis scripts default to the maintainer's local
+All 15 importer/analysis scripts under `tools/importers/` default to the maintainer's local
 `83 complete` extraction (e.g. `C:\Users\GGPC\OneDrive\Desktop\83 complete\Base.wz`),
 so the existing zero-flag workflow keeps working unchanged. Every script that
 takes a WZ/analysis path resolves it with the same precedence:
@@ -46,7 +46,7 @@ Script: `character_tooling_gui.py`
 Run:
 
 ```powershell
-python character_tooling_gui.py
+python tools/importers/character_tooling_gui.py
 ```
 
 What it provides:
@@ -83,7 +83,7 @@ Script: `build_item_catalogue.py`
 Run:
 
 ```powershell
-python build_item_catalogue.py `
+python tools/importers/build_item_catalogue.py `
   --base-wz "C:\Users\GGPC\OneDrive\Desktop\83 complete\Base.wz" `
   --output-dir "C:\Users\GGPC\OneDrive\Desktop\83 complete\analysis\catalogue"
 ```
@@ -104,7 +104,7 @@ Script: `build_itemwz_catalogue.py`
 Run:
 
 ```powershell
-python build_itemwz_catalogue.py `
+python tools/importers/build_itemwz_catalogue.py `
   --base-wz "C:\Users\GGPC\OneDrive\Desktop\83 complete\Base.wz" `
   --output-dir ".\analysis\catalogue_itemwz"
 ```
@@ -126,7 +126,7 @@ Script: `analyze_npc_animation_links.py`
 Run:
 
 ```powershell
-python analyze_npc_animation_links.py `
+python tools/importers/analyze_npc_animation_links.py `
   --base-wz "C:\Users\GGPC\OneDrive\Desktop\83 complete\Base.wz" `
   --npc-id 2004 `
   --action stand
@@ -146,7 +146,7 @@ Script: `render_character_frame.py`
 Example (starter male, stand frame):
 
 ```powershell
-python render_character_frame.py `
+python tools/importers/render_character_frame.py `
   --starter-male `
   --action stand1 `
   --frame 0 `
@@ -174,7 +174,7 @@ Script: `diff_character_assets.py`
 Example (compare two extracts):
 
 ```powershell
-python diff_character_assets.py `
+python tools/importers/diff_character_assets.py `
   --old-base-wz "D:\extract_old\Base.wz" `
   --new-base-wz "D:\extract_new\Base.wz" `
   --output-dir ".\diff_out" `
@@ -257,7 +257,7 @@ Purpose:
 Run:
 
 ```powershell
-python alignment_audit.py `
+python tools/importers/alignment_audit.py `
   --batch-summary ".\batch_exports\anim_all_actions_batch_summary.json" `
   --base-wz "C:\Users\GGPC\OneDrive\Desktop\83 complete\Base.wz" `
   --out-dir ".\alignment_audit"
@@ -316,7 +316,7 @@ Purpose:
 Run:
 
 ```powershell
-python weapon_action_compatibility_report.py `
+python tools/importers/weapon_action_compatibility_report.py `
   --base-wz "C:\Users\GGPC\OneDrive\Desktop\83 complete\Base.wz" `
   --output-dir ".\dataset_audit" `
   --weapon-id 1452011 `
@@ -357,7 +357,7 @@ Renderer support:
 Example:
 
 ```powershell
-python render_character_frame.py `
+python tools/importers/render_character_frame.py `
   --base-wz "C:\Users\GGPC\OneDrive\Desktop\83 complete\Base.wz" `
   --action swingT1 `
   --frame 0 `

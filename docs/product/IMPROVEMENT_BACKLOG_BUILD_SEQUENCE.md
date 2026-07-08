@@ -67,9 +67,12 @@ the "next 10" batch.
 
 ## Wave 2 — Builds directly on Wave 1
 
-- **43** — Relocate root scripts under `tools/importers/`. Gated on
-  **94** actually landing first (need the real ground truth on whether
-  this already happened before moving anything).
+- **43** — Relocate root scripts under `tools/importers/`. **DONE** —
+  all 15 importer/analysis scripts relocated via `git mv`, path-anchoring
+  and CI/pre-commit scoping fixed, docs repointed. This unblocks **46**
+  (shared importer library), **44** (break up `character_tooling_gui.py`),
+  **47** (headless CLI mode), and **97** (move root analysis CSVs), which
+  were sequenced after this repo-hygiene move.
 - **46** — Shared importer library (path resolution, extracted-tree
   reading, logging). Gated on **45** (needs the config mechanism to
   exist first, or it's extracting duplication around a pattern that's

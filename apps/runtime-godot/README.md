@@ -75,7 +75,7 @@ follow-up pass.
 To export runtime visuals from your saved Buddy Assembler combo:
 
 ```powershell
-python .\export_runtime_character_sprites.py
+python .\tools\importers\export_runtime_character_sprites.py
 ```
 
 This reads `combinations/last_combo.json` and writes:

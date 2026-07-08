@@ -5,9 +5,9 @@ Snapshot date: 2026-04-20. Authoritative: `docs/product/MILESTONE_STATUS.md`.
 ## Identity
 
 This repo ships a Windows desktop buddy (`apps/runtime-godot/`). Legacy
-MapleStory importer/reverse-engineering tooling lives at the repo root
-and will be relocated under a `tools/importers/` area in a later PR
-(see `PR_PLAN.md` → PR-12). Importer tooling is a **dev-host** concern;
+MapleStory importer/reverse-engineering tooling lives under
+`tools/importers/` (relocated from the repo root in PR-12; see
+`PR_PLAN.md` → PR-12). Importer tooling is a **dev-host** concern;
 the runtime does **not** depend on WZ/NX schemas at runtime.
 
 ## What is landed on `main`
@@ -22,20 +22,20 @@ the runtime does **not** depend on WZ/NX schemas at runtime.
 
 ## PR queue status
 
-- PR-00 through PR-11 and PR-13 through PR-15 are merged. **PR-12 is only
-  partially landed**: the content schema freeze half merged 2026-04-20
-  (`CONTENT_SCHEMA_VERSION = 1`, rejection of unsupported `schemaVersion`,
-  `docs/product/CONTENT_SCHEMA.md`) — but the importer-boundary half
-  (relocating the 14 root Python scripts to `tools/importers/`) has **not**
-  happened. `tools/importers/` does not exist; the scripts still live at
-  repo root. See `README.md` for the current script inventory.
+- PR-00 through PR-15 are merged. **PR-12 is now fully landed**: the
+  content schema freeze half merged 2026-04-20 (`CONTENT_SCHEMA_VERSION = 1`,
+  rejection of unsupported `schemaVersion`, `docs/product/CONTENT_SCHEMA.md`),
+  and the importer-boundary half — relocating the 15 root Python scripts to
+  `tools/importers/` — has now landed. `tools/importers/` exists and holds
+  the importer/analysis scripts. See `README.md` for the current script
+  inventory.
 - Remaining **release-gating** work is release rehearsal and evidence
   capture only — source of truth: `RELEASE_CHECKLIST.md`, whose tag
-  gates do not list the PR-12 relocation, and that is intentional: the
+  gates never listed the PR-12 relocation, and that was intentional: the
   affected scripts are dev-host-only tooling with no runtime impact, so
-  relocating them is not a release-tag blocker. The still-open PR-12
-  script relocation is separate, non-blocking dev-tooling cleanup —
-  track it as ongoing tech debt, not a gate.
+  relocating them was never a release-tag blocker. That relocation has now
+  been completed as separate, non-blocking dev-tooling cleanup rather than
+  as gate work.
 
 ## Temporary Maple83 dependency contract (current phase)
 
