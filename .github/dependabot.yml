@@ -1,0 +1,19 @@
+version: 2
+updates:
+  # Keep GitHub Actions up to date. Actions are pinned to commit SHAs
+  # (see .github/workflows/*.yml) for supply-chain safety; Dependabot
+  # opens PRs bumping the pinned SHA (with the version comment updated)
+  # when a new release is published.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  # Keep Python dependencies up to date. Covers requirements.txt at the
+  # repo root, and requirements-dev.txt once it exists (added in
+  # parallel by backlog items #53/#54) — Dependabot picks up new
+  # requirements files under the same directory automatically.
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
