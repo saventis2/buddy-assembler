@@ -29,9 +29,13 @@ the runtime does **not** depend on WZ/NX schemas at runtime.
   (relocating the 14 root Python scripts to `tools/importers/`) has **not**
   happened. `tools/importers/` does not exist; the scripts still live at
   repo root. See `README.md` for the current script inventory.
-- Remaining work is **release rehearsal and evidence capture**, plus the
-  still-open PR-12 script relocation, not major feature implementation.
-  Source of truth: `RELEASE_CHECKLIST.md`.
+- Remaining **release-gating** work is release rehearsal and evidence
+  capture only — source of truth: `RELEASE_CHECKLIST.md`, whose tag
+  gates do not list the PR-12 relocation, and that is intentional: the
+  affected scripts are dev-host-only tooling with no runtime impact, so
+  relocating them is not a release-tag blocker. The still-open PR-12
+  script relocation is separate, non-blocking dev-tooling cleanup —
+  track it as ongoing tech debt, not a gate.
 
 ## Temporary Maple83 dependency contract (current phase)
 
