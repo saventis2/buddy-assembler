@@ -13,6 +13,8 @@ import xml.etree.ElementTree as ET
 
 from PIL import Image
 
+from wz_shared import child_imgdir
+
 
 ANCHOR_PRIORITY = [
     "navel",
@@ -110,10 +112,7 @@ class Asset:
                 self._index_tree(child, path + (name,))
 
     def _child_imgdir(self, node: ET.Element, name: str) -> Optional[ET.Element]:
-        for child in node:
-            if child.tag == "imgdir" and child.attrib.get("name") == name:
-                return child
-        return None
+        return child_imgdir(node, name)
 
     def _first_frame_node(self, action_node: ET.Element) -> ET.Element:
         frames = [c for c in action_node if c.tag == "imgdir"]
