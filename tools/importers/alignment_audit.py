@@ -567,6 +567,21 @@ def run_alignment_audit(
     severity_counts = Counter(f.severity for f in findings)
     category_counts = Counter(f.category for f in findings)
 
+    findings_rows: list[dict[str, Any]] = [
+        {
+            "severity": f.severity,
+            "category": f.category,
+            "action": f.action,
+            "frame": f.frame,
+            "asset_kind": f.asset_kind,
+            "metric": f.metric,
+            "value": f.value,
+            "threshold": f.threshold,
+            "message": f.message,
+            "evidence": f.evidence,
+        }
+        for f in findings
+    ]
     report = {
         "generated_at_utc": utc_now_iso(),
         "inputs": {
@@ -627,21 +642,7 @@ def run_alignment_audit(
                 for action, stats in sorted(action_metrics.items())
             },
         },
-        "findings": [
-            {
-                "severity": f.severity,
-                "category": f.category,
-                "action": f.action,
-                "frame": f.frame,
-                "asset_kind": f.asset_kind,
-                "metric": f.metric,
-                "value": f.value,
-                "threshold": f.threshold,
-                "message": f.message,
-                "evidence": f.evidence,
-            }
-            for f in findings
-        ],
+        "findings": findings_rows,
     }
 
     report_path = out_dir / "alignment_audit_report.json"
@@ -650,7 +651,7 @@ def run_alignment_audit(
     findings_csv = out_dir / "alignment_findings.csv"
     write_csv(
         findings_csv,
-        report["findings"],
+        findings_rows,
         [
             "severity",
             "category",
@@ -665,7 +666,7 @@ def run_alignment_audit(
         ],
     )
 
-    top_findings = report["findings"][:20]
+    top_findings = findings_rows[:20]
     summary_md = out_dir / "alignment_summary.md"
     lines = [
         "# Alignment Audit Summary",
