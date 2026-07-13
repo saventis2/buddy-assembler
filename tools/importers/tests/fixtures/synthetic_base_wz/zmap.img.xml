@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC TEST FIXTURE - not real MapleStory data.
+     Minimal zmap listing only the z tags used by the synthetic character
+     parts, ordered front-most first like the real zmap.img. -->
+<imgdir name="zmap.img">
+  <null name="hair"/>
+  <null name="face"/>
+  <null name="head"/>
+  <null name="mail"/>
+  <null name="arm"/>
+  <null name="body"/>
+</imgdir>

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC TEST FIXTURE - not real MapleStory data.
+     Body part (base id 2000) with a single stand1 action, single frame,
+     two canvases (body + arm). The body canvas anchors the world via its
+     navel map point and publishes the neck anchor the head snaps to. -->
+<imgdir name="00002000.img">
+  <imgdir name="info">
+    <int name="islot" value="0"/>
+  </imgdir>
+  <imgdir name="stand1">
+    <imgdir name="0">
+      <int name="delay" value="180"/>
+      <canvas name="body" width="20" height="24">
+        <vector name="origin" x="10" y="12"/>
+        <imgdir name="map">
+          <vector name="navel" x="0" y="4"/>
+          <vector name="neck" x="0" y="-10"/>
+        </imgdir>
+        <string name="z" value="body"/>
+      </canvas>
+      <canvas name="arm" width="8" height="12">
+        <vector name="origin" x="4" y="6"/>
+        <imgdir name="map">
+          <vector name="navel" x="2" y="6"/>
+        </imgdir>
+        <string name="z" value="arm"/>
+      </canvas>
+    </imgdir>
+  </imgdir>
+</imgdir>

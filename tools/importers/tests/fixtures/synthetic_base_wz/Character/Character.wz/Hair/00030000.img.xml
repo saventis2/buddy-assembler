@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC TEST FIXTURE - not real MapleStory data.
+     Hair part (id 30000). Static "default" node only (fallback_static_node
+     path), front-hair z tag, attaches via the brow anchor. The hair PNG is
+     deliberately semi-transparent so the golden image exercises real alpha
+     compositing over the head layer. -->
+<imgdir name="00030000.img">
+  <imgdir name="default">
+    <canvas name="hair" width="10" height="10">
+      <vector name="origin" x="5" y="8"/>
+      <imgdir name="map">
+        <vector name="brow" x="0" y="2"/>
+      </imgdir>
+      <string name="z" value="hair"/>
+    </canvas>
+  </imgdir>
+</imgdir>
