@@ -445,7 +445,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--output",
-        default=r"C:\Users\GGPC\OneDrive\Desktop\83 complete\analysis",
+        default="analysis/character_reverse_engineering",
         help="Directory for generated JSON/CSV outputs",
     )
     args = parser.parse_args()
