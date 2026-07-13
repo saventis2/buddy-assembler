@@ -30,3 +30,49 @@ jobs:
         run: |
           python packages/content-validator/run_fixture_checks.py
 
+  verify-provenance:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          # Full history so PR diffs against the base branch work.
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+
+      - name: Detect content changes
+        id: changes
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "Push to main — always verifying provenance."
+            echo "run_verify=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          base_sha="${{ github.event.pull_request.base.sha }}"
+          changed="$(git diff --name-only "${base_sha}...HEAD")"
+          echo "Changed files vs base:"
+          echo "${changed}"
+          pattern='^(content/|apps/runtime-godot/content/|apps/runtime-godot/tools/(verify_content_promotion|approve_content_snapshot)\.py|\.github/workflows/content-validator\.yml)'
+          if echo "${changed}" | grep -Eq "${pattern}"; then
+            echo "Content paths touched — provenance verification required."
+            echo "run_verify=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No content/ changes — skipping provenance verification."
+            echo "run_verify=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Verify content promotion provenance
+        if: steps.changes.outputs.run_verify == 'true'
+        run: |
+          set -euo pipefail
+          # Explicit paths: the script's defaults are cwd-relative and would
+          # silently [SKIP] (exit 0) when run from the repo root.
+          python apps/runtime-godot/tools/verify_content_promotion.py \
+            --intermediate-dir apps/runtime-godot/content/intermediate \
+            --promotion-log apps/runtime-godot/content/promotion_log.json
+
