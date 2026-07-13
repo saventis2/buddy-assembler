@@ -4,13 +4,13 @@
 from __future__ import annotations
 
 import argparse
-import csv
 import json
 from collections import defaultdict
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 import xml.etree.ElementTree as ET
+
+from wz_shared import child_imgdir, safe_name, utc_now_iso, write_csv
 
 
 STRING_FILE_BY_ITEM_ROOT = {
@@ -23,18 +23,6 @@ STRING_FILE_BY_ITEM_ROOT = {
     # We keep explicit support open and let fallback-by-id handle misses.
     "Special": None,
 }
-
-
-def _safe_name(s: str) -> str:
-    return "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in s).strip("_")
-
-
-def _write_csv(path: Path, rows: list[dict[str, Any]], headers: list[str]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=headers)
-        w.writeheader()
-        w.writerows(rows)
 
 
 def _parse_item_name_map(string_xml: Path) -> dict[int, dict[str, str]]:
@@ -83,15 +71,8 @@ def _load_name_maps(base_wz: Path) -> dict[str, dict[int, dict[str, str]]]:
     return maps
 
 
-def _child_imgdir(node: ET.Element, name: str) -> ET.Element | None:
-    for child in node:
-        if child.tag == "imgdir" and child.attrib.get("name") == name:
-            return child
-    return None
-
-
 def _extract_info_values(item_node: ET.Element) -> dict[str, str]:
-    info = _child_imgdir(item_node, "info")
+    info = child_imgdir(item_node, "info")
     out = {
         "price": "",
         "cash_flag": "",
@@ -205,13 +186,13 @@ def build_catalogue(base_wz: Path, output_dir: Path) -> dict[str, Any]:
 
     rows_all.sort(key=lambda r: (r["item_root"], int(r["id"])))
     output_dir.mkdir(parents=True, exist_ok=True)
-    _write_csv(output_dir / "itemwz_catalogue_all.csv", rows_all, headers)
+    write_csv(output_dir / "itemwz_catalogue_all.csv", rows_all, headers)
     for root_name, rows in sorted(rows_by_root.items()):
         rows_sorted = sorted(rows, key=lambda r: int(r["id"]))
-        _write_csv(output_dir / f"itemwz_catalogue_{_safe_name(root_name)}.csv", rows_sorted, headers)
+        write_csv(output_dir / f"itemwz_catalogue_{safe_name(root_name)}.csv", rows_sorted, headers)
 
     summary = {
-        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "generated_at_utc": utc_now_iso(),
         "base_wz": str(base_wz),
         "item_root": str(item_root),
         "output_dir": str(output_dir),

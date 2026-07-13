@@ -4,19 +4,15 @@
 from __future__ import annotations
 
 import argparse
-import csv
 import json
 import math
 from collections import Counter, defaultdict
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Optional, Tuple
 import xml.etree.ElementTree as ET
 
-
-def _iso_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+from wz_shared import utc_now_iso, write_csv
 
 
 def _to_float(value: Any, default: float = 0.0) -> float:
@@ -572,7 +568,7 @@ def run_alignment_audit(
     category_counts = Counter(f.category for f in findings)
 
     report = {
-        "generated_at_utc": _iso_now(),
+        "generated_at_utc": utc_now_iso(),
         "inputs": {
             "batch_summary_path": str(batch_summary_path),
             "base_wz": str(base_wz),
@@ -652,37 +648,22 @@ def run_alignment_audit(
     report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
 
     findings_csv = out_dir / "alignment_findings.csv"
-    with findings_csv.open("w", encoding="utf-8", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(
-            [
-                "severity",
-                "category",
-                "action",
-                "frame",
-                "asset_kind",
-                "metric",
-                "value",
-                "threshold",
-                "message",
-                "evidence",
-            ]
-        )
-        for row in report["findings"]:
-            writer.writerow(
-                [
-                    row["severity"],
-                    row["category"],
-                    row["action"],
-                    row["frame"],
-                    row["asset_kind"],
-                    row["metric"],
-                    row["value"],
-                    row["threshold"],
-                    row["message"],
-                    row["evidence"],
-                ]
-            )
+    write_csv(
+        findings_csv,
+        report["findings"],
+        [
+            "severity",
+            "category",
+            "action",
+            "frame",
+            "asset_kind",
+            "metric",
+            "value",
+            "threshold",
+            "message",
+            "evidence",
+        ],
+    )
 
     top_findings = report["findings"][:20]
     summary_md = out_dir / "alignment_summary.md"
