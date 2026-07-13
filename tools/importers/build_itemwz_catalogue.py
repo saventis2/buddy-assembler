@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 import xml.etree.ElementTree as ET
 
-from wz_shared import child_imgdir, safe_name, utc_now_iso, write_csv
+from wz_shared import FALLBACK_ANALYSIS_DIR, FALLBACK_BASE_WZ, child_imgdir, safe_name, utc_now_iso, write_csv
 
 
 STRING_FILE_BY_ITEM_ROOT = {
@@ -239,12 +239,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--base-wz",
-        default=r"C:\Users\GGPC\OneDrive\Desktop\83 complete\Base.wz",
+        default=FALLBACK_BASE_WZ,
         help="Path to extracted Base.wz directory",
     )
     parser.add_argument(
         "--output-dir",
-        default=r"C:\Users\GGPC\OneDrive\Desktop\83 complete\analysis\catalogue_itemwz",
+        default=FALLBACK_ANALYSIS_DIR + r"\catalogue_itemwz",
         help="Directory for generated catalogue files",
     )
     args = parser.parse_args()

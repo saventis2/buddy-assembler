@@ -10,6 +10,7 @@ from typing import Any
 import xml.etree.ElementTree as ET
 
 from wz_shared import (
+    FALLBACK_BASE_WZ,
     asset_id_from_xml,
     build_timeline_from_action_node,
     child_imgdir,
@@ -169,7 +170,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--base-wz",
-        default=r"C:\Users\GGPC\OneDrive\Desktop\83 complete\Base.wz",
+        default=FALLBACK_BASE_WZ,
         help="Path to extracted Base.wz directory",
     )
     parser.add_argument("--npc-id", type=int, default=2004, help="NPC id to inspect")

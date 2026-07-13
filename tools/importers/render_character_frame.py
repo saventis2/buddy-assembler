@@ -13,7 +13,7 @@ import xml.etree.ElementTree as ET
 
 from PIL import Image
 
-from wz_shared import child_imgdir
+from wz_shared import FALLBACK_BASE_WZ, child_imgdir
 
 
 ANCHOR_PRIORITY = [
@@ -1499,7 +1499,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--base-wz",
-        default=r"C:\Users\GGPC\OneDrive\Desktop\83 complete\Base.wz",
+        default=FALLBACK_BASE_WZ,
         help="Path to extracted Base.wz directory",
     )
     parser.add_argument(

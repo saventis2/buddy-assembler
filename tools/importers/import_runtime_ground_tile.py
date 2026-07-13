@@ -10,14 +10,14 @@ from pathlib import Path
 
 from PIL import Image
 
-from wz_shared import safe_name
+from wz_shared import FALLBACK_BASE_WZ, safe_name
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--base-wz",
-        default=r"C:\Users\GGPC\OneDrive\Desktop\83 complete\Base.wz",
+        default=FALLBACK_BASE_WZ,
         help="Path to extracted Base.wz root",
     )
     parser.add_argument("--tile-set", default="citySG", help="Tile set name under Map/Map.wz/Tile")

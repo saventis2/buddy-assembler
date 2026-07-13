@@ -9,7 +9,13 @@ import json
 from pathlib import Path
 from typing import Dict, List
 
-from wz_shared import count_action_frames, detect_actions_in_asset_dir, read_info_strings
+from wz_shared import (
+    FALLBACK_ANALYSIS_DIR,
+    FALLBACK_BASE_WZ,
+    count_action_frames,
+    detect_actions_in_asset_dir,
+    read_info_strings,
+)
 
 
 def parse_weapon_id_from_xml_name(name: str) -> int | None:
@@ -79,12 +85,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--base-wz",
-        default=r"C:\Users\GGPC\OneDrive\Desktop\83 complete\Base.wz",
+        default=FALLBACK_BASE_WZ,
         help="Path to extracted Base.wz root",
     )
     parser.add_argument(
         "--output-dir",
-        default=r"C:\Users\GGPC\OneDrive\Desktop\83 complete\analysis\dataset_audit",
+        default=FALLBACK_ANALYSIS_DIR + r"\dataset_audit",
         help="Directory for report outputs",
     )
     parser.add_argument(

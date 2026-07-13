@@ -19,7 +19,7 @@ import shutil
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from wz_shared import find_imgdir_path
+from wz_shared import FALLBACK_BASE_WZ, find_imgdir_path
 
 DEFAULT_DELAY_MS = 90
 
@@ -90,7 +90,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--effect-wz-root",
-        default=r"C:\Users\GGPC\OneDrive\Desktop\83 complete\Base.wz\Effect\Effect.wz",
+        default=FALLBACK_BASE_WZ + r"\Effect\Effect.wz",
     )
     parser.add_argument("--img", default="BasicEff.img")
     parser.add_argument("--path", nargs="+", required=True, help="imgdir path, e.g. LevelUp")

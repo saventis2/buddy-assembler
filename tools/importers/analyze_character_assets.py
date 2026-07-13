@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Dict, Iterable, Optional
 import xml.etree.ElementTree as ET
 
-from wz_shared import child_imgdir, utc_now_iso, write_csv
+from wz_shared import FALLBACK_BASE_WZ, child_imgdir, utc_now_iso, write_csv
 
 
 BASE_TEMPLATE_RE = re.compile(r"^\d{8}\.img\.xml$")
@@ -425,7 +425,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--base-wz",
-        default=r"C:\Users\GGPC\OneDrive\Desktop\83 complete\Base.wz",
+        default=FALLBACK_BASE_WZ,
         help="Path to extracted Base.wz directory",
     )
     parser.add_argument(
