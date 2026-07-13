@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC TEST FIXTURE - not real MapleStory data.
+     Face part (id 20000). Like real Face imgs it has no stand1 action node,
+     only a static "default" node, so it exercises the renderer's
+     fallback_static_node selection path. Attaches via the brow anchor. -->
+<imgdir name="00020000.img">
+  <imgdir name="info">
+    <int name="cash" value="0"/>
+  </imgdir>
+  <imgdir name="default">
+    <canvas name="face" width="12" height="8">
+      <vector name="origin" x="6" y="4"/>
+      <imgdir name="map">
+        <vector name="brow" x="0" y="-4"/>
+      </imgdir>
+      <string name="z" value="face"/>
+    </canvas>
+  </imgdir>
+</imgdir>
