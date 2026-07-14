@@ -11,17 +11,17 @@
 #   mypy==1.11.2
 
 repos:
-  # Python linting/formatting for repo-root scripts, packages/content-validator/,
+  # Python linting/formatting for tools/importers/, packages/content-validator/,
   # and apps/runtime-godot/tools/ (the only locations that contain .py files).
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.6.9  # matches ruff==0.6.9
     hooks:
       - id: ruff
         name: ruff (lint)
-        files: ^(?:[^/]+\.py|packages/content-validator/.*\.py|apps/runtime-godot/tools/.*\.py)$
+        files: ^(?:tools/importers/.*\.py|packages/content-validator/.*\.py|apps/runtime-godot/tools/.*\.py)$
       - id: ruff-format
         name: ruff-format (check only, no rewrite)
-        files: ^(?:[^/]+\.py|packages/content-validator/.*\.py|apps/runtime-godot/tools/.*\.py)$
+        files: ^(?:tools/importers/.*\.py|packages/content-validator/.*\.py|apps/runtime-godot/tools/.*\.py)$
         args: [--check]
 
   # GDScript linting/formatting for apps/runtime-godot/.

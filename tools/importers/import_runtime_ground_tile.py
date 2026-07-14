@@ -10,22 +10,14 @@ from pathlib import Path
 
 from PIL import Image
 
-
-def _safe_name(value: str) -> str:
-    out = []
-    for ch in value:
-        if ch.isalnum() or ch in {"-", "_"}:
-            out.append(ch)
-        else:
-            out.append("_")
-    return "".join(out).strip("_")
+from wz_shared import FALLBACK_BASE_WZ, safe_name
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--base-wz",
-        default=r"C:\Users\GGPC\OneDrive\Desktop\83 complete\Base.wz",
+        default=FALLBACK_BASE_WZ,
         help="Path to extracted Base.wz root",
     )
     parser.add_argument("--tile-set", default="citySG", help="Tile set name under Map/Map.wz/Tile")
@@ -43,7 +35,7 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    repo_root = Path(__file__).resolve().parent
+    repo_root = Path(__file__).resolve().parents[2]
     base_wz = Path(args.base_wz).resolve()
     source = (
         base_wz
@@ -62,8 +54,8 @@ def main() -> int:
     output_name = args.output_name.strip()
     if not output_name:
         output_name = "ground_%s_%s_%d.png" % (
-            _safe_name(args.tile_set),
-            _safe_name(args.group),
+            safe_name(args.tile_set),
+            safe_name(args.group),
             int(args.index),
         )
     target = out_dir / output_name
