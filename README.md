@@ -5,12 +5,12 @@ screen through long work or study sessions without being noisy or
 distracting.
 
 The shipping product is the Godot runtime under `apps/runtime-godot/`.
-The Python scripts at the repo root are **dev-host importer / tooling**
-used to build internal content packs; they are not part of the runtime.
-PR-12's content-schema-freeze half has landed (see
-`docs/product/CONTENT_SCHEMA.md`), but its importer-boundary half has not:
-these scripts still live at repo root as of this writing and have not yet
-moved under `tools/importers/` (see `PR_PLAN.md` → PR-12).
+The Python scripts under `tools/importers/` are **dev-host importer /
+tooling** used to build internal content packs; they are not part of the
+runtime. PR-12 is now fully landed: its content-schema-freeze half (see
+`docs/product/CONTENT_SCHEMA.md`) and its importer-boundary half — these
+scripts have been relocated from the repo root into `tools/importers/`
+(see `PR_PLAN.md` → PR-12).
 
 ## Start here
 
@@ -36,22 +36,22 @@ moved under `tools/importers/` (see `PR_PLAN.md` → PR-12).
 
 ## Legacy / importer tooling (dev-host only)
 
-These Python scripts at the repo root generate internal content from
-extracted source trees. They are not part of the shipped runtime.
+These Python scripts under `tools/importers/` generate internal content
+from extracted source trees. They are not part of the shipped runtime.
 
-- `character_tooling_gui.py` — desktop GUI orchestrator
-- `render_character_frame.py` — single-frame renderer
-- `build_item_catalogue.py` / `build_itemwz_catalogue.py` — catalogue generators
-- `diff_character_assets.py` — extracted tree diff tool
-- `alignment_audit.py` — batch alignment and quality audit
-- `weapon_action_compatibility_report.py` — weapon action compatibility reporting
-- `analyze_npc_animation_links.py` — NPC animation + link-chain inspection
-- `export_runtime_character_sprites.py` — runtime companion sprite/animation exporter
-- `import_runtime_ground_tile.py` — imports map tile terrain into runtime content packs
-- `analyze_character_assets.py` — reverse-engineering and dataset analysis
-- `audit_dataset_metadata.py` — metadata coverage audit
-- `build_wz_index.py` / `export_effect_sprites.py` — WZ catalog / Effect.wz export helpers
-- `build_asset_inventory.py` — unified flat-file manifest + 83-vs-83-complete
+- `tools/importers/character_tooling_gui.py` — desktop GUI orchestrator
+- `tools/importers/render_character_frame.py` — single-frame renderer
+- `tools/importers/build_item_catalogue.py` / `build_itemwz_catalogue.py` — catalogue generators
+- `tools/importers/diff_character_assets.py` — extracted tree diff tool
+- `tools/importers/alignment_audit.py` — batch alignment and quality audit
+- `tools/importers/weapon_action_compatibility_report.py` — weapon action compatibility reporting
+- `tools/importers/analyze_npc_animation_links.py` — NPC animation + link-chain inspection
+- `tools/importers/export_runtime_character_sprites.py` — runtime companion sprite/animation exporter
+- `tools/importers/import_runtime_ground_tile.py` — imports map tile terrain into runtime content packs
+- `tools/importers/analyze_character_assets.py` — reverse-engineering and dataset analysis
+- `tools/importers/audit_dataset_metadata.py` — metadata coverage audit
+- `tools/importers/build_wz_index.py` / `export_effect_sprites.py` — WZ catalog / Effect.wz export helpers
+- `tools/importers/build_asset_inventory.py` — unified flat-file manifest + 83-vs-83-complete
   completeness cross-check + merged logical-asset index (sqlite3 + CSV),
   orchestrating the catalogue/index scripts above rather than reimplementing them
 
@@ -62,12 +62,11 @@ Contributors who want lint/type-check/test tooling should also install
 Run:
 
 ```powershell
-python character_tooling_gui.py
+python tools/importers/character_tooling_gui.py
 ```
 
 Importer defaults may point at machine-specific Windows paths; these
-will be moved into config / first-run setup as part of the PR-12
-boundary cleanup.
+will be moved into config / first-run setup as follow-up work.
 
 ## Deeper documentation
 
