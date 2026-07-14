@@ -32,6 +32,13 @@ All importer/analysis scripts live under `tools/importers/`.
   - Desktop GUI entrypoint.
   - Hosts tabs for Start Here, Catalogue, Render, Batch Export, and Diff.
   - Imports and orchestrates the main backend tools.
+- `tools/importers/character_tooling_core.py`
+  - WZ-domain logic behind the GUI (action/frame/timeline detection, name and
+    weapon-metadata lookups, GIF building, catalogue slot inference).
+  - Importable without tkinter; unit-tested headlessly.
+- `tools/importers/character_tooling_ops.py`
+  - The batch-export operation (`run_batch_export`) extracted from the GUI's
+    worker thread; headless entry point for backlog #47's CLI mode.
 
 ### Rendering and composition
 
@@ -95,7 +102,9 @@ These scripts help verify quality, consistency, and change impact:
 ### 4. Operator interface layer
 
 This is the user-facing orchestration surface:
-- `character_tooling_gui.py`
+- `character_tooling_gui.py` (tkinter shell)
+- `character_tooling_core.py` (headless WZ-domain logic behind the GUI)
+- `character_tooling_ops.py` (headless batch-export operation)
 
 ## Current workflow
 

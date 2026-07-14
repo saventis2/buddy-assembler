@@ -52,7 +52,11 @@ Responsibilities:
 - manage batch export controls and audit triggers
 
 Current note:
-- this file is already large and is acting as both UI layer and orchestration layer
+- backlog #44 split the former monolith: `character_tooling_gui.py` keeps the
+  tkinter shell (widgets, tab layout, event handlers), while the WZ-domain
+  logic lives in `character_tooling_core.py` and the batch-export operation in
+  `character_tooling_ops.py` — both importable and testable without tkinter,
+  and the intended call surface for backlog #47's headless CLI
 
 ### `render_character_frame.py`
 
