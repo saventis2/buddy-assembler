@@ -8,7 +8,7 @@
 # Versions are pinned to match items #53 (requirements-dev.txt) and #54
 # (ruff+mypy CI job) so all three converge on the same tool versions:
 #   ruff==0.15.20
-#   mypy==1.11.2
+#   mypy==2.3.0
 
 repos:
   # Python linting/formatting for tools/importers/, packages/content-validator/,
