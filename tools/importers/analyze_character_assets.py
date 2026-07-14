@@ -4,24 +4,17 @@
 from __future__ import annotations
 
 import argparse
-import csv
 import json
 import re
 from collections import Counter, defaultdict
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Iterable, Optional
 import xml.etree.ElementTree as ET
 
+from wz_shared import FALLBACK_BASE_WZ, child_imgdir, utc_now_iso, write_csv
+
 
 BASE_TEMPLATE_RE = re.compile(r"^\d{8}\.img\.xml$")
-
-
-def child_imgdir_by_name(elem: ET.Element, name: str) -> Optional[ET.Element]:
-    for child in elem:
-        if child.tag == "imgdir" and child.attrib.get("name") == name:
-            return child
-    return None
 
 
 def read_scalar_map(imgdir: Optional[ET.Element]) -> Dict[str, str]:
@@ -38,7 +31,7 @@ def read_scalar_map(imgdir: Optional[ET.Element]) -> Dict[str, str]:
 
 
 def canvas_map_anchors(canvas: ET.Element) -> Iterable[str]:
-    map_node = child_imgdir_by_name(canvas, "map")
+    map_node = child_imgdir(canvas, "map")
     if map_node is None:
         return []
     anchors = []
@@ -61,7 +54,7 @@ def parse_character_xml(xml_path: Path) -> dict:
     root = ET.parse(xml_path).getroot()
 
     top_actions = []
-    info = child_imgdir_by_name(root, "info")
+    info = child_imgdir(root, "info")
     info_data = read_scalar_map(info)
     islot = info_data.get("islot")
     vslot = info_data.get("vslot")
@@ -120,7 +113,7 @@ def parse_make_char_info(make_char_xml: Path) -> dict:
         "name_profiles": defaultdict(lambda: defaultdict(dict)),
     }
 
-    info_node = child_imgdir_by_name(root, "Info")
+    info_node = child_imgdir(root, "Info")
     if info_node is not None:
         for profile in info_node:
             if profile.tag != "imgdir":
@@ -137,7 +130,7 @@ def parse_make_char_info(make_char_xml: Path) -> dict:
                         if idx is not None and vv is not None:
                             result["info_profiles"][profile_name][group_name][idx] = vv
 
-    name_node = child_imgdir_by_name(root, "Name")
+    name_node = child_imgdir(root, "Name")
     if name_node is not None:
         for profile in name_node:
             if profile.tag != "imgdir":
@@ -159,7 +152,7 @@ def parse_make_char_info(make_char_xml: Path) -> dict:
 
 def parse_eqp_names(eqp_xml: Path) -> dict:
     root = ET.parse(eqp_xml).getroot()
-    eqp_outer = child_imgdir_by_name(root, "Eqp")
+    eqp_outer = child_imgdir(root, "Eqp")
     if eqp_outer is None:
         return {"categories": {}, "total_named_entries": 0}
 
@@ -190,14 +183,6 @@ def top_n(counter: Counter, n: int = 20) -> dict:
 def tokenize_vslot(vslot: str) -> list[str]:
     # Typical vslot values are packed uppercase groups, e.g. H1H2H3HfHsHb
     return re.findall(r"[A-Z][a-z]?\d*", vslot)
-
-
-def write_csv(path: Path, rows: list[dict], headers: list[str]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=headers)
-        writer.writeheader()
-        writer.writerows(rows)
 
 
 def analyze(base_wz: Path, output_dir: Path) -> dict:
@@ -351,7 +336,7 @@ def analyze(base_wz: Path, output_dir: Path) -> dict:
     eqp_summary = parse_eqp_names(eqp_path) if eqp_path.exists() else {}
 
     summary = {
-        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "generated_at_utc": utc_now_iso(),
         "source_base_wz": str(base_wz),
         "character_root": str(character_root),
         "counts": {
@@ -440,7 +425,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--base-wz",
-        default=r"C:\Users\GGPC\OneDrive\Desktop\83 complete\Base.wz",
+        default=FALLBACK_BASE_WZ,
         help="Path to extracted Base.wz directory",
     )
     parser.add_argument(

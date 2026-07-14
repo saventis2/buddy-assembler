@@ -4,25 +4,18 @@
 from __future__ import annotations
 
 import argparse
-import csv
 import json
 from collections import defaultdict
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict
 import xml.etree.ElementTree as ET
 
-
-def _child_imgdir(node: ET.Element, name: str) -> Optional[ET.Element]:
-    for child in node:
-        if child.tag == "imgdir" and child.attrib.get("name") == name:
-            return child
-    return None
+from wz_shared import FALLBACK_ANALYSIS_DIR, FALLBACK_BASE_WZ, child_imgdir, safe_name, utc_now_iso, write_csv
 
 
 def _extract_info(xml_path: Path) -> dict:
     root = ET.parse(xml_path).getroot()
-    info = _child_imgdir(root, "info")
+    info = child_imgdir(root, "info")
     out = {"islot": "", "vslot": "", "cash": ""}
     if info is None:
         return out
@@ -39,7 +32,7 @@ def _load_eqp_names(base_wz: Path) -> Dict[int, dict]:
     if not eqp_xml.exists():
         return {}
     root = ET.parse(eqp_xml).getroot()
-    eqp_outer = _child_imgdir(root, "Eqp")
+    eqp_outer = child_imgdir(root, "Eqp")
     out: Dict[int, dict] = {}
     if eqp_outer is None:
         return out
@@ -65,18 +58,6 @@ def _load_eqp_names(base_wz: Path) -> Dict[int, dict]:
             if name or desc:
                 out[item_id] = {"name": name, "desc": desc, "eqp_category": category}
     return out
-
-
-def _safe_name(s: str) -> str:
-    return "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in s).strip("_")
-
-
-def _write_csv(path: Path, rows: list[dict], headers: list[str]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=headers)
-        w.writeheader()
-        w.writerows(rows)
 
 
 def build_catalogue(base_wz: Path, output_dir: Path) -> dict:
@@ -137,15 +118,15 @@ def build_catalogue(base_wz: Path, output_dir: Path) -> dict:
 
     # Master CSV
     all_rows_sorted = sorted(all_rows, key=lambda r: (r["part_category"], int(r["id"])))
-    _write_csv(output_dir / "catalogue_all.csv", all_rows_sorted, headers)
+    write_csv(output_dir / "catalogue_all.csv", all_rows_sorted, headers)
 
     # Per-category CSVs
     for cat, rows in sorted(by_category.items()):
         rows_sorted = sorted(rows, key=lambda r: int(r["id"]))
-        _write_csv(output_dir / f"catalogue_{_safe_name(cat)}.csv", rows_sorted, headers)
+        write_csv(output_dir / f"catalogue_{safe_name(cat)}.csv", rows_sorted, headers)
 
     summary = {
-        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "generated_at_utc": utc_now_iso(),
         "base_wz": str(base_wz),
         "character_root": str(char_root),
         "output_dir": str(output_dir),
@@ -174,7 +155,7 @@ def build_catalogue(base_wz: Path, output_dir: Path) -> dict:
     for cat, info in sorted(summary["categories"].items()):
         lines.append(
             f"- **{cat}**: {info['count']} items ({info['with_names']} with mapped names) "
-            f"- `catalogue_{_safe_name(cat)}.csv`"
+            f"- `catalogue_{safe_name(cat)}.csv`"
         )
     lines += [
         "",
@@ -192,12 +173,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--base-wz",
-        default=r"C:\Users\GGPC\OneDrive\Desktop\83 complete\Base.wz",
+        default=FALLBACK_BASE_WZ,
         help="Path to extracted Base.wz directory",
     )
     parser.add_argument(
         "--output-dir",
-        default=r"C:\Users\GGPC\OneDrive\Desktop\83 complete\analysis\catalogue",
+        default=FALLBACK_ANALYSIS_DIR + r"\catalogue",
         help="Directory for generated catalogue files",
     )
     args = parser.parse_args()

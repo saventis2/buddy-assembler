@@ -74,6 +74,8 @@ from typing import Any, Iterable, Iterator, Optional
 
 import xml.etree.ElementTree as ET
 
+from wz_shared import write_csv
+
 # --------------------------------------------------------------------------
 # Defaults / fallbacks
 #
@@ -779,34 +781,20 @@ def build_logical_asset_index(base_wz: Path, components_dir: Path) -> list[dict[
 # ==========================================================================
 
 def write_manifest_csv(path: Path, records: list[FileRecord]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
     headers = ["source_tree", "top_level_category", "relpath", "filename", "extension",
                "size_bytes", "mtime_utc", "sha256", "hash_type", "entry_format", "archive_name"]
-    with path.open("w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=headers)
-        w.writeheader()
-        for r in records:
-            w.writerow(asdict(r))
+    write_csv(path, [asdict(r) for r in records], headers)
 
 
 def write_completeness_csv(path: Path, rows: list[dict[str, Any]]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
     headers = ["category", "present_in_83", "present_in_complete", "file_count_83", "file_count_complete",
                "total_size_83", "total_size_complete", "count_delta", "size_delta", "entry_format_83", "flag"]
-    with path.open("w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=headers)
-        w.writeheader()
-        w.writerows(rows)
+    write_csv(path, rows, headers)
 
 
 def write_logical_asset_csv(path: Path, rows: list[dict[str, Any]]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
     headers = ["asset_id", "name", "category", "subcategory", "source_script", "frame_count", "first_frame_path", "xml_relpath"]
-    with path.open("w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=headers)
-        w.writeheader()
-        for r in rows:
-            w.writerow({k: r.get(k) for k in headers})
+    write_csv(path, [{k: r.get(k) for k in headers} for r in rows], headers)
 
 
 def write_index_md(

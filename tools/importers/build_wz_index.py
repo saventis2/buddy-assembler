@@ -14,48 +14,16 @@ For each leaf we emit: id, name/path, frame_count, first_frame_png, size range.
 from __future__ import annotations
 
 import argparse
-import csv
-import os
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+from wz_shared import BASE_WZ_ENV_VAR, resolve_base_wz, write_csv
+
 # Path override mechanism (precedence: CLI arg > env var > hardcoded default)
-# is documented once in Character-Tooling.md rather than repeated per script.
-BASE_WZ_ENV_VAR = "BUDDY_ASSEMBLER_BASE_WZ"
-_FALLBACK_BASE_WZ = r"C:\Users\GGPC\OneDrive\Desktop\83 complete\Base.wz"
-
-
-def resolve_base_wz(cli_value: str | None = None) -> Path:
-    """Resolve the Base.wz directory path.
-
-    Precedence: explicit --base-wz CLI value > BUDDY_ASSEMBLER_BASE_WZ
-    environment variable > hardcoded fallback (the maintainer's local
-    machine path). See Character-Tooling.md.
-    """
-    if cli_value:
-        return Path(cli_value)
-    env_value = os.environ.get(BASE_WZ_ENV_VAR)
-    if env_value:
-        return Path(env_value)
-    return Path(_FALLBACK_BASE_WZ)
-
-
+# lives in wz_shared.resolve_base_wz and is documented once in
+# Character-Tooling.md rather than repeated per script.
 BASE_WZ = resolve_base_wz()
 OUT_ROOT = Path(__file__).resolve().parents[2] / "analysis" / "wz_index"
-
-
-def _find_imgdirs(node: ET.Element, path: list[str]) -> ET.Element | None:
-    cur = node
-    for name in path:
-        nxt = None
-        for child in cur:
-            if child.tag == "imgdir" and child.attrib.get("name") == name:
-                nxt = child
-                break
-        if nxt is None:
-            return None
-        cur = nxt
-    return cur
 
 
 def _canvas_summary(node: ET.Element) -> dict:
@@ -173,16 +141,6 @@ def _first_canvas_origin(node: ET.Element) -> tuple[int, int]:
             if child.tag == "vector" and child.attrib.get("name") == "origin":
                 return int(child.attrib.get("x", 0)), int(child.attrib.get("y", 0))
     return 0, 0
-
-
-def write_csv(path: Path, rows: list[dict]) -> None:
-    if not rows:
-        return
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
-        writer.writeheader()
-        writer.writerows(rows)
 
 
 def write_index_md(summaries: dict[str, tuple[Path, int]]) -> None:
