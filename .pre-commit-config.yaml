@@ -7,14 +7,14 @@
 #
 # Versions are pinned to match items #53 (requirements-dev.txt) and #54
 # (ruff+mypy CI job) so all three converge on the same tool versions:
-#   ruff==0.6.9
+#   ruff==0.15.20
 #   mypy==1.11.2
 
 repos:
   # Python linting/formatting for tools/importers/, packages/content-validator/,
   # and apps/runtime-godot/tools/ (the only locations that contain .py files).
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.6.9  # matches ruff==0.6.9
+    rev: v0.15.20  # matches ruff==0.15.20
     hooks:
       - id: ruff
         name: ruff (lint)
