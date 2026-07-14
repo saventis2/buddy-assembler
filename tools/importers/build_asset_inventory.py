@@ -74,6 +74,8 @@ from typing import Any, Iterable, Iterator, Optional
 
 import xml.etree.ElementTree as ET
 
+from wz_shared import write_csv
+
 # --------------------------------------------------------------------------
 # Defaults / fallbacks
 #
@@ -86,7 +88,7 @@ import xml.etree.ElementTree as ET
 DEFAULT_SOURCE_COMPLETE = r"C:\Users\GGPC\OneDrive\Desktop\83 complete"
 DEFAULT_SOURCE_83 = r"C:\Users\GGPC\OneDrive\Desktop\83"
 
-REPO_ROOT = Path(__file__).resolve().parent
+REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_OUTPUT_DIR = REPO_ROOT / "analysis" / "asset_inventory"
 
 # Categories called out explicitly in the task / mirrored from
@@ -553,15 +555,16 @@ def build_completeness_check(manifest_records: list[FileRecord]) -> list[dict[st
 # ==========================================================================
 
 def _load_sibling_module(module_name: str):
-    """Import a sibling flat-at-root script as a module. All four category
-    scripts live next to this file; importing (rather than shelling out)
-    lets us reuse their return values / functions directly instead of
-    reimplementing WZ-XML parsing.
+    """Import a sibling importer script as a module. All four category
+    scripts live next to this file (under `tools/importers/`); importing
+    (rather than shelling out) lets us reuse their return values /
+    functions directly instead of reimplementing WZ-XML parsing.
     """
     import importlib
 
-    if str(REPO_ROOT) not in sys.path:
-        sys.path.insert(0, str(REPO_ROOT))
+    sibling_dir = str(Path(__file__).resolve().parent)
+    if sibling_dir not in sys.path:
+        sys.path.insert(0, sibling_dir)
     return importlib.import_module(module_name)
 
 
@@ -778,34 +781,20 @@ def build_logical_asset_index(base_wz: Path, components_dir: Path) -> list[dict[
 # ==========================================================================
 
 def write_manifest_csv(path: Path, records: list[FileRecord]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
     headers = ["source_tree", "top_level_category", "relpath", "filename", "extension",
                "size_bytes", "mtime_utc", "sha256", "hash_type", "entry_format", "archive_name"]
-    with path.open("w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=headers)
-        w.writeheader()
-        for r in records:
-            w.writerow(asdict(r))
+    write_csv(path, [asdict(r) for r in records], headers)
 
 
 def write_completeness_csv(path: Path, rows: list[dict[str, Any]]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
     headers = ["category", "present_in_83", "present_in_complete", "file_count_83", "file_count_complete",
                "total_size_83", "total_size_complete", "count_delta", "size_delta", "entry_format_83", "flag"]
-    with path.open("w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=headers)
-        w.writeheader()
-        w.writerows(rows)
+    write_csv(path, rows, headers)
 
 
 def write_logical_asset_csv(path: Path, rows: list[dict[str, Any]]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
     headers = ["asset_id", "name", "category", "subcategory", "source_script", "frame_count", "first_frame_path", "xml_relpath"]
-    with path.open("w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=headers)
-        w.writeheader()
-        for r in rows:
-            w.writerow({k: r.get(k) for k in headers})
+    write_csv(path, [{k: r.get(k) for k in headers} for r in rows], headers)
 
 
 def write_index_md(

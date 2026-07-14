@@ -24,10 +24,10 @@ support for V1) are explicitly out of scope and won't be accepted.
 
 ## Dev environment
 
-- **Python tooling** (repo-root importer scripts): `pip install -r
-  requirements.txt` (currently just `Pillow`). Entry point is
-  `python character_tooling_gui.py`; see `docs/WORKFLOW.md` for the
-  operator flow.
+- **Python tooling** (importer scripts under `tools/importers/`): `pip
+  install -r requirements.txt` (currently just `Pillow`). Entry point is
+  `python tools/importers/character_tooling_gui.py`; see
+  `docs/WORKFLOW.md` for the operator flow.
 - **Godot runtime**: the shipping runtime is pinned to **Godot 4.2**
   (see `config/features` in `apps/runtime-godot/project.godot`). Use a
   matching Godot 4.2 editor/console build.

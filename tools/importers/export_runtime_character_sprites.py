@@ -5,15 +5,21 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import shutil
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
-from PIL import Image
-
 from render_character_frame import render
+from wz_shared import (
+    asset_id_from_xml,
+    build_sprite_sheet,
+    build_timeline_from_action_node,
+    child_imgdir,
+    extract_info_link,
+    normalize_action_frame_canvases,
+    resolve_link_target_xml,
+)
 
 
 STATE_CONFIGS: dict[str, dict[str, Any]] = {
@@ -80,60 +86,6 @@ def _build_render_kwargs(combo: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _child_imgdir(node: ET.Element, name: str) -> ET.Element | None:
-    for child in node:
-        if child.tag == "imgdir" and child.attrib.get("name") == name:
-            return child
-    return None
-
-
-def _asset_id_from_xml(xml_path: Path) -> str:
-    return xml_path.stem.replace(".img", "")
-
-
-def _extract_info_link(root: ET.Element) -> str | None:
-    info = _child_imgdir(root, "info")
-    if info is None:
-        return None
-    for node in info:
-        if node.attrib.get("name") != "link":
-            continue
-        if node.tag not in {"string", "int"}:
-            continue
-        value = str(node.attrib.get("value", "")).strip()
-        if value:
-            return value
-    return None
-
-
-def _resolve_link_target_xml(current_xml: Path, link_value: str) -> Path | None:
-    raw = str(link_value).strip()
-    if not raw:
-        return None
-
-    base_dir = current_xml.parent
-    width = len(_asset_id_from_xml(current_xml))
-    candidates: list[str] = []
-    if raw.endswith(".img.xml"):
-        candidates.append(raw)
-    else:
-        candidates.append(f"{raw}.img.xml")
-    if raw.isdigit():
-        candidates.append(f"{raw.zfill(width)}.img.xml")
-        candidates.append(f"{int(raw):0{width}d}.img.xml")
-        candidates.append(f"{int(raw)}.img.xml")
-
-    seen: set[str] = set()
-    for name in candidates:
-        if name in seen:
-            continue
-        seen.add(name)
-        candidate = base_dir / name
-        if candidate.exists():
-            return candidate
-    return None
-
-
 def _base_template_xml(base_wz: Path, base_id: int) -> Path:
     return base_wz / "Character" / "Character.wz" / f"{int(base_id):08d}.img.xml"
 
@@ -174,9 +126,9 @@ def _resolve_action_node_with_links(
         seen.add(current_xml)
 
         root = ET.parse(current_xml).getroot()
-        chain.append(_asset_id_from_xml(current_xml))
+        chain.append(asset_id_from_xml(current_xml))
 
-        action_node = _child_imgdir(root, action)
+        action_node = child_imgdir(root, action)
         if action_node is not None:
             return {
                 "ok": True,
@@ -187,7 +139,7 @@ def _resolve_action_node_with_links(
                 "link_chain": chain,
             }
 
-        link_value = _extract_info_link(root)
+        link_value = extract_info_link(root)
         if not link_value:
             return {
                 "ok": False,
@@ -198,7 +150,7 @@ def _resolve_action_node_with_links(
                 "link_chain": chain,
             }
 
-        linked_xml = _resolve_link_target_xml(current_xml, link_value)
+        linked_xml = resolve_link_target_xml(current_xml, link_value)
         if linked_xml is None:
             return {
                 "ok": False,
@@ -222,89 +174,6 @@ def _resolve_action_node_with_links(
     }
 
 
-def _parse_delay_ms(raw: Any) -> int | None:
-    if raw is None:
-        return None
-    try:
-        value = int(str(raw).strip())
-    except Exception:
-        return None
-    return max(1, value)
-
-
-def _extract_node_delay_ms(frame_node: ET.Element) -> int | None:
-    for child in frame_node:
-        if child.attrib.get("name") != "delay":
-            continue
-        if child.tag not in {"int", "string"}:
-            continue
-        parsed = _parse_delay_ms(child.attrib.get("value"))
-        if parsed is not None:
-            return parsed
-    return None
-
-
-def _resolve_uol_target_frame(value: str) -> int | None:
-    raw = str(value).strip()
-    if not raw:
-        return None
-    if raw.isdigit():
-        return int(raw)
-    tokens = [tok for tok in raw.split("/") if tok not in {"", "."}]
-    for token in reversed(tokens):
-        if token.isdigit():
-            return int(token)
-    return None
-
-
-def _resolve_frame_delay_ms(
-    frame_idx: int,
-    frame_nodes: dict[int, ET.Element],
-    default_delay_ms: int,
-    visited: set[int] | None = None,
-) -> int:
-    if visited is None:
-        visited = set()
-    if frame_idx in visited:
-        return default_delay_ms
-    visited.add(frame_idx)
-
-    frame_node = frame_nodes.get(frame_idx)
-    if frame_node is None:
-        return default_delay_ms
-
-    direct = _extract_node_delay_ms(frame_node)
-    if direct is not None:
-        return direct
-
-    if frame_node.tag == "uol":
-        target = _resolve_uol_target_frame(frame_node.attrib.get("value", ""))
-        if target is not None:
-            return _resolve_frame_delay_ms(target, frame_nodes, default_delay_ms, visited)
-
-    return default_delay_ms
-
-
-def _build_timeline_from_action_node(action_node: ET.Element, default_delay_ms: int) -> list[dict[str, int]]:
-    frame_nodes: dict[int, ET.Element] = {}
-    for child in action_node:
-        name = str(child.attrib.get("name", "")).strip()
-        if not name.isdigit():
-            continue
-        if child.tag not in {"imgdir", "canvas", "uol"}:
-            continue
-        frame_nodes[int(name)] = child
-
-    if not frame_nodes:
-        return [{"frame": 0, "delay_ms": default_delay_ms}]
-
-    timeline: list[dict[str, int]] = []
-    for frame_idx in sorted(frame_nodes.keys()):
-        delay_ms = _resolve_frame_delay_ms(frame_idx, frame_nodes, default_delay_ms)
-        timeline.append({"frame": int(frame_idx), "delay_ms": int(delay_ms)})
-    return timeline
-
-
 def _detect_action_timeline(
     base_wz: Path,
     base_id: int,
@@ -321,144 +190,8 @@ def _detect_action_timeline(
     action_node = resolved.get("action_node")
     if action_node is None:
         return []
-    timeline = _build_timeline_from_action_node(action_node, safe_default)
+    timeline = build_timeline_from_action_node(action_node, safe_default)
     return timeline[: max(1, int(max_frames))]
-
-
-def _normalize_action_frame_canvases(per_frame_rows: list[dict[str, Any]]) -> dict[str, Any] | None:
-    rows: list[tuple[dict[str, Any], Path, dict[str, Any]]] = []
-    for row in per_frame_rows:
-        png_raw = row.get("png")
-        bounds = row.get("frame_bounds_world")
-        if not isinstance(png_raw, str) or not png_raw:
-            continue
-        if not isinstance(bounds, dict):
-            continue
-        if not all(k in bounds for k in ("left", "top", "right", "bottom")):
-            continue
-        png_path = Path(png_raw)
-        if not png_path.exists():
-            continue
-        rows.append((row, png_path, bounds))
-
-    if len(rows) <= 1:
-        return None
-
-    left = min(int(bounds["left"]) for _, _, bounds in rows)
-    top = min(int(bounds["top"]) for _, _, bounds in rows)
-    right = max(int(bounds["right"]) for _, _, bounds in rows)
-    bottom = max(int(bounds["bottom"]) for _, _, bounds in rows)
-    width = right - left
-    height = bottom - top
-    if width <= 0 or height <= 0:
-        return None
-
-    normalized = 0
-    for row, png_path, bounds in rows:
-        src = Image.open(png_path).convert("RGBA")
-        canvas = None
-        try:
-            canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-            dx = int(bounds["left"]) - left
-            dy = int(bounds["top"]) - top
-            canvas.alpha_composite(src, (dx, dy))
-            canvas.save(png_path)
-            row["normalized_canvas_offset"] = {"x": dx, "y": dy}
-            row["normalized_canvas_size"] = [width, height]
-            row["effective_bounds_world"] = {
-                "left": left,
-                "top": top,
-                "right": right,
-                "bottom": bottom,
-            }
-            # Keep frame metadata in sync with normalized canvas so runtime
-            # face overlay placement (derived from frame_bounds_world + draw_order)
-            # remains pixel-accurate after re-centering.
-            json_raw = row.get("json")
-            if isinstance(json_raw, str) and json_raw:
-                json_path = Path(json_raw)
-                if json_path.exists():
-                    try:
-                        payload = json.loads(json_path.read_text(encoding="utf-8"))
-                        if isinstance(payload, dict):
-                            payload["frame_bounds_world"] = {
-                                "left": left,
-                                "top": top,
-                                "right": right,
-                                "bottom": bottom,
-                            }
-                            payload["normalized_canvas_offset"] = {"x": dx, "y": dy}
-                            payload["normalized_canvas_size"] = [width, height]
-                            json_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-                    except Exception:
-                        # Non-fatal; image normalization still succeeded.
-                        pass
-            normalized += 1
-        finally:
-            src.close()
-            if canvas is not None:
-                canvas.close()
-
-    return {
-        "enabled": True,
-        "normalized_frames": normalized,
-        "bounds_world": {"left": left, "top": top, "right": right, "bottom": bottom},
-        "size": [width, height],
-    }
-
-
-def _build_sprite_sheet(
-    frame_paths: list[Path],
-    output_path: Path,
-    columns: int,
-    cell_padding: int = 2,
-) -> dict[str, Any]:
-    imgs = [Image.open(p).convert("RGBA") for p in frame_paths]
-    try:
-        max_w = max(im.width for im in imgs)
-        max_h = max(im.height for im in imgs)
-        cols = max(1, int(columns))
-        rows = math.ceil(len(imgs) / cols)
-
-        cell_w = max_w + cell_padding * 2
-        cell_h = max_h + cell_padding * 2
-        sheet_w = cols * cell_w
-        sheet_h = rows * cell_h
-
-        sheet = Image.new("RGBA", (sheet_w, sheet_h), (0, 0, 0, 0))
-        layout: list[dict[str, Any]] = []
-        for i, im in enumerate(imgs):
-            r = i // cols
-            c = i % cols
-            x = c * cell_w + cell_padding + (max_w - im.width) // 2
-            y = r * cell_h + cell_padding + (max_h - im.height) // 2
-            sheet.alpha_composite(im, (x, y))
-            layout.append(
-                {
-                    "index": i,
-                    "row": r,
-                    "col": c,
-                    "x": x,
-                    "y": y,
-                    "w": im.width,
-                    "h": im.height,
-                    "png": str(frame_paths[i]),
-                }
-            )
-
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        sheet.save(output_path)
-        return {
-            "sheet_path": str(output_path),
-            "sheet_size": [sheet_w, sheet_h],
-            "cell_size": [cell_w, cell_h],
-            "rows": rows,
-            "cols": cols,
-            "layout": layout,
-        }
-    finally:
-        for im in imgs:
-            im.close()
 
 
 def _safe_relative(path: Path, root: Path) -> str:
@@ -531,11 +264,11 @@ def _export_state_animation(
         warnings.append(f"{state}: no frames rendered successfully")
         return None, warnings
 
-    normalize_info = _normalize_action_frame_canvases(per_frame)
+    normalize_info = normalize_action_frame_canvases(per_frame, sync_bounds_metadata=True)
 
     frame_paths = [Path(row["png"]) for row in per_frame]
     sheet_path = anim_dir / f"{state}_sheet.png"
-    sheet_info = _build_sprite_sheet(
+    sheet_info = build_sprite_sheet(
         frame_paths=frame_paths,
         output_path=sheet_path,
         columns=sheet_cols,
@@ -658,7 +391,7 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    repo_root = Path(__file__).resolve().parent
+    repo_root = Path(__file__).resolve().parents[2]
     combo_path = (repo_root / args.combo_json).resolve()
     out_dir = (repo_root / args.output_dir).resolve()
     meta_dir = (repo_root / args.metadata_dir).resolve()

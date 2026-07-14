@@ -5,14 +5,11 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import csv
-import os
 import random
 import zlib
 import threading
 import traceback
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 import xml.etree.ElementTree as ET
@@ -27,32 +24,27 @@ from render_character_frame import render
 from build_item_catalogue import build_catalogue as build_character_catalogue
 from build_itemwz_catalogue import build_catalogue as build_itemwz_catalogue
 from alignment_audit import run_alignment_audit
+from wz_shared import (
+    ANALYSIS_DIR_ENV_VAR,
+    BASE_WZ_ENV_VAR,
+    FALLBACK_ANALYSIS_DIR,
+    FALLBACK_BASE_WZ,
+    build_sprite_sheet,
+    child_imgdir,
+    count_action_frames,
+    detect_actions_in_asset_dir,
+    normalize_action_frame_canvases,
+    read_info_strings,
+    resolve_default_path,
+    utc_now_iso,
+)
 
 
 # Path override mechanism (precedence: CLI arg > env var > hardcoded default)
-# is documented once in Character-Tooling.md rather than repeated per script.
-BASE_WZ_ENV_VAR = "BUDDY_ASSEMBLER_BASE_WZ"
-ANALYSIS_DIR_ENV_VAR = "BUDDY_ASSEMBLER_ANALYSIS_DIR"
-_FALLBACK_BASE_WZ = r"C:\Users\GGPC\OneDrive\Desktop\83 complete\Base.wz"
-_FALLBACK_ANALYSIS_DIR = r"C:\Users\GGPC\OneDrive\Desktop\83 complete\analysis"
-
-
-def resolve_default_path(cli_value: str | None, env_var: str, fallback: str) -> str:
-    """Resolve a default path shown in the GUI.
-
-    Precedence: explicit CLI value > environment variable > hardcoded
-    fallback (the maintainer's local machine path). See Character-Tooling.md.
-    """
-    if cli_value:
-        return cli_value
-    env_value = os.environ.get(env_var)
-    if env_value:
-        return env_value
-    return fallback
-
-
-DEFAULT_BASE_WZ = resolve_default_path(None, BASE_WZ_ENV_VAR, _FALLBACK_BASE_WZ)
-DEFAULT_ANALYSIS_DIR = resolve_default_path(None, ANALYSIS_DIR_ENV_VAR, _FALLBACK_ANALYSIS_DIR)
+# lives in wz_shared.resolve_default_path and is documented once in
+# Character-Tooling.md rather than repeated per script.
+DEFAULT_BASE_WZ = resolve_default_path(None, BASE_WZ_ENV_VAR, FALLBACK_BASE_WZ)
+DEFAULT_ANALYSIS_DIR = resolve_default_path(None, ANALYSIS_DIR_ENV_VAR, FALLBACK_ANALYSIS_DIR)
 CATALOGUE_MODE_CHARACTER = "Character (Equip)"
 CATALOGUE_MODE_ITEMWZ = "Item.wz (Other Items)"
 
@@ -338,12 +330,6 @@ class App(tk.Tk):
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _child_imgdir(self, node: ET.Element, name: str) -> Optional[ET.Element]:
-        for child in node:
-            if child.tag == "imgdir" and child.attrib.get("name") == name:
-                return child
-        return None
-
     def _load_eqp_name_index(self, base_wz: Path) -> dict[int, dict]:
         path_key = str(base_wz)
         if self._eqp_name_cache_path == path_key and self._eqp_name_index:
@@ -356,7 +342,7 @@ class App(tk.Tk):
             return self._eqp_name_index
 
         root = ET.parse(eqp_xml).getroot()
-        eqp_outer = self._child_imgdir(root, "Eqp")
+        eqp_outer = child_imgdir(root, "Eqp")
         idx: dict[int, dict] = {}
         if eqp_outer is not None:
             for category_node in eqp_outer:
@@ -551,66 +537,18 @@ class App(tk.Tk):
         char_root = base_wz / "Character" / "Character.wz"
         return char_root / f"{base_id:08d}.img.xml"
 
-    def _detect_actions_in_asset_dir(self, asset_dir: Path) -> set[str]:
-        if not asset_dir.exists() or not asset_dir.is_dir():
-            return set()
-        actions: set[str] = set()
-        for child in asset_dir.iterdir():
-            if not child.is_dir():
-                continue
-            name = child.name
-            if not name or name == "info":
-                continue
-            has_png = False
-            for _ in child.rglob("*.png"):
-                has_png = True
-                break
-            if has_png:
-                actions.add(name)
-        return actions
-
     def _detect_actions(self, base_wz: Path, base_id: int) -> list[str]:
         body_dir = base_wz / "Character" / "Character.wz" / f"{base_id:08d}.img"
-        return sorted(self._detect_actions_in_asset_dir(body_dir))
+        return sorted(detect_actions_in_asset_dir(body_dir))
 
     def _weapon_action_profile(self, base_wz: Path, weapon_id: int) -> dict:
         char_root = base_wz / "Character" / "Character.wz"
         weapon_dir = char_root / "Weapon" / f"{int(weapon_id):08d}.img"
         weapon_xml = char_root / "Weapon" / f"{int(weapon_id):08d}.img.xml"
 
-        actions = sorted(self._detect_actions_in_asset_dir(weapon_dir))
-        frame_counts: dict[str, int] = {}
-        for action in actions:
-            action_dir = weapon_dir / action
-            count = 0
-            if action_dir.exists() and action_dir.is_dir():
-                for child in action_dir.iterdir():
-                    if not child.is_dir():
-                        continue
-                    name = child.name
-                    if not name.isdigit():
-                        continue
-                    if any(child.glob("*.png")):
-                        count += 1
-            frame_counts[action] = count
-
-        info_strings: dict[str, str] = {}
-        if weapon_xml.exists():
-            try:
-                root = ET.parse(weapon_xml).getroot()
-                info_node = None
-                for child in root:
-                    if child.tag == "imgdir" and child.attrib.get("name") == "info":
-                        info_node = child
-                        break
-                if info_node is not None:
-                    for child in info_node:
-                        if child.tag == "string":
-                            key = child.attrib.get("name", "")
-                            if key:
-                                info_strings[key] = child.attrib.get("value", "")
-            except Exception:
-                info_strings = {}
+        actions = sorted(detect_actions_in_asset_dir(weapon_dir))
+        frame_counts = count_action_frames(weapon_dir, actions)
+        info_strings = read_info_strings(weapon_xml)
 
         return {
             "weapon_id": int(weapon_id),
@@ -626,7 +564,7 @@ class App(tk.Tk):
         base_id = int(id_kwargs.get("base_id"))
         char_root = base_wz / "Character" / "Character.wz"
         body_dir = char_root / f"{base_id:08d}.img"
-        body_actions = self._detect_actions_in_asset_dir(body_dir)
+        body_actions = detect_actions_in_asset_dir(body_dir)
         if mode == "body-only":
             return sorted(body_actions)
         include_weapon_actions = mode == "loadout-intersection-with-weapon"
@@ -662,7 +600,7 @@ class App(tk.Tk):
 
         compatible = set(body_actions)
         for asset_dir in core_asset_dirs:
-            aset = self._detect_actions_in_asset_dir(asset_dir)
+            aset = detect_actions_in_asset_dir(asset_dir)
             if aset:
                 compatible &= aset
 
@@ -762,114 +700,6 @@ class App(tk.Tk):
 
         safe_default = max(1, int(default_delay_ms))
         return [{"frame": f, "delay_ms": delay_map.get(f, safe_default)} for f in frames]
-
-    def _normalize_action_frame_canvases(self, per_frame_rows: list[dict]) -> Optional[dict]:
-        rows: list[tuple[dict, Path, dict]] = []
-        for row in per_frame_rows:
-            png_raw = row.get("png")
-            bounds = row.get("frame_bounds_world")
-            if not isinstance(png_raw, str) or not png_raw:
-                continue
-            if not isinstance(bounds, dict):
-                continue
-            required = ("left", "top", "right", "bottom")
-            if not all(k in bounds for k in required):
-                continue
-            png_path = Path(png_raw)
-            if not png_path.exists():
-                continue
-            rows.append((row, png_path, bounds))
-
-        if len(rows) <= 1:
-            return None
-
-        left = min(int(bounds["left"]) for _, _, bounds in rows)
-        top = min(int(bounds["top"]) for _, _, bounds in rows)
-        right = max(int(bounds["right"]) for _, _, bounds in rows)
-        bottom = max(int(bounds["bottom"]) for _, _, bounds in rows)
-        width = right - left
-        height = bottom - top
-        if width <= 0 or height <= 0:
-            return None
-
-        normalized = 0
-        for row, png_path, bounds in rows:
-            src = Image.open(png_path).convert("RGBA")
-            canvas = None
-            try:
-                canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-                dx = int(bounds["left"]) - left
-                dy = int(bounds["top"]) - top
-                canvas.alpha_composite(src, (dx, dy))
-                canvas.save(png_path)
-                row["normalized_canvas_offset"] = {"x": dx, "y": dy}
-                row["normalized_canvas_size"] = [width, height]
-                normalized += 1
-            finally:
-                src.close()
-                if canvas is not None:
-                    canvas.close()
-
-        return {
-            "enabled": True,
-            "normalized_frames": normalized,
-            "bounds_world": {"left": left, "top": top, "right": right, "bottom": bottom},
-            "size": [width, height],
-        }
-
-    def _build_sprite_sheet(
-        self,
-        frame_paths: list[Path],
-        output_path: Path,
-        columns: int,
-        cell_padding: int = 2,
-    ) -> dict:
-        imgs = [Image.open(p).convert("RGBA") for p in frame_paths]
-        try:
-            max_w = max(im.width for im in imgs)
-            max_h = max(im.height for im in imgs)
-            cols = max(1, columns)
-            rows = math.ceil(len(imgs) / cols)
-
-            cell_w = max_w + cell_padding * 2
-            cell_h = max_h + cell_padding * 2
-            sheet_w = cols * cell_w
-            sheet_h = rows * cell_h
-
-            sheet = Image.new("RGBA", (sheet_w, sheet_h), (0, 0, 0, 0))
-            layout = []
-            for i, im in enumerate(imgs):
-                r = i // cols
-                c = i % cols
-                x = c * cell_w + cell_padding + (max_w - im.width) // 2
-                y = r * cell_h + cell_padding + (max_h - im.height) // 2
-                sheet.alpha_composite(im, (x, y))
-                layout.append(
-                    {
-                        "index": i,
-                        "row": r,
-                        "col": c,
-                        "x": x,
-                        "y": y,
-                        "w": im.width,
-                        "h": im.height,
-                        "png": str(frame_paths[i]),
-                    }
-                )
-
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            sheet.save(output_path)
-            return {
-                "sheet_path": str(output_path),
-                "sheet_size": [sheet_w, sheet_h],
-                "cell_size": [cell_w, cell_h],
-                "rows": rows,
-                "cols": cols,
-                "layout": layout,
-            }
-        finally:
-            for im in imgs:
-                im.close()
 
     def _build_gif(
         self,
@@ -1404,7 +1234,7 @@ class App(tk.Tk):
         combo_path = Path(combo_path_raw)
         data = {
             "schema": "ms_character_combo_v1",
-            "saved_at_utc": datetime.now(timezone.utc).isoformat(),
+            "saved_at_utc": utc_now_iso(),
             "base_wz": self.render_base_wz.get().strip(),
             "action": self.render_action.get().strip(),
             "frame": self.render_frame.get().strip(),
@@ -1485,7 +1315,7 @@ class App(tk.Tk):
     def _update_render_cmd_preview(self) -> None:
         cmd = [
             "python",
-            "render_character_frame.py",
+            "tools/importers/render_character_frame.py",
             "--base-wz",
             f"\"{self.render_base_wz.get()}\"",
             "--action",
@@ -1885,7 +1715,7 @@ class App(tk.Tk):
     def _update_diff_cmd_preview(self) -> None:
         cmd = [
             "python",
-            "diff_character_assets.py",
+            "tools/importers/diff_character_assets.py",
             "--old-base-wz",
             f"\"{self.diff_old.get()}\"",
             "--new-base-wz",
@@ -2622,7 +2452,7 @@ class App(tk.Tk):
                     )
                 else:
                     if self.batch_normalize_canvas.get():
-                        normalization_info = self._normalize_action_frame_canvases(per_frame)
+                        normalization_info = normalize_action_frame_canvases(per_frame)
                         if normalization_info:
                             self.after(
                                 0,
@@ -2674,7 +2504,7 @@ class App(tk.Tk):
                                 default_name=f"{prefix}_{action}_sheet.png",
                             )
                         try:
-                            sheet_info = self._build_sprite_sheet(
+                            sheet_info = build_sprite_sheet(
                                 frame_paths=frame_pngs,
                                 output_path=sheet_path,
                                 columns=int(self.batch_sheet_cols.get().strip() or "8"),
@@ -3570,9 +3400,9 @@ def main() -> None:
         ),
     )
     args = parser.parse_args()
-    DEFAULT_BASE_WZ = resolve_default_path(args.base_wz, BASE_WZ_ENV_VAR, _FALLBACK_BASE_WZ)
+    DEFAULT_BASE_WZ = resolve_default_path(args.base_wz, BASE_WZ_ENV_VAR, FALLBACK_BASE_WZ)
     DEFAULT_ANALYSIS_DIR = resolve_default_path(
-        args.analysis_dir, ANALYSIS_DIR_ENV_VAR, _FALLBACK_ANALYSIS_DIR
+        args.analysis_dir, ANALYSIS_DIR_ENV_VAR, FALLBACK_ANALYSIS_DIR
     )
 
     app = App()

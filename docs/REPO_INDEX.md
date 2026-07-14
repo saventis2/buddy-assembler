@@ -24,46 +24,48 @@ The present implementation centers on:
 - `Session-Log-2026-04-15.md`
   - Development session log still present at repo root.
 
+All importer/analysis scripts live under `tools/importers/`.
+
 ### GUI and orchestration
 
-- `character_tooling_gui.py`
+- `tools/importers/character_tooling_gui.py`
   - Desktop GUI entrypoint.
   - Hosts tabs for Start Here, Catalogue, Render, Batch Export, and Diff.
   - Imports and orchestrates the main backend tools.
 
 ### Rendering and composition
 
-- `render_character_frame.py`
+- `tools/importers/render_character_frame.py`
   - Builds a single composed frame from selected body and equipment IDs.
   - Handles anchor solving, layer ordering, fallback selection, cap/hair policy, and metadata output.
 
 ### Catalogue and analysis
 
-- `build_item_catalogue.py`
+- `tools/importers/build_item_catalogue.py`
   - Scans extracted character asset trees.
   - Reads mapped names from `String\\String.wz\\Eqp.img.xml`.
   - Emits master and per-category catalogue CSVs plus summary/index files.
 
-- `analyze_character_assets.py`
+- `tools/importers/analyze_character_assets.py`
   - Extracts reverse-engineering facts from extracted character trees.
   - Summarizes actions, anchors, z-layers, delays, UOL references, category stats, and customization presets.
 
-- `audit_dataset_metadata.py`
+- `tools/importers/audit_dataset_metadata.py`
   - Audits metadata coverage across major extracted trees.
   - Produces category-level coverage and weapon metadata statistics.
 
 ### Validation and comparison
 
-- `diff_character_assets.py`
+- `tools/importers/diff_character_assets.py`
   - Compares two extracted `Character.wz` trees.
   - Classifies XML changes as structural, timing, composition, or compatibility changes.
   - Optionally scans PNG differences as art changes.
 
-- `alignment_audit.py`
+- `tools/importers/alignment_audit.py`
   - Audits batch output metadata.
   - Checks jitter, fallback rates, anchor mismatch, z-volatility, unresolved assets, and skipped-frame reasons.
 
-- `weapon_action_compatibility_report.py`
+- `tools/importers/weapon_action_compatibility_report.py`
   - Builds weapon action support profiles directly from extracted weapon source folders.
   - Produces type-level action matrices and selected-weapon reports.
 
@@ -122,7 +124,9 @@ This is the user-facing orchestration surface:
 
 ## Suggested future structure
 
-A later cleanup pass could move toward something like:
+The importer/analysis scripts have already been relocated under
+`tools/importers/` (PR-12 boundary cleanup). A later cleanup pass could
+move further toward something like:
 
 ```text
 buddy-assembler/
