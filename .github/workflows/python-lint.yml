@@ -45,7 +45,7 @@ jobs:
 
       - name: Install ruff and mypy
         run: |
-          pip install ruff==0.15.20 mypy==1.11.2
+          pip install ruff==0.15.20 mypy==2.3.0
 
       - name: ruff check (blocking)
         run: |
