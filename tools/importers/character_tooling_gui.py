@@ -7,12 +7,10 @@ import argparse
 import json
 import csv
 import random
-import zlib
 import threading
 import traceback
 from pathlib import Path
 from typing import Optional
-import xml.etree.ElementTree as ET
 
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
@@ -24,17 +22,32 @@ from render_character_frame import render
 from build_item_catalogue import build_catalogue as build_character_catalogue
 from build_itemwz_catalogue import build_catalogue as build_itemwz_catalogue
 from alignment_audit import run_alignment_audit
+from character_tooling_core import (
+    CLASS_PRESET_DEFS,
+    coerce_bool,
+    detect_actions,
+    detect_action_timeline,
+    detect_actions_for_loadout,
+    format_count_map,
+    get_body_id_pools,
+    infer_slot_from_catalogue_categories,
+    int_or_none,
+    load_eqp_name_index,
+    load_weapon_meta_index,
+    normalize_catalogue_rows,
+    pick_weapon_for_class,
+    resolve_catalogue_icon_path,
+    validate_base_wz,
+)
+from character_tooling_ops import (
+    resolve_batch_character_out_dir,
+    run_batch_export,
+)
 from wz_shared import (
     ANALYSIS_DIR_ENV_VAR,
     BASE_WZ_ENV_VAR,
     FALLBACK_ANALYSIS_DIR,
     FALLBACK_BASE_WZ,
-    build_sprite_sheet,
-    child_imgdir,
-    count_action_frames,
-    detect_actions_in_asset_dir,
-    normalize_action_frame_canvases,
-    read_info_strings,
     resolve_default_path,
     utc_now_iso,
 )
@@ -47,39 +60,6 @@ DEFAULT_BASE_WZ = resolve_default_path(None, BASE_WZ_ENV_VAR, FALLBACK_BASE_WZ)
 DEFAULT_ANALYSIS_DIR = resolve_default_path(None, ANALYSIS_DIR_ENV_VAR, FALLBACK_ANALYSIS_DIR)
 CATALOGUE_MODE_CHARACTER = "Character (Equip)"
 CATALOGUE_MODE_ITEMWZ = "Item.wz (Other Items)"
-
-CLASS_PRESET_DEFS = {
-    "Custom": {
-        "job_mask": 0,
-        "preferred_types": [],
-        "preferred_actions": [],
-    },
-    "Warrior": {
-        "job_mask": 1,
-        "preferred_types": [130, 131, 132, 140, 141, 142, 143, 144],
-        "preferred_actions": ["swingOF", "swingO1", "stabOF", "stand1", "walk1"],
-    },
-    "Mage": {
-        "job_mask": 2,
-        "preferred_types": [137, 138],
-        "preferred_actions": ["stabO1", "swingO1", "stand1", "walk1"],
-    },
-    "Bowman": {
-        "job_mask": 4,
-        "preferred_types": [145, 146],
-        "preferred_actions": ["shoot1", "shootF", "stand1", "walk1"],
-    },
-    "Thief": {
-        "job_mask": 8,
-        "preferred_types": [133, 147],
-        "preferred_actions": ["stabO1", "swingO1", "stand1", "walk1"],
-    },
-    "Pirate": {
-        "job_mask": 16,
-        "preferred_types": [148, 149],
-        "preferred_actions": ["swingO1", "shoot1", "stand1", "walk1"],
-    },
-}
 
 
 class App(tk.Tk):
@@ -282,28 +262,22 @@ class App(tk.Tk):
         ent.grid(row=row, column=1, sticky="ew", padx=4, pady=4)
         return ent
 
-    def _int_or_none(self, raw: str) -> Optional[int]:
-        raw = raw.strip()
-        if not raw:
-            return None
-        return int(raw)
-
     def _render_id_kwargs(self, starter_male: bool) -> dict:
         kwargs = {
             "base_id": int(self.base_id.get().strip()),
             "head_id": int(self.head_id.get().strip()),
             "face_id": int(self.face_id.get().strip()),
             "hair_id": int(self.hair_id.get().strip()),
-            "accessory_id": self._int_or_none(self.accessory_id.get()),
-            "cap_id": self._int_or_none(self.cap_id.get()),
-            "coat_id": self._int_or_none(self.coat_id.get()),
-            "longcoat_id": self._int_or_none(self.longcoat_id.get()),
-            "pants_id": self._int_or_none(self.pants_id.get()),
-            "shoes_id": self._int_or_none(self.shoes_id.get()),
-            "glove_id": self._int_or_none(self.glove_id.get()),
-            "cape_id": self._int_or_none(self.cape_id.get()),
-            "shield_id": self._int_or_none(self.shield_id.get()),
-            "weapon_id": self._int_or_none(self.weapon_id.get()),
+            "accessory_id": int_or_none(self.accessory_id.get()),
+            "cap_id": int_or_none(self.cap_id.get()),
+            "coat_id": int_or_none(self.coat_id.get()),
+            "longcoat_id": int_or_none(self.longcoat_id.get()),
+            "pants_id": int_or_none(self.pants_id.get()),
+            "shoes_id": int_or_none(self.shoes_id.get()),
+            "glove_id": int_or_none(self.glove_id.get()),
+            "cape_id": int_or_none(self.cape_id.get()),
+            "shield_id": int_or_none(self.shield_id.get()),
+            "weapon_id": int_or_none(self.weapon_id.get()),
         }
         if starter_male:
             kwargs["base_id"] = 2000
@@ -335,160 +309,25 @@ class App(tk.Tk):
         if self._eqp_name_cache_path == path_key and self._eqp_name_index:
             return self._eqp_name_index
 
-        eqp_xml = base_wz / "String" / "String.wz" / "Eqp.img.xml"
-        if not eqp_xml.exists():
-            self._eqp_name_cache_path = path_key
-            self._eqp_name_index = {}
-            return self._eqp_name_index
-
-        root = ET.parse(eqp_xml).getroot()
-        eqp_outer = child_imgdir(root, "Eqp")
-        idx: dict[int, dict] = {}
-        if eqp_outer is not None:
-            for category_node in eqp_outer:
-                if category_node.tag != "imgdir":
-                    continue
-                category = category_node.attrib.get("name", "")
-                for item_node in category_node:
-                    if item_node.tag != "imgdir":
-                        continue
-                    raw_id = item_node.attrib.get("name", "")
-                    if not raw_id.isdigit():
-                        continue
-                    item_id = int(raw_id)
-                    item_name = ""
-                    for child in item_node:
-                        if child.tag == "string" and child.attrib.get("name") == "name":
-                            item_name = child.attrib.get("value", "")
-                            break
-                    if item_name:
-                        idx[item_id] = {"category": category, "name": item_name}
-
+        idx = load_eqp_name_index(base_wz)
         self._eqp_name_cache_path = path_key
         self._eqp_name_index = idx
         return idx
-
-    def _read_int_field(self, parent: ET.Element, name: str, default: int = 0) -> int:
-        for child in parent:
-            if child.tag == "int" and child.attrib.get("name") == name:
-                raw = child.attrib.get("value", "")
-                try:
-                    return int(raw)
-                except Exception:  # noqa: BLE001
-                    return default
-        return default
 
     def _load_weapon_meta_index(self, base_wz: Path) -> dict[int, dict]:
         path_key = str(base_wz)
         if self._weapon_meta_cache_path == path_key and self._weapon_meta_index:
             return self._weapon_meta_index
 
-        weapon_dir = base_wz / "Character" / "Character.wz" / "Weapon"
-        eqp_names = self._load_eqp_name_index(base_wz)
-        out: dict[int, dict] = {}
-        if weapon_dir.exists():
-            for xml_path in weapon_dir.glob("*.img.xml"):
-                raw_id = xml_path.name.replace(".img.xml", "")
-                if not raw_id.isdigit():
-                    continue
-                item_id = int(raw_id)
-                info_node: Optional[ET.Element] = None
-                try:
-                    root = ET.parse(xml_path).getroot()
-                except Exception:  # noqa: BLE001
-                    continue
-                for child in root:
-                    if child.tag == "imgdir" and child.attrib.get("name") == "info":
-                        info_node = child
-                        break
-                if info_node is None:
-                    continue
-
-                actions = []
-                for child in root:
-                    if child.tag != "imgdir":
-                        continue
-                    name = child.attrib.get("name", "")
-                    if not name or name == "info":
-                        continue
-                    has_numeric_frame = False
-                    for frame_node in child:
-                        if frame_node.tag == "imgdir" and frame_node.attrib.get("name", "").isdigit():
-                            has_numeric_frame = True
-                            break
-                    if has_numeric_frame:
-                        actions.append(name)
-                actions = sorted(set(actions))
-                out[item_id] = {
-                    "item_id": item_id,
-                    "weapon_type": item_id // 10000,
-                    "name": (eqp_names.get(item_id) or {}).get("name", ""),
-                    "req_job": self._read_int_field(info_node, "reqJob", default=0),
-                    "req_level": self._read_int_field(info_node, "reqLevel", default=0),
-                    "req_str": self._read_int_field(info_node, "reqSTR", default=0),
-                    "req_dex": self._read_int_field(info_node, "reqDEX", default=0),
-                    "req_int": self._read_int_field(info_node, "reqINT", default=0),
-                    "req_luk": self._read_int_field(info_node, "reqLUK", default=0),
-                    "actions": actions,
-                }
-
+        out = load_weapon_meta_index(base_wz, self._load_eqp_name_index(base_wz))
         self._weapon_meta_cache_path = path_key
         self._weapon_meta_index = out
         return out
 
     def _pick_weapon_for_class(self, base_wz: Path, class_name: str) -> Optional[dict]:
-        preset = CLASS_PRESET_DEFS.get(class_name)
-        if not preset or class_name == "Custom":
-            return None
-
-        job_mask = int(preset.get("job_mask", 0) or 0)
-        preferred_types = set(int(x) for x in preset.get("preferred_types", []))
-        preferred_actions = [str(x) for x in preset.get("preferred_actions", [])]
-        body_actions = set(self._detect_actions(base_wz, int(self.base_id.get().strip() or "2000")))
+        body_actions = set(detect_actions(base_wz, int(self.base_id.get().strip() or "2000")))
         weapons = self._load_weapon_meta_index(base_wz)
-        candidates = []
-        for meta in weapons.values():
-            actions = set(meta.get("actions") or [])
-            if not actions:
-                continue
-            req_job = int(meta.get("req_job", 0) or 0)
-            if req_job != 0 and job_mask != 0 and (req_job & job_mask) == 0:
-                continue
-            common_actions = actions & body_actions if body_actions else actions
-            if not common_actions:
-                continue
-
-            action_rank = 1
-            chosen_action = ""
-            for idx, a in enumerate(preferred_actions):
-                if a in common_actions:
-                    action_rank = 0
-                    chosen_action = a
-                    break
-            if not chosen_action:
-                chosen_action = sorted(common_actions)[0]
-
-            type_rank = 0 if int(meta.get("weapon_type", 0)) in preferred_types else 1
-            req_level = int(meta.get("req_level", 0) or 0)
-            req_job_rank = 0 if req_job != 0 else 1
-            candidates.append(
-                (
-                    req_job_rank,
-                    type_rank,
-                    action_rank,
-                    req_level,
-                    int(meta.get("item_id", 0)),
-                    chosen_action,
-                    meta,
-                )
-            )
-
-        if not candidates:
-            return None
-        candidates.sort()
-        picked = dict(candidates[0][6])
-        picked["suggested_action"] = candidates[0][5]
-        return picked
+        return pick_weapon_for_class(class_name, body_actions=body_actions, weapons=weapons)
 
     def on_apply_class_preset(self) -> None:
         class_name = self.render_class_preset.get().strip() or "Custom"
@@ -497,7 +336,7 @@ class App(tk.Tk):
             return
 
         base_wz = Path(self.render_base_wz.get().strip())
-        base_err = self._validate_base_wz(base_wz)
+        base_err = validate_base_wz(base_wz)
         if base_err:
             messagebox.showerror("Class Preset Error", base_err)
             return
@@ -524,256 +363,6 @@ class App(tk.Tk):
             f"Applied class preset '{class_name}': weapon={name} [{weapon_id}] "
             f"reqJob={req_job} reqLevel={req_level} action={suggested_action}"
         )
-
-    def _validate_base_wz(self, base_wz: Path) -> Optional[str]:
-        if not base_wz.exists():
-            return f"Base.wz path does not exist: {base_wz}"
-        marker = base_wz / "Character" / "Character.wz"
-        if not marker.exists():
-            return f"Missing Character tree: {marker}"
-        return None
-
-    def _base_template_xml(self, base_wz: Path, base_id: int) -> Path:
-        char_root = base_wz / "Character" / "Character.wz"
-        return char_root / f"{base_id:08d}.img.xml"
-
-    def _detect_actions(self, base_wz: Path, base_id: int) -> list[str]:
-        body_dir = base_wz / "Character" / "Character.wz" / f"{base_id:08d}.img"
-        return sorted(detect_actions_in_asset_dir(body_dir))
-
-    def _weapon_action_profile(self, base_wz: Path, weapon_id: int) -> dict:
-        char_root = base_wz / "Character" / "Character.wz"
-        weapon_dir = char_root / "Weapon" / f"{int(weapon_id):08d}.img"
-        weapon_xml = char_root / "Weapon" / f"{int(weapon_id):08d}.img.xml"
-
-        actions = sorted(detect_actions_in_asset_dir(weapon_dir))
-        frame_counts = count_action_frames(weapon_dir, actions)
-        info_strings = read_info_strings(weapon_xml)
-
-        return {
-            "weapon_id": int(weapon_id),
-            "weapon_type_code": int(weapon_id) // 10000,
-            "weapon_dir": str(weapon_dir),
-            "weapon_xml": str(weapon_xml),
-            "supported_actions": actions,
-            "frame_counts": frame_counts,
-            "info": info_strings,
-        }
-
-    def _detect_actions_for_loadout(self, base_wz: Path, id_kwargs: dict, mode: str) -> list[str]:
-        base_id = int(id_kwargs.get("base_id"))
-        char_root = base_wz / "Character" / "Character.wz"
-        body_dir = char_root / f"{base_id:08d}.img"
-        body_actions = detect_actions_in_asset_dir(body_dir)
-        if mode == "body-only":
-            return sorted(body_actions)
-        include_weapon_actions = mode == "loadout-intersection-with-weapon"
-
-        # Normalize incompatible armor combo the same way as the renderer.
-        coat_id = id_kwargs.get("coat_id")
-        longcoat_id = id_kwargs.get("longcoat_id")
-        pants_id = id_kwargs.get("pants_id")
-        if longcoat_id is not None:
-            coat_id = None
-            pants_id = None
-
-        core_asset_dirs: list[Path] = []
-        head_id = id_kwargs.get("head_id")
-        if head_id is not None:
-            core_asset_dirs.append(char_root / f"{int(head_id):08d}.img")
-        hair_id = id_kwargs.get("hair_id")
-        if hair_id is not None:
-            core_asset_dirs.append(char_root / "Hair" / f"{int(hair_id):08d}.img")
-        if coat_id is not None:
-            core_asset_dirs.append(char_root / "Coat" / f"{int(coat_id):08d}.img")
-        if longcoat_id is not None:
-            core_asset_dirs.append(char_root / "Longcoat" / f"{int(longcoat_id):08d}.img")
-        if pants_id is not None:
-            core_asset_dirs.append(char_root / "Pants" / f"{int(pants_id):08d}.img")
-        shoes_id = id_kwargs.get("shoes_id")
-        if shoes_id is not None:
-            core_asset_dirs.append(char_root / "Shoes" / f"{int(shoes_id):08d}.img")
-        if include_weapon_actions:
-            weapon_id = id_kwargs.get("weapon_id")
-            if weapon_id is not None:
-                core_asset_dirs.append(char_root / "Weapon" / f"{int(weapon_id):08d}.img")
-
-        compatible = set(body_actions)
-        for asset_dir in core_asset_dirs:
-            aset = detect_actions_in_asset_dir(asset_dir)
-            if aset:
-                compatible &= aset
-
-        if not compatible:
-            if include_weapon_actions:
-                # Strict mode: empty means no safe action intersection for this
-                # full loadout, including weapon compatibility.
-                return []
-            # Safety fallback to base template actions if non-weapon
-            # intersection is empty.
-            return sorted(body_actions)
-        return sorted(compatible)
-
-    def _detect_action_frames(self, base_wz: Path, base_id: int, action: str) -> list[int]:
-        body_dir = base_wz / "Character" / "Character.wz" / f"{base_id:08d}.img"
-        action_dir = body_dir / action
-        if not action_dir.exists() or not action_dir.is_dir():
-            return []
-        if action_dir.exists() and action_dir.is_dir():
-            fs_frames = []
-            for child in action_dir.iterdir():
-                if not child.is_dir():
-                    continue
-                name = child.name
-                if not name.isdigit():
-                    continue
-                if any(child.glob("*.png")):
-                    fs_frames.append(int(name))
-            if fs_frames:
-                return sorted(set(fs_frames))
-
-        xml_path = self._base_template_xml(base_wz, base_id)
-        if not xml_path.exists():
-            return []
-        root = ET.parse(xml_path).getroot()
-        action_node = None
-        for child in root:
-            if child.tag == "imgdir" and child.attrib.get("name") == action:
-                action_node = child
-                break
-        if action_node is None:
-            return []
-        frames = []
-        for child in action_node:
-            if child.tag == "imgdir":
-                n = child.attrib.get("name", "")
-                if n.isdigit():
-                    frames.append(int(n))
-        if not frames:
-            return [0]
-        return sorted(set(frames))
-
-    def _detect_action_timeline(
-        self,
-        base_wz: Path,
-        base_id: int,
-        action: str,
-        *,
-        default_delay_ms: int,
-    ) -> list[dict]:
-        frames = self._detect_action_frames(base_wz, base_id, action)
-        if not frames:
-            return []
-
-        delay_map: dict[int, int] = {}
-        xml_path = self._base_template_xml(base_wz, base_id)
-        if xml_path.exists():
-            try:
-                root = ET.parse(xml_path).getroot()
-                action_node = None
-                for child in root:
-                    if child.tag == "imgdir" and child.attrib.get("name") == action:
-                        action_node = child
-                        break
-                if action_node is not None:
-                    for frame_node in action_node:
-                        if frame_node.tag != "imgdir":
-                            continue
-                        n = frame_node.attrib.get("name", "")
-                        if not n.isdigit():
-                            continue
-                        frame_i = int(n)
-                        delay_i = None
-                        for m in frame_node:
-                            if m.tag == "int" and m.attrib.get("name") == "delay":
-                                raw = m.attrib.get("value")
-                                if raw is not None:
-                                    try:
-                                        delay_i = int(raw)
-                                    except ValueError:
-                                        delay_i = None
-                                break
-                        if delay_i is not None:
-                            delay_map[frame_i] = max(1, delay_i)
-            except Exception:
-                delay_map = {}
-
-        safe_default = max(1, int(default_delay_ms))
-        return [{"frame": f, "delay_ms": delay_map.get(f, safe_default)} for f in frames]
-
-    def _build_gif(
-        self,
-        frame_paths: list[Path],
-        output_path: Path,
-        duration_ms: int,
-        durations_ms: Optional[list[int]] = None,
-        bg_rgb: tuple[int, int, int] = (0, 0, 0),
-    ) -> dict:
-        imgs = [Image.open(p).convert("RGBA") for p in frame_paths]
-        try:
-            max_w = max(im.width for im in imgs)
-            max_h = max(im.height for im in imgs)
-            normalized = []
-            for im in imgs:
-                if im.width == max_w and im.height == max_h:
-                    normalized.append(im.copy())
-                else:
-                    canvas = Image.new("RGBA", (max_w, max_h), (0, 0, 0, 0))
-                    ox = (max_w - im.width) // 2
-                    oy = (max_h - im.height) // 2
-                    canvas.alpha_composite(im, (ox, oy))
-                    normalized.append(canvas)
-
-            # Flatten to opaque RGB to avoid viewer-dependent transparency/disposal ghosting.
-            flattened = []
-            for im in normalized:
-                bg = Image.new("RGBA", (max_w, max_h), (bg_rgb[0], bg_rgb[1], bg_rgb[2], 255))
-                bg.alpha_composite(im)
-                flattened.append(bg.convert("RGB"))
-
-            master_palette = flattened[0].quantize(colors=256, method=Image.Quantize.MEDIANCUT)
-            paletted = [fr.quantize(palette=master_palette, dither=Image.Dither.FLOYDSTEINBERG) for fr in flattened]
-
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            if durations_ms and len(durations_ms) == len(paletted):
-                gif_duration: int | list[int] = [max(1, int(d)) for d in durations_ms]
-            else:
-                gif_duration = duration_ms
-            paletted[0].save(
-                output_path,
-                save_all=True,
-                append_images=paletted[1:],
-                duration=gif_duration,
-                loop=0,
-                optimize=False,
-                disposal=2,
-            )
-            if not output_path.exists() or output_path.stat().st_size <= 0:
-                raise RuntimeError(f"GIF was not written correctly: {output_path}")
-            return {
-                "gif_path": str(output_path),
-                "size": [max_w, max_h],
-                "frame_count": len(paletted),
-                "duration_ms": duration_ms,
-                "durations_ms": [max(1, int(d)) for d in durations_ms] if durations_ms else None,
-                "total_duration_ms": (
-                    sum(max(1, int(d)) for d in durations_ms)
-                    if durations_ms
-                    else int(duration_ms) * len(paletted)
-                ),
-                "bytes": int(output_path.stat().st_size),
-                "mode": "opaque_flattened",
-                "bg_rgb": [bg_rgb[0], bg_rgb[1], bg_rgb[2]],
-            }
-        finally:
-            for im in imgs:
-                im.close()
-            for im in locals().get("normalized", []):
-                im.close()
-            for im in locals().get("flattened", []):
-                im.close()
-            for im in locals().get("paletted", []):
-                im.close()
 
     # ---------------- Render tab ----------------
     def _build_render_tab(self) -> None:
@@ -1045,7 +634,7 @@ class App(tk.Tk):
 
     def _collect_live_preview_kwargs(self) -> Optional[dict]:
         base_wz = Path(self.render_base_wz.get().strip())
-        if self._validate_base_wz(base_wz):
+        if validate_base_wz(base_wz):
             return None
         action = self.render_action.get().strip() or "stand1"
         try:
@@ -1164,64 +753,17 @@ class App(tk.Tk):
             "weapon_id": self.weapon_id,
         }
 
-    def _coerce_bool(self, raw: object) -> bool:
-        if isinstance(raw, bool):
-            return raw
-        if isinstance(raw, (int, float)):
-            return bool(raw)
-        if isinstance(raw, str):
-            return raw.strip().lower() in {"1", "true", "yes", "on"}
-        return False
-
-    def _build_character_identifier(self, id_kwargs: dict) -> str:
-        keys = [
-            "base_id",
-            "head_id",
-            "face_id",
-            "hair_id",
-            "accessory_id",
-            "cap_id",
-            "coat_id",
-            "longcoat_id",
-            "pants_id",
-            "shoes_id",
-            "glove_id",
-            "cape_id",
-            "shield_id",
-            "weapon_id",
-        ]
-        payload = "|".join("" if id_kwargs.get(k) is None else str(id_kwargs.get(k)) for k in keys)
-        return f"{zlib.crc32(payload.encode('utf-8')) & 0xFFFFFFFF:010d}"
-
     def _resolve_batch_character_out_dir(self, base_out_dir: Path, id_kwargs: Optional[dict] = None) -> tuple[Path, Optional[str]]:
         if not self.batch_use_character_folder.get():
             return base_out_dir, None
         if id_kwargs is None:
             id_kwargs = self._render_id_kwargs(self.batch_starter_male.get())
-        raw_id = self.batch_character_id.get().strip()
-        character_id = raw_id if raw_id else self._build_character_identifier(id_kwargs)
-        return base_out_dir / f"char_{character_id}", character_id
-
-    def _resolve_single_action_postprocess_path(
-        self,
-        raw_path: str,
-        *,
-        out_dir: Path,
-        base_out_dir: Path,
-        default_name: str,
-    ) -> Path:
-        raw = raw_path.strip()
-        candidate = Path(raw) if raw else (out_dir / default_name)
-        if not candidate.is_absolute():
-            return out_dir / candidate
-
-        if self.batch_use_character_folder.get():
-            try:
-                if candidate.parent.resolve() == base_out_dir.resolve():
-                    return out_dir / candidate.name
-            except Exception:
-                pass
-        return candidate
+        return resolve_batch_character_out_dir(
+            base_out_dir,
+            id_kwargs,
+            use_character_folder=self.batch_use_character_folder.get(),
+            character_id_raw=self.batch_character_id.get().strip(),
+        )
 
     def on_save_render_combo(self) -> None:
         combo_path_raw = self.render_combo_path.get().strip()
@@ -1291,7 +833,7 @@ class App(tk.Tk):
                 self.render_frame.set(str(payload.get("frame", "")))
                 loaded_fields += 1
             if "starter_male" in payload:
-                self.render_starter_male.set(self._coerce_bool(payload.get("starter_male")))
+                self.render_starter_male.set(coerce_bool(payload.get("starter_male")))
                 loaded_fields += 1
             class_raw = str(payload.get("class_preset", "")).strip()
             if class_raw in CLASS_PRESET_DEFS:
@@ -1369,7 +911,7 @@ class App(tk.Tk):
 
     def _collect_render_kwargs(self, output_png: Path, output_json: Optional[Path]) -> dict:
         base_wz = Path(self.render_base_wz.get().strip())
-        base_err = self._validate_base_wz(base_wz)
+        base_err = validate_base_wz(base_wz)
         if base_err:
             raise ValueError(base_err)
         output_png_raw = self.render_out_png.get().strip()
@@ -1459,9 +1001,9 @@ class App(tk.Tk):
                 f"kept:{hp.get('hair_layers_kept', '?')}"
             )
         )
-        self._append_render_log(f"Hair Z total: {self._format_count_map(hp.get('hair_z_total'))}")
-        self._append_render_log(f"Hair Z kept: {self._format_count_map(hp.get('hair_z_kept'))}")
-        self._append_render_log(f"Hair Z removed: {self._format_count_map(hp.get('hair_z_removed'))}")
+        self._append_render_log(f"Hair Z total: {format_count_map(hp.get('hair_z_total'))}")
+        self._append_render_log(f"Hair Z kept: {format_count_map(hp.get('hair_z_kept'))}")
+        self._append_render_log(f"Hair Z removed: {format_count_map(hp.get('hair_z_removed'))}")
         self._append_render_log(
             (
                 "Cap state: "
@@ -1495,8 +1037,8 @@ class App(tk.Tk):
                 cap_z[z] = cap_z.get(z, 0) + 1
             elif kind == "hair":
                 hair_z[z] = hair_z.get(z, 0) + 1
-        self._append_render_log(f"Drawn cap Z: {self._format_count_map(cap_z)}")
-        self._append_render_log(f"Drawn hair Z: {self._format_count_map(hair_z)}")
+        self._append_render_log(f"Drawn cap Z: {format_count_map(cap_z)}")
+        self._append_render_log(f"Drawn hair Z: {format_count_map(hair_z)}")
 
         focus_rows = []
         for row in action_resolution:
@@ -1750,11 +1292,11 @@ class App(tk.Tk):
     def on_diff(self) -> None:
         old_path = Path(self.diff_old.get())
         new_path = Path(self.diff_new.get())
-        old_err = self._validate_base_wz(old_path)
+        old_err = validate_base_wz(old_path)
         if old_err:
             messagebox.showerror("Validation Error", f"Old path invalid: {old_err}")
             return
-        new_err = self._validate_base_wz(new_path)
+        new_err = validate_base_wz(new_path)
         if new_err:
             messagebox.showerror("Validation Error", f"New path invalid: {new_err}")
             return
@@ -2072,7 +1614,7 @@ class App(tk.Tk):
 
     def on_run_alignment_audit(self) -> None:
         base_wz = Path(self.batch_base_wz.get().strip())
-        base_err = self._validate_base_wz(base_wz)
+        base_err = validate_base_wz(base_wz)
         if base_err:
             messagebox.showerror("Validation Error", base_err)
             return
@@ -2145,7 +1687,7 @@ class App(tk.Tk):
 
     def on_batch_export(self) -> None:
         base_wz = Path(self.batch_base_wz.get())
-        base_err = self._validate_base_wz(base_wz)
+        base_err = validate_base_wz(base_wz)
         if base_err:
             messagebox.showerror("Validation Error", base_err)
             return
@@ -2175,7 +1717,7 @@ class App(tk.Tk):
             id_kwargs = self._render_id_kwargs(self.batch_starter_male.get())
             base_id = int(id_kwargs["base_id"])
             if self.batch_all_actions.get():
-                actions = self._detect_actions_for_loadout(
+                actions = detect_actions_for_loadout(
                     base_wz=base_wz,
                     id_kwargs=id_kwargs,
                     mode=self.batch_action_source.get(),
@@ -2187,7 +1729,7 @@ class App(tk.Tk):
                 if not action_check:
                     raise ValueError("Action is required when all-actions is disabled")
                 if self.batch_auto_frames.get():
-                    timeline = self._detect_action_timeline(
+                    timeline = detect_action_timeline(
                         base_wz,
                         base_id,
                         action_check,
@@ -2215,409 +1757,40 @@ class App(tk.Tk):
         self._append_batch_log("Starting batch export...")
 
         def task():
-            base_out_dir = Path(self.batch_output_dir.get())
-            base_out_dir.mkdir(parents=True, exist_ok=True)
-            prefix = self.batch_prefix.get().strip()
-            id_kwargs = self._render_id_kwargs(self.batch_starter_male.get())
-            skill_id_raw = self.batch_skill_id.get().strip()
-            skill_id = int(skill_id_raw) if skill_id_raw else None
-            skill_anim = self.batch_skill_anim.get().strip() or "auto"
-            base_id = int(id_kwargs["base_id"])
-            weapon_profile = None
-            weapon_id = id_kwargs.get("weapon_id")
-            if weapon_id is not None:
-                weapon_profile = self._weapon_action_profile(base_wz=base_wz, weapon_id=int(weapon_id))
-            out_dir, character_id = self._resolve_batch_character_out_dir(base_out_dir, id_kwargs=id_kwargs)
-            out_dir.mkdir(parents=True, exist_ok=True)
-            self.after(
-                0,
-                lambda p=str(out_dir), cid=character_id: self._append_batch_log(
-                    f"Batch character scope: out_dir={p}" + (f" character_id={cid}" if cid else "")
+            return run_batch_export(
+                base_wz=base_wz,
+                base_out_dir=Path(self.batch_output_dir.get()),
+                prefix=self.batch_prefix.get().strip(),
+                id_kwargs=self._render_id_kwargs(self.batch_starter_male.get()),
+                all_actions=bool(self.batch_all_actions.get()),
+                action_source=self.batch_action_source.get(),
+                single_action=self.batch_action.get().strip(),
+                auto_frames=bool(self.batch_auto_frames.get()),
+                start_frame=int(self.batch_start.get().strip()),
+                end_frame=int(self.batch_end.get().strip()),
+                z_draw_order=self.batch_z_draw_order.get(),
+                hair_mode=self.batch_hair_mode.get(),
+                use_character_folder=bool(self.batch_use_character_folder.get()),
+                character_id_raw=self.batch_character_id.get().strip(),
+                write_json=bool(self.batch_write_json.get()),
+                use_action_delays=bool(self.batch_use_action_delays.get()),
+                normalize_canvas=bool(self.batch_normalize_canvas.get()),
+                make_gif=bool(self.batch_make_gif.get()),
+                gif_path_raw=self.batch_gif_path.get(),
+                gif_duration_ms=int(self.batch_gif_duration.get().strip() or "120"),
+                make_sheet=bool(self.batch_make_sheet.get()),
+                sheet_path_raw=self.batch_sheet_path.get(),
+                sheet_cols=int(self.batch_sheet_cols.get().strip() or "8"),
+                skip_unresolved=bool(self.batch_skip_unresolved.get()),
+                min_layers=int(self.batch_min_layers.get().strip() or "8"),
+                skill_id=(
+                    int(self.batch_skill_id.get().strip())
+                    if self.batch_skill_id.get().strip()
+                    else None
                 ),
+                skill_anim=self.batch_skill_anim.get().strip() or "auto",
+                log=lambda msg: self.after(0, lambda m=msg: self._append_batch_log(m)),
             )
-            if weapon_profile is not None:
-                self.after(
-                    0,
-                    lambda wp=weapon_profile: self._append_batch_log(
-                        "Weapon compatibility: "
-                        f"id={wp['weapon_id']} type={wp['weapon_type_code']} "
-                        f"afterImage={wp.get('info', {}).get('afterImage', '')} "
-                        f"supported_actions={len(wp.get('supported_actions', []))}"
-                    ),
-                )
-            if skill_id is not None:
-                self.after(
-                    0,
-                    lambda sid=skill_id, sa=skill_anim: self._append_batch_log(
-                        f"Skill overlay enabled: skill_id={sid} branch={sa}"
-                    ),
-                )
-
-            if self.batch_all_actions.get():
-                actions = self._detect_actions_for_loadout(
-                    base_wz=base_wz,
-                    id_kwargs=id_kwargs,
-                    mode=self.batch_action_source.get(),
-                )
-                self.after(
-                    0,
-                    lambda c=len(actions), m=self.batch_action_source.get(): self._append_batch_log(
-                        f"All-actions mode using '{m}': {c} compatible actions detected."
-                    ),
-                )
-            else:
-                actions = [self.batch_action.get().strip()]
-                if weapon_profile is not None:
-                    action_name = actions[0] if actions else ""
-                    if action_name and action_name not in set(weapon_profile.get("supported_actions", [])):
-                        self.after(
-                            0,
-                            lambda a=action_name, wid=weapon_profile["weapon_id"]: self._append_batch_log(
-                                f"Warning: action '{a}' is not supported by weapon {wid}; output may omit weapon."
-                            ),
-                        )
-
-            all_actions_summary = []
-            total_frames = 0
-            total_skipped_frames = 0
-            min_layers = int(self.batch_min_layers.get().strip() or "8")
-            max_fallbacks_all_actions = 2
-            default_delay_ms = int(self.batch_gif_duration.get().strip() or "120")
-            for action in actions:
-                if not action:
-                    continue
-                if self.batch_auto_frames.get():
-                    timeline = self._detect_action_timeline(
-                        base_wz,
-                        base_id,
-                        action,
-                        default_delay_ms=default_delay_ms,
-                    )
-                    frame_list = [int(row["frame"]) for row in timeline]
-                    frame_delay_map = {int(row["frame"]): int(row["delay_ms"]) for row in timeline}
-                else:
-                    start_i = int(self.batch_start.get().strip())
-                    end_i = int(self.batch_end.get().strip())
-                    frame_list = list(range(start_i, end_i + 1))
-                    frame_delay_map = {f: default_delay_ms for f in frame_list}
-                if not frame_list:
-                    self.after(0, lambda a=action: self._append_batch_log(f"Skipped action '{a}' (no frames found)."))
-                    continue
-
-                action_dir = out_dir / action
-                action_dir.mkdir(parents=True, exist_ok=True)
-
-                frame_pngs = []
-                per_frame = []
-                skipped_frames = []
-                action_errors: list[str] = []
-                for frame in frame_list:
-                    png_path = action_dir / f"{prefix}_{action}_{frame:03d}.png"
-                    json_path = (
-                        action_dir / f"{prefix}_{action}_{frame:03d}.json"
-                        if self.batch_write_json.get()
-                        else None
-                    )
-                    try:
-                        meta = render(
-                            base_wz=base_wz,
-                            output_png=png_path,
-                            action=action,
-                            frame=frame,
-                            output_json=json_path,
-                            z_draw_order=self.batch_z_draw_order.get(),
-                            hair_mode=self.batch_hair_mode.get(),
-                            skill_id=skill_id,
-                            skill_anim=skill_anim,
-                            **id_kwargs,
-                        )
-                    except Exception as exc:  # noqa: BLE001
-                        err = f"render_error: {exc}"
-                        skipped_frames.append(
-                            {
-                                "frame": frame,
-                                "png": str(png_path),
-                                "reason": err,
-                                "drawn_layers": 0,
-                                "unresolved_count": 0,
-                            }
-                        )
-                        action_errors.append(err)
-                        total_skipped_frames += 1
-                        self.after(
-                            0,
-                            lambda a=action, f=frame, r=err: self._append_batch_log(
-                                f"Skipped {a} frame {f}: {r}"
-                            ),
-                        )
-                        continue
-                    unresolved_count = len(meta["unresolved"])
-                    drawn_layers = int(meta["drawn_layers"])
-                    fallback_count = int(meta.get("action_fallback_count", 0))
-                    weapon_sel_mode = ""
-                    weapon_entry_count = 0
-                    for row in meta.get("action_resolution", []):
-                        if str(row.get("asset_kind")) == "weapon":
-                            weapon_sel_mode = str(row.get("selection_mode", ""))
-                            weapon_entry_count = int(row.get("entry_count", 0) or 0)
-                            break
-                    effective_min_layers = min_layers
-                    if weapon_sel_mode == "no_render_node" and weapon_entry_count == 0:
-                        # Keep climbing/idle sets even when this weapon family
-                        # intentionally has no drawable node for the action.
-                        effective_min_layers = max(1, min_layers - 1)
-
-                    skip_reason = None
-                    if self.batch_skip_unresolved.get() and unresolved_count > 0:
-                        skip_reason = f"unresolved={unresolved_count}"
-                    elif drawn_layers < effective_min_layers:
-                        skip_reason = f"layers={drawn_layers} (<{effective_min_layers})"
-                    elif self.batch_all_actions.get() and fallback_count > max_fallbacks_all_actions:
-                        skip_reason = f"fallbacks={fallback_count} (>{max_fallbacks_all_actions})"
-
-                    if skip_reason is not None:
-                        skipped_frames.append(
-                            {
-                                "frame": frame,
-                                "png": str(png_path),
-                                "reason": skip_reason,
-                                "drawn_layers": drawn_layers,
-                                "unresolved_count": unresolved_count,
-                                "action_fallback_count": fallback_count,
-                                "effective_min_layers": effective_min_layers,
-                                "weapon_selection_mode": weapon_sel_mode,
-                                "weapon_entry_count": weapon_entry_count,
-                            }
-                        )
-                        total_skipped_frames += 1
-                        # Remove failed-quality outputs to avoid confusing the final set.
-                        try:
-                            if png_path.exists():
-                                png_path.unlink()
-                            if json_path is not None and json_path.exists():
-                                json_path.unlink()
-                        except Exception:
-                            pass
-                        self.after(
-                            0,
-                            lambda a=action, f=frame, r=skip_reason: self._append_batch_log(
-                                f"Skipped {a} frame {f}: {r}"
-                            ),
-                        )
-                        continue
-
-                    frame_pngs.append(png_path)
-                    delay_ms = int(frame_delay_map.get(frame, default_delay_ms))
-                    world_anchors = meta.get("world_anchors", {})
-                    per_frame.append(
-                        {
-                            "frame": frame,
-                            "png": str(png_path),
-                            "json": str(json_path) if json_path is not None else None,
-                            "delay_ms": delay_ms,
-                            "drawn_layers": drawn_layers,
-                            "unresolved_count": unresolved_count,
-                            "action_fallback_count": fallback_count,
-                            "effective_min_layers": effective_min_layers,
-                            "weapon_selection_mode": weapon_sel_mode,
-                            "weapon_entry_count": weapon_entry_count,
-                            "frame_bounds_world": meta.get("frame_bounds_world"),
-                            "world_anchors": world_anchors,
-                            "selection_modes": {
-                                str(r.get("asset_kind")): {
-                                    "selection_mode": r.get("selection_mode"),
-                                    "selected_action": r.get("selected_action"),
-                                    "selected_frame": r.get("selected_frame"),
-                                }
-                                for r in meta.get("action_resolution", [])
-                            },
-                        }
-                    )
-                    self.after(0, lambda a=action, f=frame: self._append_batch_log(f"Rendered {a} frame {f}"))
-
-                gif_info = None
-                gif_error = None
-                sheet_info = None
-                sheet_error = None
-                normalization_info = None
-                action_status = "ok"
-
-                if not frame_pngs:
-                    action_status = "no_valid_frames"
-                    self.after(
-                        0,
-                        lambda a=action: self._append_batch_log(
-                            f"Skipped action '{a}' (no valid frames after quality filters)."
-                        ),
-                    )
-                else:
-                    if self.batch_normalize_canvas.get():
-                        normalization_info = normalize_action_frame_canvases(per_frame)
-                        if normalization_info:
-                            self.after(
-                                0,
-                                lambda a=action, n=normalization_info["normalized_frames"], s=normalization_info["size"]: self._append_batch_log(
-                                    f"Normalized {a}: frames={n} canvas={s[0]}x{s[1]}"
-                                ),
-                            )
-
-                    if self.batch_make_gif.get():
-                        if self.batch_all_actions.get():
-                            gif_path = action_dir / f"{prefix}_{action}.gif"
-                        else:
-                            gif_path = self._resolve_single_action_postprocess_path(
-                                self.batch_gif_path.get(),
-                                out_dir=action_dir,
-                                base_out_dir=base_out_dir,
-                                default_name=f"{prefix}_{action}.gif",
-                            )
-                        try:
-                            durations_ms = None
-                            if self.batch_use_action_delays.get():
-                                durations_ms = [int(row.get("delay_ms", default_delay_ms)) for row in per_frame]
-                            gif_info = self._build_gif(
-                                frame_paths=frame_pngs,
-                                output_path=gif_path,
-                                duration_ms=int(self.batch_gif_duration.get().strip() or "120"),
-                                durations_ms=durations_ms,
-                            )
-                            self.after(0, lambda p=gif_info["gif_path"]: self._append_batch_log(f"GIF created: {p}"))
-                        except Exception as exc:  # noqa: BLE001
-                            gif_error = str(exc)
-                            action_errors.append(f"gif_error: {gif_error}")
-                            action_status = "postprocess_error"
-                            self.after(
-                                0,
-                                lambda a=action, e=gif_error: self._append_batch_log(
-                                    f"GIF failed for '{a}': {e}"
-                                ),
-                            )
-
-                    if self.batch_make_sheet.get():
-                        if self.batch_all_actions.get():
-                            sheet_path = action_dir / f"{prefix}_{action}_sheet.png"
-                        else:
-                            sheet_path = self._resolve_single_action_postprocess_path(
-                                self.batch_sheet_path.get(),
-                                out_dir=action_dir,
-                                base_out_dir=base_out_dir,
-                                default_name=f"{prefix}_{action}_sheet.png",
-                            )
-                        try:
-                            sheet_info = build_sprite_sheet(
-                                frame_paths=frame_pngs,
-                                output_path=sheet_path,
-                                columns=int(self.batch_sheet_cols.get().strip() or "8"),
-                            )
-                            self.after(
-                                0,
-                                lambda p=sheet_info["sheet_path"]: self._append_batch_log(
-                                    f"Sprite sheet created: {p}"
-                                ),
-                            )
-                        except Exception as exc:  # noqa: BLE001
-                            sheet_error = str(exc)
-                            action_errors.append(f"sheet_error: {sheet_error}")
-                            action_status = "postprocess_error"
-                            self.after(
-                                0,
-                                lambda a=action, e=sheet_error: self._append_batch_log(
-                                    f"Sprite sheet failed for '{a}': {e}"
-                                ),
-                            )
-
-                anchor_track = []
-                for row in per_frame:
-                    wa = row.get("world_anchors", {}) if isinstance(row.get("world_anchors"), dict) else {}
-                    anchor_track.append(
-                        {
-                            "frame": int(row.get("frame", 0)),
-                            "delay_ms": int(row.get("delay_ms", default_delay_ms)),
-                            "navel": wa.get("navel"),
-                            "hand": wa.get("hand"),
-                            "handMove": wa.get("handMove"),
-                        }
-                    )
-                hand_deltas = []
-                for i in range(1, len(anchor_track)):
-                    prev = anchor_track[i - 1]
-                    cur = anchor_track[i]
-                    p_hand = prev.get("hand")
-                    c_hand = cur.get("hand")
-                    if isinstance(p_hand, list) and isinstance(c_hand, list) and len(p_hand) == 2 and len(c_hand) == 2:
-                        hand_deltas.append(
-                            {
-                                "from_frame": int(prev["frame"]),
-                                "to_frame": int(cur["frame"]),
-                                "dx": int(c_hand[0]) - int(p_hand[0]),
-                                "dy": int(c_hand[1]) - int(p_hand[1]),
-                            }
-                        )
-
-                all_actions_summary.append(
-                    {
-                        "action": action,
-                        "frame_range": [frame_list[0], frame_list[-1]],
-                        "requested_frame_count": len(frame_list),
-                        "timeline_duration_ms": sum(int(row.get("delay_ms", default_delay_ms)) for row in per_frame),
-                        "timeline_source": "body_delay" if self.batch_use_action_delays.get() else "fixed_duration",
-                        "frame_count": len(frame_pngs),
-                        "skipped_frame_count": len(skipped_frames),
-                        "skipped_frames": skipped_frames,
-                        "status": action_status,
-                        "errors": action_errors,
-                        "output_dir": str(action_dir),
-                        "normalization": normalization_info,
-                        "gif": gif_info,
-                        "gif_error": gif_error,
-                        "sprite_sheet": sheet_info,
-                        "sprite_sheet_error": sheet_error,
-                        "anchor_track": anchor_track,
-                        "hand_deltas": hand_deltas,
-                        "frames": per_frame,
-                    }
-                )
-                total_frames += len(frame_pngs)
-
-            summary = {
-                "mode": "all_actions" if self.batch_all_actions.get() else "single_action",
-                "all_actions_source": self.batch_action_source.get() if self.batch_all_actions.get() else None,
-                "weapon_profile": weapon_profile,
-                "skill_overlay": {
-                    "enabled": skill_id is not None,
-                    "skill_id": skill_id,
-                    "skill_anim": skill_anim if skill_id is not None else None,
-                },
-                "per_character_folder": bool(self.batch_use_character_folder.get()),
-                "per_action_folder": True,
-                "character_id": character_id,
-                "auto_frames": bool(self.batch_auto_frames.get()),
-                "use_action_delays": bool(self.batch_use_action_delays.get()),
-                "normalize_canvas_per_action": bool(self.batch_normalize_canvas.get()),
-                "base_id": base_id,
-                "requested_action_count": len(actions),
-                "action_count": len(all_actions_summary),
-                "total_frames": total_frames,
-                "total_skipped_frames": total_skipped_frames,
-                "quality_filter": {
-                    "skip_unresolved": bool(self.batch_skip_unresolved.get()),
-                    "min_layers": min_layers,
-                    "min_layers_when_weapon_missing_node": max(1, min_layers - 1),
-                    "max_fallbacks_all_actions": max_fallbacks_all_actions if self.batch_all_actions.get() else None,
-                },
-                "output_dir": str(out_dir),
-                "base_output_dir": str(base_out_dir),
-                "actions": all_actions_summary,
-            }
-            summary_name = (
-                f"{prefix}_all_actions_batch_summary.json"
-                if self.batch_all_actions.get()
-                else f"{prefix}_{self.batch_action.get().strip()}_batch_summary.json"
-            )
-            summary_path = out_dir / summary_name
-            summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
-            summary["summary_path"] = str(summary_path)
-            return summary
 
         def done(ok: bool, payload) -> None:
             self.batch_btn.config(state="normal")
@@ -2801,18 +1974,7 @@ class App(tk.Tk):
         return "itemwz_catalogue_all.csv" if self._is_itemwz_catalogue_mode() else "catalogue_all.csv"
 
     def _normalize_catalogue_rows(self, raw_rows: list[dict]) -> list[dict]:
-        if not self._is_itemwz_catalogue_mode():
-            return raw_rows
-
-        normalized: list[dict] = []
-        for row in raw_rows:
-            out = dict(row)
-            out["part_category"] = str(row.get("item_root", ""))
-            out["eqp_category"] = str(row.get("group_file", ""))
-            out["islot"] = str(row.get("slot_max", ""))
-            out["vslot"] = str(row.get("price", ""))
-            normalized.append(out)
-        return normalized
+        return normalize_catalogue_rows(raw_rows, itemwz_mode=self._is_itemwz_catalogue_mode())
 
     def _on_catalogue_mode_changed(self) -> None:
         if self._is_itemwz_catalogue_mode():
@@ -2832,7 +1994,7 @@ class App(tk.Tk):
 
     def on_generate_catalogue(self) -> None:
         base_wz = Path(self.cat_base_wz.get())
-        base_err = self._validate_base_wz(base_wz)
+        base_err = validate_base_wz(base_wz)
         if base_err:
             messagebox.showerror("Validation Error", base_err)
             return
@@ -2970,21 +2132,7 @@ class App(tk.Tk):
             if isinstance(cached, dict):
                 return cached
 
-        pools: dict[str, list[int]] = {"base_id": [], "head_id": []}
-        char_root = base_wz / "Character" / "Character.wz"
-        if char_root.exists():
-            for xml_path in char_root.glob("*.img.xml"):
-                raw = xml_path.name.replace(".img.xml", "")
-                if not raw.isdigit():
-                    continue
-                item_id = int(raw)
-                if 2000 <= item_id < 10000:
-                    pools["base_id"].append(item_id)
-                elif 10000 <= item_id < 20000:
-                    pools["head_id"].append(item_id)
-
-        pools["base_id"] = sorted(set(pools["base_id"]))
-        pools["head_id"] = sorted(set(pools["head_id"]))
+        pools = get_body_id_pools(base_wz)
         self._body_pool_cache_key = cache_key
         self._body_pool_cache = pools
         return pools
@@ -2997,7 +2145,7 @@ class App(tk.Tk):
             item_id = str(row.get("id", "")).strip()
             if not item_id.isdigit():
                 continue
-            inferred = self._infer_slot_from_catalogue_categories(
+            inferred = infer_slot_from_catalogue_categories(
                 str(row.get("part_category", "")),
                 str(row.get("eqp_category", "")),
             )
@@ -3010,7 +2158,7 @@ class App(tk.Tk):
     def _random_value_for_slot(self, slot_name: str) -> Optional[str]:
         if slot_name in ("base_id", "head_id"):
             base_wz = Path(self.render_base_wz.get().strip())
-            err = self._validate_base_wz(base_wz)
+            err = validate_base_wz(base_wz)
             if err:
                 return None
             pools = self._get_body_id_pools(base_wz)
@@ -3130,42 +2278,7 @@ class App(tk.Tk):
         }
 
     def _resolve_catalogue_icon_path(self, item: dict) -> Optional[Path]:
-        base_wz = Path((self.cat_base_wz.get() or "").strip())
-        if not base_wz.exists():
-            return None
-
-        candidate_paths: list[Path] = []
-
-        png_dir_relpath = str(item.get("png_dir_relpath", "")).strip()
-        if png_dir_relpath:
-            png_dir = base_wz / Path(png_dir_relpath)
-            candidate_paths.append(png_dir / "info" / "icon.png")
-            candidate_paths.append(png_dir / "info" / "iconRaw.png")
-
-        xml_relpath = str(item.get("xml_relpath", "")).strip()
-        if xml_relpath:
-            xml_path = base_wz / Path(xml_relpath)
-            item_dir = xml_path.with_suffix("")
-            candidate_paths.append(item_dir / "info" / "icon.png")
-            candidate_paths.append(item_dir / "info" / "iconRaw.png")
-
-        item_id = str(item.get("id", "")).strip()
-        part_category = str(item.get("part_category", "")).strip()
-        if item_id.isdigit() and part_category:
-            padded = f"{int(item_id):08d}.img"
-            guessed = base_wz / "Character" / "Character.wz" / part_category / padded / "info"
-            candidate_paths.append(guessed / "icon.png")
-            candidate_paths.append(guessed / "iconRaw.png")
-
-        seen: set[str] = set()
-        for path in candidate_paths:
-            key = str(path).lower()
-            if key in seen:
-                continue
-            seen.add(key)
-            if path.exists() and path.is_file():
-                return path
-        return None
+        return resolve_catalogue_icon_path(Path((self.cat_base_wz.get() or "").strip()), item)
 
     def _update_catalogue_icon_preview(self, item: Optional[dict]) -> None:
         if not hasattr(self, "cat_item_icon_label"):
@@ -3201,7 +2314,7 @@ class App(tk.Tk):
         status_text: str,
     ) -> Optional[Path]:
         base_wz = Path(self.cat_base_wz.get().strip())
-        err = self._validate_base_wz(base_wz)
+        err = validate_base_wz(base_wz)
         if err:
             self.cat_build_status.set(f"Preview blocked: {err}")
             return None
@@ -3260,7 +2373,7 @@ class App(tk.Tk):
                 f"Item.wz selection: {item_name} [{item_id}] (browse-only in this build)."
             )
             return
-        target = self._infer_slot_from_catalogue_categories(item["part_category"], item["eqp_category"])
+        target = infer_slot_from_catalogue_categories(item["part_category"], item["eqp_category"])
         if target is None:
             self.cat_slot_hint.set("Auto slot: unsupported")
             self.cat_build_status.set(
@@ -3356,7 +2469,7 @@ class App(tk.Tk):
             return
         item_id = item["id"]
         item_name = item["name"]
-        target = self._infer_slot_from_catalogue_categories(item["part_category"], item["eqp_category"])
+        target = infer_slot_from_catalogue_categories(item["part_category"], item["eqp_category"])
         if target is None:
             messagebox.showerror(
                 "Apply Error",
