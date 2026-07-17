@@ -282,11 +282,11 @@ jobs:
 
       - name: Run exported payload self-check
         shell: pwsh
-        working-directory: ${{ env.RUNTIME_DIR }}
+        working-directory: build/windows
         run: |
           $ErrorActionPreference = "Stop"
           $PSNativeCommandUseErrorActionPreference = $false
-          $exe = Join-Path (Resolve-Path ..\..).Path "build\windows\BuddyRuntime.exe"
+          $exe = Join-Path (Get-Location).Path "BuddyRuntime.exe"
           & $exe --headless -- --verify-export-closure 2>&1 |
             Tee-Object -FilePath ..\..\win-export-closure.log
           if ($LASTEXITCODE -ne 0) {
