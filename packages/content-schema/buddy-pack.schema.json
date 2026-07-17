@@ -20,6 +20,11 @@
       "type": "integer",
       "minimum": 1
     },
+    "runtimeAudience": {
+      "type": "string",
+      "enum": ["user", "development"],
+      "default": "user"
+    },
     "id": {
       "type": "string",
       "minLength": 1
@@ -60,6 +65,11 @@
     "visual": {
       "type": "object",
       "properties": {
+        "faceMode": {
+          "type": "string",
+          "enum": ["embedded", "overlay_or_code"],
+          "default": "embedded"
+        },
         "scale": {
           "type": "number",
           "exclusiveMinimum": 0

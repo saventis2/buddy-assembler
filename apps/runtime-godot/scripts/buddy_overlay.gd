@@ -65,6 +65,7 @@ const UnlockTable = preload("res://scripts/progression/unlock_table.gd")
 const ProductivityTracker = preload("res://scripts/utility/productivity_tracker.gd")
 const PromptCadence = preload("res://scripts/utility/prompt_cadence.gd")
 const ManualVerificationReport = preload("res://scripts/utility/manual_verification_report.gd")
+const PortableBuddyFallback = preload("res://scripts/visual/portable_buddy_fallback.gd")
 
 @onready var tick_timer: Timer = $TickTimer
 @onready var telemetry_timer: Timer = $TelemetryTimer
@@ -150,6 +151,7 @@ var _settings_menu_open := false
 var _chat_window_open := false
 var _manual_emote_until_unix := 0
 var _last_face_texture_path := ""
+var _visual_face_mode := PortableBuddyFallback.FACE_MODE_EMBEDDED
 var _roam_speed_px_per_sec := DEFAULT_ROAM_SPEED_PX_PER_SEC
 var _roam_direction := 1
 var _roam_subpixel_x := 0.0
@@ -476,26 +478,21 @@ func _configure_chat_window() -> void:
 
 func _draw() -> void:
     var center := _draw_center
-    if _current_texture == null:
-        _load_core_character_animation_fallbacks()
-        _load_core_character_sprite_fallbacks()
-        _set_visual_for_state(_state, true)
-
-    _draw_sit_chair(center)
-    if _draw_character_sprite(center):
-        _draw_face_overlay()
+    var body_size := Vector2.ZERO
+    if _current_texture != null:
+        body_size = _current_texture.get_size()
+    if PortableBuddyFallback.presentation_mode(body_size, _visual_face_mode, false) == "emergency":
+        _draw_emergency_buddy(center)
         return
 
-    var missing_rect := Rect2(center - Vector2(34.0, 34.0), Vector2(68.0, 68.0))
-    draw_rect(missing_rect, Color(0.15, 0.02, 0.02, 0.7), true)
-    draw_rect(missing_rect, Color(0.92, 0.28, 0.28, 0.95), false, 2.0)
-    draw_line(missing_rect.position, missing_rect.end, Color(0.92, 0.28, 0.28, 0.95), 2.0)
-    draw_line(
-        Vector2(missing_rect.position.x, missing_rect.end.y),
-        Vector2(missing_rect.end.x, missing_rect.position.y),
-        Color(0.92, 0.28, 0.28, 0.95),
-        2.0
-    )
+    _draw_sit_chair(center)
+    if not _draw_character_sprite(center):
+        _draw_emergency_buddy(center)
+        return
+    if _visual_face_mode == PortableBuddyFallback.FACE_MODE_EMBEDDED:
+        return
+    if not _draw_face_overlay():
+        _draw_code_face()
 
 
 func _center_point() -> Vector2:
@@ -544,6 +541,8 @@ func _hit_test(point: Vector2) -> bool:
         var hit_rect := _sprite_rect_for_texture(_draw_center, _current_texture).grow(8.0)
         _current_sprite_rect = hit_rect
         return hit_rect.has_point(point)
+    if _current_sprite_rect.size.x > 0.0 and _current_sprite_rect.size.y > 0.0:
+        return _current_sprite_rect.grow(8.0).has_point(point)
     return point.distance_to(_draw_center) <= FALLBACK_HIT_RADIUS
 
 
@@ -612,7 +611,8 @@ func _is_night() -> bool:
 
 func _load_content_pack() -> void:
     var selected_pack := str(AppState.settings.get("selectedPackId", "core_pack"))
-    var loaded := ContentLoader.load_with_fallback(selected_pack)
+    var allow_development := OS.get_cmdline_user_args().has("--allow-development-packs")
+    var loaded := ContentLoader.load_with_fallback(selected_pack, "", allow_development)
 
     var source_tier := str(loaded.get("source_tier", "selected"))
     if source_tier != "selected":
@@ -815,14 +815,15 @@ func _update_window_roam(delta: float) -> void:
 
 
 func _cycle_pack() -> void:
-    var ids := ContentLoader.list_cycleable_pack_ids()
+    var allow_development := OS.get_cmdline_user_args().has("--allow-development-packs")
+    var ids := ContentLoader.list_cycleable_pack_ids("", allow_development)
     if ids.is_empty():
         _update_balloon_position()
         _buddy_say("No valid content packs found.")
         return
     if ids.size() == 1:
         var only_pack := str(ids[0])
-        var loaded_only := ContentLoader.load_with_fallback(only_pack)
+        var loaded_only := ContentLoader.load_with_fallback(only_pack, "", allow_development)
         var only_manifest_variant = loaded_only.get("manifest", null)
         if typeof(only_manifest_variant) != TYPE_DICTIONARY:
             _update_balloon_position()
@@ -850,7 +851,7 @@ func _cycle_pack() -> void:
         index = (index + 1) % ids.size()
 
     var next_pack := str(ids[index])
-    var loaded := ContentLoader.load_with_fallback(next_pack)
+    var loaded := ContentLoader.load_with_fallback(next_pack, "", allow_development)
     var manifest_variant = loaded.get("manifest", null)
     if typeof(manifest_variant) != TYPE_DICTIONARY:
         _update_balloon_position()
@@ -1848,12 +1849,16 @@ func _load_visual_assets(pack_id: String, manifest: Dictionary) -> void:
     _active_face_variant = "default"
     _manual_emote_until_unix = 0
     _last_face_texture_path = ""
+    _visual_face_mode = PortableBuddyFallback.FACE_MODE_EMBEDDED
     _sit_chair_texture = null
     _sit_chair_origin_px = Vector2.ZERO
 
     var visual_variant = manifest.get("visual", {})
     if typeof(visual_variant) == TYPE_DICTIONARY:
         var visual: Dictionary = visual_variant
+        _visual_face_mode = str(visual.get("faceMode", PortableBuddyFallback.FACE_MODE_EMBEDDED))
+        if not PortableBuddyFallback.VALID_FACE_MODES.has(_visual_face_mode):
+            _visual_face_mode = PortableBuddyFallback.FACE_MODE_EMBEDDED
         var scale_raw = visual.get("scale", 1.45)
         if typeof(scale_raw) == TYPE_INT or typeof(scale_raw) == TYPE_FLOAT:
             _sprite_scale = maxf(0.2, float(scale_raw))
@@ -1906,10 +1911,6 @@ func _load_visual_assets(pack_id: String, manifest: Dictionary) -> void:
                 if texture != null:
                     _action_textures[action_id] = texture
 
-    if _action_animations.is_empty():
-        _load_core_character_animation_fallbacks()
-    if _action_textures.is_empty():
-        _load_core_character_sprite_fallbacks()
     _load_sit_chair_assets(pack_id)
     _ground_enabled = false
     _ground_texture = null
@@ -2186,28 +2187,28 @@ func _draw_character_sprite(center: Vector2) -> bool:
     return true
 
 
-func _draw_face_overlay() -> void:
+func _draw_face_overlay() -> bool:
     if _current_texture == null:
-        return
+        return false
     if _face_overlay_frames.is_empty():
-        return
+        return false
     if _current_animation_index < 0 or _current_animation_index >= _face_overlay_frames.size():
-        return
+        return false
 
     var frame_overlay_variant = _face_overlay_frames[_current_animation_index]
     if typeof(frame_overlay_variant) != TYPE_DICTIONARY:
-        return
+        return false
     var frame_overlay: Dictionary = frame_overlay_variant
     if frame_overlay.is_empty():
-        return
+        return false
 
     var face_texture := _resolve_face_texture_for_overlay(frame_overlay)
     if face_texture == null:
-        return
+        return false
 
     var local_pos_variant = frame_overlay.get("local_top_left", [])
     if typeof(local_pos_variant) != TYPE_ARRAY or (local_pos_variant as Array).size() < 2:
-        return
+        return false
     var local_pos_arr: Array = local_pos_variant
     var local_top_left := Vector2(float(local_pos_arr[0]), float(local_pos_arr[1]))
     var emote_offset = EMOTE_DRAW_OFFSETS.get(_active_emote_semantic, Vector2.ZERO)
@@ -2216,7 +2217,7 @@ func _draw_face_overlay() -> void:
 
     var source_size: Vector2 = _current_texture.get_size()
     if source_size.x <= 0.0 or source_size.y <= 0.0:
-        return
+        return false
 
     var scale_x := _current_sprite_rect.size.x / source_size.x
     var scale_y := _current_sprite_rect.size.y / source_size.y
@@ -2226,6 +2227,67 @@ func _draw_face_overlay() -> void:
         Vector2(face_size.x * scale_x, face_size.y * scale_y)
     )
     draw_texture_rect(face_texture, draw_rect, false)
+    return true
+
+
+func _draw_code_face() -> void:
+    if _current_texture == null:
+        return
+    var plan := PortableBuddyFallback.face_plan(
+        _current_visual_action,
+        _current_animation_index,
+        _current_texture.get_size()
+    )
+    if not bool(plan.get("complete", false)):
+        return
+    var normalized: Vector2 = plan.get("center_normalized", Vector2(0.5, 0.38))
+    var center := _current_sprite_rect.position + Vector2(
+        normalized.x * _current_sprite_rect.size.x,
+        normalized.y * _current_sprite_rect.size.y
+    )
+    var unit := maxf(1.0, minf(_current_sprite_rect.size.x, _current_sprite_rect.size.y) / 70.0)
+    var eye_spacing := maxf(3.0 * unit, _current_sprite_rect.size.x * float(plan["eye_spacing_normalized"]))
+    var eye_radius := maxf(1.25 * unit, minf(_current_sprite_rect.size.x, _current_sprite_rect.size.y) * float(plan["eye_radius_normalized"]))
+    var ink := Color(0.12, 0.09, 0.15, 1.0)
+    var highlight := Color(0.98, 0.98, 1.0, 0.92)
+    var eye_y := center.y - (1.5 * unit)
+    if _active_emote_semantic == "sleepy":
+        draw_line(Vector2(center.x - eye_spacing - eye_radius, eye_y), Vector2(center.x - eye_spacing + eye_radius, eye_y), ink, maxf(1.0, unit))
+        draw_line(Vector2(center.x + eye_spacing - eye_radius, eye_y), Vector2(center.x + eye_spacing + eye_radius, eye_y), ink, maxf(1.0, unit))
+    else:
+        draw_circle(Vector2(center.x - eye_spacing, eye_y), eye_radius, ink)
+        draw_circle(Vector2(center.x + eye_spacing, eye_y), eye_radius, ink)
+        draw_circle(Vector2(center.x - eye_spacing - eye_radius * 0.25, eye_y - eye_radius * 0.25), maxf(0.7, eye_radius * 0.28), highlight)
+        draw_circle(Vector2(center.x + eye_spacing - eye_radius * 0.25, eye_y - eye_radius * 0.25), maxf(0.7, eye_radius * 0.28), highlight)
+    var mouth_width := maxf(4.0 * unit, _current_sprite_rect.size.x * float(plan["mouth_width_normalized"]))
+    var mouth_center := center + Vector2(0.0, 4.0 * unit)
+    draw_arc(mouth_center, mouth_width * 0.5, 0.15, PI - 0.15, 12, ink, maxf(1.0, unit))
+
+
+func _draw_emergency_buddy(center: Vector2) -> void:
+    _current_sprite_rect = PortableBuddyFallback.emergency_bounds(center)
+    var outline := Color(0.16, 0.12, 0.22, 1.0)
+    var body := Color(0.45, 0.74, 0.82, 1.0)
+    var face := Color(0.91, 0.84, 0.70, 1.0)
+    var accent := Color(0.98, 0.72, 0.34, 1.0)
+    draw_circle(center + Vector2(0.0, 16.0), 25.0, outline)
+    draw_circle(center + Vector2(0.0, 16.0), 22.0, body)
+    draw_circle(center + Vector2(-19.0, -25.0), 9.0, outline)
+    draw_circle(center + Vector2(19.0, -25.0), 9.0, outline)
+    draw_circle(center + Vector2(-19.0, -25.0), 6.0, accent)
+    draw_circle(center + Vector2(19.0, -25.0), 6.0, accent)
+    draw_circle(center + Vector2(0.0, -18.0), 27.0, outline)
+    draw_circle(center + Vector2(0.0, -18.0), 24.0, face)
+    draw_line(center + Vector2(-22.0, 10.0), center + Vector2(-34.0, 24.0), outline, 5.0)
+    draw_line(center + Vector2(22.0, 10.0), center + Vector2(34.0, 24.0), outline, 5.0)
+    draw_line(center + Vector2(-12.0, 35.0), center + Vector2(-16.0, 44.0), outline, 6.0)
+    draw_line(center + Vector2(12.0, 35.0), center + Vector2(16.0, 44.0), outline, 6.0)
+    draw_circle(center + Vector2(-8.0, -20.0), 3.2, outline)
+    draw_circle(center + Vector2(8.0, -20.0), 3.2, outline)
+    draw_circle(center + Vector2(-9.0, -21.0), 0.9, Color.WHITE)
+    draw_circle(center + Vector2(7.0, -21.0), 0.9, Color.WHITE)
+    draw_arc(center + Vector2(0.0, -11.0), 7.0, 0.15, PI - 0.15, 12, outline, 2.0)
+    draw_circle(center + Vector2(0.0, 12.0), 4.0, accent)
 
 
 func _draw_ground() -> void:
@@ -2311,7 +2373,8 @@ func _load_emote_manifest(path_spec: String, pack_id: String) -> Dictionary:
 
 func _resolve_face_texture_for_overlay(frame_overlay: Dictionary) -> Texture2D:
     var default_path := str(frame_overlay.get("default_png", ""))
-    if default_path == "":
+    if not PortableBuddyFallback.is_repository_asset_path(default_path):
+        _last_face_texture_path = "rejected non-repository face path"
         return null
     var cache_key := "%s|%s" % [_active_face_variant, default_path]
     if _face_texture_cache.has(cache_key):
@@ -2430,6 +2493,8 @@ func _effective_hit_radius() -> float:
 
 
 func _resolve_texture(path_spec: String, pack_id: String) -> Texture2D:
+    if not PortableBuddyFallback.is_repository_asset_path(path_spec):
+        return null
     var res_candidates: Array[String] = []
     if path_spec.begins_with("res://"):
         res_candidates.append(path_spec)
@@ -2484,7 +2549,11 @@ func _load_animation_spec(path_spec: String, pack_id: String) -> Dictionary:
     var sheet_path := str(animation_data.get("sheet", ""))
     if sheet_path == "":
         return {}
-    var sheet_texture := _resolve_texture(sheet_path, pack_id)
+    var sheet_pack_id := pack_id
+    if animation_source_path.begins_with("res://content/"):
+        var source_relative := animation_source_path.trim_prefix("res://content/")
+        sheet_pack_id = source_relative.get_slice("/", 0)
+    var sheet_texture := _resolve_texture(sheet_path, sheet_pack_id)
     if sheet_texture == null:
         return {}
 
@@ -2607,6 +2676,8 @@ func _resolve_text(path_spec: String, pack_id: String) -> String:
 
 
 func _resolve_text_with_source(path_spec: String, pack_id: String) -> Dictionary:
+    if not PortableBuddyFallback.is_repository_asset_path(path_spec):
+        return {}
     var res_candidates: Array[String] = []
     if path_spec.begins_with("res://"):
         res_candidates.append(path_spec)
@@ -2639,27 +2710,6 @@ func _read_text_file(path: String) -> String:
     var content := file.get_as_text()
     file.close()
     return content
-
-
-func _load_core_character_animation_fallbacks() -> void:
-    var actions := ["idle", "wander", "sit", "sleep", "happy", "gift", "visitor"]
-    for action_id in actions:
-        var res_path: String = "res://content/core_pack/character/animations/%s.json" % action_id
-        var animation := _load_animation_spec(res_path, "core_pack")
-        if not animation.is_empty():
-            _action_animations[action_id] = animation
-            var max_pivot_variant = animation.get("max_pivot_y", 0.0)
-            if typeof(max_pivot_variant) == TYPE_INT or typeof(max_pivot_variant) == TYPE_FLOAT:
-                _max_loaded_pivot_px_y = maxf(_max_loaded_pivot_px_y, float(max_pivot_variant))
-
-
-func _load_core_character_sprite_fallbacks() -> void:
-    var actions := ["idle", "wander", "sit", "sleep", "happy", "gift", "visitor"]
-    for action_id in actions:
-        var res_path: String = "res://content/core_pack/character/%s.png" % action_id
-        var texture := _resolve_texture(res_path, "core_pack")
-        if texture != null:
-            _action_textures[action_id] = texture
 
 
 func _maybe_show_bond_phrase() -> void:

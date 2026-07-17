@@ -21,6 +21,7 @@ silently rotting.
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -128,6 +129,23 @@ def expect_non_empty_string(
     return True
 
 
+def is_repository_asset_path(path_spec: Any) -> bool:
+    """Match the runtime's portable-path boundary for shipping dependencies."""
+    if not isinstance(path_spec, str):
+        return False
+    path = path_spec.strip()
+    if not path or "\\" in path:
+        return False
+    if path.startswith(("/", "user://", "file://")):
+        return False
+    if len(path) >= 2 and path[1] == ":":
+        return False
+    if "://" in path and not path.startswith("res://"):
+        return False
+    relative = path.removeprefix("res://")
+    return bool(relative) and ":" not in relative and ".." not in relative.split("/")
+
+
 # ---------------------------------------------------------------------------
 # Manifest validation (packages/content-schema/buddy-pack.schema.json V1)
 # ---------------------------------------------------------------------------
@@ -190,6 +208,15 @@ def validate_manifest(manifest: dict[str, Any]) -> list[ValidationError]:
         'Set "version" to a semver string, e.g. "1.0.0".',
     )
 
+    runtime_audience = manifest.get("runtimeAudience", "user")
+    if runtime_audience not in ("user", "development"):
+        add_error(
+            errors,
+            f"{root}.runtimeAudience",
+            f"must be 'user' or 'development', found {describe(runtime_audience)}",
+            'Use "user" for production-cycle packs or "development" for explicit developer-only packs.',
+        )
+
     companion = manifest["companion"]
     companion_path = f"{root}.companion"
     if expect_type(
@@ -238,6 +265,14 @@ def validate_manifest(manifest: dict[str, Any]) -> list[ValidationError]:
             errors,
             'Define "visual" as an object, or omit the "visual" key entirely to use the code-drawn placeholder.',
         ):
+            face_mode = visual.get("faceMode", "embedded")
+            if face_mode not in ("embedded", "overlay_or_code"):
+                add_error(
+                    errors,
+                    f"{visual_path}.faceMode",
+                    f"must be 'embedded' or 'overlay_or_code', found {describe(face_mode)}",
+                    'Use "overlay_or_code" for the repository-authored portable face fallback.',
+                )
             scale = visual.get("scale")
             if scale is not None and (not is_number(scale) or float(scale) <= 0):
                 add_error(
@@ -297,6 +332,13 @@ def validate_manifest(manifest: dict[str, Any]) -> list[ValidationError]:
                             errors,
                             'Set this to a path like "character/animations/idle.json".',
                         )
+                        if isinstance(value, str) and not is_repository_asset_path(value):
+                            add_error(
+                                errors,
+                                f"{animations_path}[{key}]",
+                                "must be a repository-relative or res:// asset path",
+                                "Remove drive-letter, absolute, user://, traversal, and workstation-local paths.",
+                            )
 
             sprites = visual.get("sprites")
             if sprites is not None:
@@ -321,6 +363,35 @@ def validate_manifest(manifest: dict[str, Any]) -> list[ValidationError]:
                             errors,
                             'Set this to a path like "character/idle.png".',
                         )
+                        if isinstance(value, str) and not is_repository_asset_path(value):
+                            add_error(
+                                errors,
+                                f"{sprites_path}[{key}]",
+                                "must be a repository-relative or res:// asset path",
+                                "Remove drive-letter, absolute, user://, traversal, and workstation-local paths.",
+                            )
+
+            emotes = visual.get("emotes")
+            if isinstance(emotes, dict) and "manifest" in emotes:
+                emote_path = emotes.get("manifest")
+                if not is_repository_asset_path(emote_path):
+                    add_error(
+                        errors,
+                        f"{visual_path}.emotes.manifest",
+                        "must be a repository-relative or res:// asset path",
+                        "Remove drive-letter, absolute, user://, traversal, and workstation-local paths.",
+                    )
+
+            ground = visual.get("ground")
+            if isinstance(ground, dict) and ground.get("texture") is not None:
+                ground_path = ground.get("texture")
+                if not is_repository_asset_path(ground_path):
+                    add_error(
+                        errors,
+                        f"{visual_path}.ground.texture",
+                        "must be a repository-relative or res:// asset path",
+                        "Remove drive-letter, absolute, user://, traversal, and workstation-local paths.",
+                    )
 
     for field in ("idleActions", "reactionActions", "encounterActions"):
         value = manifest[field]
@@ -414,6 +485,115 @@ def validate_manifest(manifest: dict[str, Any]) -> list[ValidationError]:
                     'Set "perDay" to a positive integer cap, or omit the key entirely for no cap.',
                 )
 
+    return errors
+
+
+def _tracked_repo_paths(repo_root: Path) -> set[str]:
+    result = subprocess.run(
+        ["git", "ls-files", "-z"],
+        cwd=repo_root,
+        check=True,
+        capture_output=True,
+    )
+    return {
+        item.decode("utf-8").replace("\\", "/")
+        for item in result.stdout.split(b"\0")
+        if item
+    }
+
+
+def _resolve_asset_path(
+    path_spec: str,
+    pack_root: Path,
+    runtime_root: Path,
+    repo_root: Path,
+) -> Path | None:
+    if not is_repository_asset_path(path_spec):
+        return None
+    if path_spec.startswith("res://"):
+        candidate = runtime_root / path_spec.removeprefix("res://")
+    else:
+        candidate = pack_root / path_spec
+    resolved = candidate.resolve()
+    try:
+        resolved.relative_to(repo_root.resolve())
+    except ValueError:
+        return None
+    return resolved
+
+
+def validate_manifest_dependencies(
+    manifest: dict[str, Any],
+    manifest_path: Path,
+    repo_root: Path,
+    tracked_paths: set[str] | None = None,
+) -> list[ValidationError]:
+    """Validate the transitive files the shipping renderer actually dereferences."""
+    errors: list[ValidationError] = []
+    runtime_root = repo_root / "apps" / "runtime-godot"
+    pack_root = manifest_path.parent
+    tracked = tracked_paths if tracked_paths is not None else _tracked_repo_paths(repo_root)
+    declared: list[tuple[str, str, bool]] = []
+    visual = manifest.get("visual")
+    if not isinstance(visual, dict):
+        return errors
+
+    for field in ("animations", "sprites"):
+        values = visual.get(field)
+        if not isinstance(values, dict):
+            continue
+        for key, value in values.items():
+            if isinstance(value, str):
+                declared.append((f"manifest.visual.{field}.{key}", value, field == "animations"))
+    emotes = visual.get("emotes")
+    if isinstance(emotes, dict) and isinstance(emotes.get("manifest"), str):
+        declared.append(("manifest.visual.emotes.manifest", emotes["manifest"], False))
+    ground = visual.get("ground")
+    if isinstance(ground, dict) and isinstance(ground.get("texture"), str):
+        declared.append(("manifest.visual.ground.texture", ground["texture"], False))
+
+    def check_one(label: str, path_spec: str, dependency_pack_root: Path = pack_root) -> Path | None:
+        resolved = _resolve_asset_path(path_spec, dependency_pack_root, runtime_root, repo_root)
+        if resolved is None:
+            add_error(errors, label, "uses a non-repository path", "Use a tracked pack-relative or res:// path.")
+            return None
+        rel = resolved.relative_to(repo_root.resolve()).as_posix()
+        if not resolved.is_file():
+            add_error(errors, label, f"references missing file {path_spec!r}", "Add the tracked file or remove the reference.")
+            return None
+        if rel not in tracked:
+            add_error(errors, label, f"references untracked or ignored file {rel!r}", "Shipping dependencies must be tracked by git.")
+            return None
+        return resolved
+
+    for label, path_spec, is_animation in declared:
+        resolved = check_one(label, path_spec)
+        if resolved is None or not is_animation:
+            continue
+        try:
+            animation = load_json(resolved)
+        except Exception as exc:  # noqa: BLE001
+            add_error(errors, label, f"animation JSON is unreadable: {exc}", "Repair or remove the animation reference.")
+            continue
+        if not isinstance(animation, dict) or not isinstance(animation.get("sheet"), str):
+            add_error(errors, label, "animation JSON has no string sheet path", "Declare a tracked sheet path.")
+            continue
+        animation_pack_root = pack_root
+        runtime_relative = resolved.relative_to(runtime_root).parts
+        if len(runtime_relative) >= 2 and runtime_relative[0] == "content":
+            animation_pack_root = runtime_root / "content" / runtime_relative[1]
+        check_one(f"{label}.sheet", animation["sheet"], animation_pack_root)
+
+    if visual.get("faceMode", "embedded") == "overlay_or_code":
+        fallback_rel = "apps/runtime-godot/scripts/visual/portable_buddy_fallback.gd"
+        fallback_path = repo_root / fallback_rel
+        if not fallback_path.is_file() or fallback_rel not in tracked:
+            add_error(
+                errors,
+                "manifest.visual.faceMode",
+                "portable face fallback implementation is missing or untracked",
+                "Track the repository-owned fallback implementation.",
+            )
     return errors
 
 
@@ -654,6 +834,9 @@ def main() -> int:
         return 2
 
     errors = validate_manifest(raw)
+    if not errors:
+        repo_root = Path(__file__).resolve().parents[2]
+        errors.extend(validate_manifest_dependencies(raw, path, repo_root))
     if errors:
         print(f"INVALID manifest -> {path}")
         for err in errors:

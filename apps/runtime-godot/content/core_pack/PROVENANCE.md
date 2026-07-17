@@ -31,8 +31,18 @@ manifest required by PR-13.
 | Source | MapleStory v83 face WZ data (reference) |
 | Transformation | Python emote export pipeline → PNG frames + `manifest.json` |
 | IP posture | Derived visual output, no raw WZ/NX committed |
-| Notes | Face overlays are composited over the body sprite at runtime. `manifest.json` maps semantic names (happy, sad, …) to frame paths. |
-| Status | ✅ Approved for V1 shipping |
+| Notes | The semantic `manifest.json` remains tracked. Workstation-local face PNG paths are not shipping dependencies and are rejected by the runtime. |
+| Status | Optional only; not required by the V1 shipping closure |
+
+### Portable face and emergency buddy — repository code
+
+| Attribute | Value |
+|-----------|-------|
+| Source | Original repository-authored Godot drawing code |
+| Implementation | `scripts/visual/portable_buddy_fallback.gd` plus drawing primitives in `buddy_overlay.gd` |
+| Runtime behavior | Draws a deterministic complete face over the tracked body; draws a complete emergency buddy if the body is missing or unusable |
+| External assets | None; no WZ/NX extract, ignored file, test fixture, or runtime generator |
+| Status | Required portable V1 fallback; this provenance statement does not resolve repository licensing or public-release authority |
 
 ### `character/animations/*.json` — animation manifests
 

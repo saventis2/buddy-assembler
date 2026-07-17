@@ -99,6 +99,13 @@ jobs:
           timeout 90s godot --headless --path . res://tests/PackValidationTest.tscn 2>&1 | tee ../../pack-validation.log
           grep -E "pack_validation_test: PASS" ../../pack-validation.log
 
+      - name: Portable visual fallback test
+        working-directory: ${{ env.RUNTIME_DIR }}
+        run: |
+          set -euo pipefail
+          timeout 90s godot --headless --path . res://tests/PortableVisualFallbackTest.tscn 2>&1 | tee ../../portable-visual-fallback.log
+          grep -E "portable_visual_fallback_test: PASS \(19 shipping frames\)" ../../portable-visual-fallback.log
+
       - name: World + economy flow test
         working-directory: ${{ env.RUNTIME_DIR }}
         run: |
@@ -159,6 +166,7 @@ jobs:
             smoke.log
             save-store.log
             pack-validation.log
+            portable-visual-fallback.log
             world-economy-flow.log
             companion-depth.log
             economy-tuning.log
@@ -272,6 +280,24 @@ jobs:
           }
           Get-ChildItem $out
 
+      - name: Run exported payload self-check
+        shell: pwsh
+        working-directory: ${{ env.RUNTIME_DIR }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $false
+          $exe = Join-Path (Resolve-Path ..\..).Path "build\windows\BuddyRuntime.exe"
+          & $exe --headless -- --verify-export-closure 2>&1 |
+            Tee-Object -FilePath ..\..\win-export-closure.log
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Exported runtime closure self-check failed with exit $LASTEXITCODE"
+            exit $LASTEXITCODE
+          }
+          if (-not (Select-String -Path ..\..\win-export-closure.log -Pattern '^export_closure_check: PASS$' -Quiet)) {
+            Write-Error "Exported runtime did not emit the exact closure PASS marker"
+            exit 1
+          }
+
       - name: Compute SHA256SUMS
         shell: pwsh
         run: |
@@ -306,5 +332,6 @@ jobs:
           path: |
             win-import.log
             win-export.log
+            win-export-closure.log
           retention-days: 14
           if-no-files-found: warn

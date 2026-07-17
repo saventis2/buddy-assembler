@@ -23,7 +23,14 @@ python validate_pack.py ..\..\apps\runtime-godot\content\core_pack\manifest.json
 
 Returns non-zero exit code when validation fails. Failures report the JSON
 path of the offending field (e.g. `manifest.eventRules[2].action`) plus a
-one-line hint on how to fix it:
+one-line hint on how to fix it. For on-disk packs, validation also resolves
+animation sheets and other declared visual dependencies, and rejects missing,
+ignored, untracked, drive-letter, absolute, traversal, and workstation-local
+paths.
+
+Run `python validate_shipping_closure.py` from any directory to verify the
+two user packs, the development-pack boundary, and the reviewed Windows
+export include/exclude declaration.
 
 ```
 INVALID manifest -> ...\fixtures\invalid_missing_action.json

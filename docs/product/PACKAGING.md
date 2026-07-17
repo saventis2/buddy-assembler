@@ -69,12 +69,22 @@ separate console window would be jarring).
 
 ## CI gates
 
-1. `windows-export` job produces `BuddyRuntime.exe` under
+The export preset uses a reviewed all-resources-plus-denylist closure. It
+includes the exact JSON control plane needed by the runtime and excludes
+sample/development packs, importer tooling, tests, vertical-slice resources,
+and unused demo/runtime lanes.
+
+1. `validate_shipping_closure.py` checks the tracked manifest dependency
+   graph and the export include/exclude declaration.
+2. `windows-export` produces `BuddyRuntime.exe` under
    `build/windows/`. Missing .exe fails the step.
-2. `Compute SHA256SUMS` step writes `SHA256SUMS` into the same
+3. The exported executable runs `--verify-export-closure` and must emit the
+   exact `export_closure_check: PASS` marker after proving required resources
+   present and development sentinels absent.
+4. `Compute SHA256SUMS` writes `SHA256SUMS` into the same
    directory. The artifact uploaded contains both the build and the
    hash manifest.
-3. Release tag cut only after RC scenario suite
+5. Release tag cut only after RC scenario suite
    (`RC_SCENARIO_SUITE.md`) passes on the artifact.
 
 ## Release-time checklist

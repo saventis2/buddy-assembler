@@ -30,6 +30,10 @@ jobs:
         run: |
           python packages/content-validator/run_fixture_checks.py
 
+      - name: Verify shipping payload declaration
+        run: |
+          python packages/content-validator/validate_shipping_closure.py
+
   verify-provenance:
     runs-on: ubuntu-latest
     steps:

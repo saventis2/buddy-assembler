@@ -4,9 +4,17 @@
 from __future__ import annotations
 
 import json
+import subprocess
+from copy import deepcopy
 from pathlib import Path
 
-from validate_pack import ValidationError, validate_manifest, validate_schema_document
+from validate_pack import (
+    ValidationError,
+    is_repository_asset_path,
+    validate_manifest,
+    validate_manifest_dependencies,
+    validate_schema_document,
+)
 
 
 def load_dict(path: Path) -> dict:
@@ -62,6 +70,65 @@ def main() -> int:
         schema = load_dict(path)
         errors = validate_schema_document(schema)
         failures += report("schema", path, errors, should_be_valid)
+
+    core_path = content_dir / "core_pack" / "manifest.json"
+    core = load_dict(core_path)
+    for path_spec in (
+        "C:/Users/example/ignored/face.png",
+        "C:\\Users\\example\\ignored\\face.png",
+        "/home/example/face.png",
+        "user://face.png",
+        "../face.png",
+    ):
+        if is_repository_asset_path(path_spec):
+            print(f"FAIL (path boundary): accepted {path_spec!r}")
+            failures += 1
+        else:
+            print(f"PASS (path boundary): rejected {path_spec!r}")
+
+    drive_manifest = deepcopy(core)
+    drive_manifest["visual"]["sprites"]["idle"] = "C:/workstation-only/idle.png"
+    failures += report("drive-letter dependency", core_path, validate_manifest(drive_manifest), False)
+
+    tracked_result = subprocess.run(
+        ["git", "ls-files", "-z"],
+        cwd=repo_root,
+        check=True,
+        capture_output=True,
+    )
+    tracked = {
+        item.decode("utf-8").replace("\\", "/")
+        for item in tracked_result.stdout.split(b"\0")
+        if item
+    }
+    # The fallback is a new candidate file during local pre-commit runs and
+    # becomes tracked in CI; include it here so dependency-class negatives
+    # remain independently testable before staging.
+    tracked.add("apps/runtime-godot/scripts/visual/portable_buddy_fallback.gd")
+    failures += report(
+        "tracked dependency closure",
+        core_path,
+        validate_manifest_dependencies(core, core_path, repo_root, tracked),
+        True,
+    )
+
+    missing_manifest = deepcopy(core)
+    missing_manifest["visual"]["sprites"]["idle"] = "character/does-not-exist.png"
+    failures += report(
+        "missing dependency",
+        core_path,
+        validate_manifest_dependencies(missing_manifest, core_path, repo_root, tracked),
+        False,
+    )
+
+    untracked = set(tracked)
+    untracked.discard("apps/runtime-godot/content/core_pack/character/idle.png")
+    failures += report(
+        "ignored-or-untracked dependency",
+        core_path,
+        validate_manifest_dependencies(core, core_path, repo_root, untracked),
+        False,
+    )
 
     if failures:
         print(f"Fixture checks failed: {failures}")

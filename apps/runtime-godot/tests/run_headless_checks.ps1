@@ -62,6 +62,16 @@ if ($packCode -ne 0) {
 }
 Write-Host "Pack validation test PASSED."
 
+# --- Portable visual fallback test ---
+Write-Host ""
+Write-Host "=== Portable visual fallback test ==="
+$portableVisualCode = Invoke-GodotHeadless -ExtraArgs @("--scene", "res://tests/PortableVisualFallbackTest.tscn") -Label "portable-visual-fallback"
+if ($portableVisualCode -ne 0) {
+    Write-Host "Portable visual fallback test FAILED (exit $portableVisualCode)"
+    exit $portableVisualCode
+}
+Write-Host "Portable visual fallback test PASSED."
+
 # --- World + economy flow test ---
 Write-Host ""
 Write-Host "=== World + economy flow test ==="
