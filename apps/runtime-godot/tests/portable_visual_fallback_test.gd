@@ -89,6 +89,11 @@ func _check_fallback_viewport() -> void:
     if texture == null:
         _failures.append("tracked fallback texture did not load")
         return
+    var overlay = BuddyOverlayScript.new()
+    var runtime_fallback := overlay._presentation_texture()
+    overlay.free()
+    if runtime_fallback == null or runtime_fallback.resource_path != PortableBuddyFallback.FALLBACK_TEXTURE_PATH:
+        _failures.append("BuddyOverlay did not select the tracked fallback asset for a missing body")
     var rect := PortableBuddyFallback.fitted_asset_rect(
         VIEWPORT_SIZE,
         texture.get_size(),
