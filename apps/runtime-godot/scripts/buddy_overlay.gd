@@ -66,6 +66,7 @@ const ProductivityTracker = preload("res://scripts/utility/productivity_tracker.
 const PromptCadence = preload("res://scripts/utility/prompt_cadence.gd")
 const ManualVerificationReport = preload("res://scripts/utility/manual_verification_report.gd")
 const PortableBuddyFallback = preload("res://scripts/visual/portable_buddy_fallback.gd")
+const PORTABLE_FALLBACK_TEXTURE := preload("res://content/core_pack/character/idle.png")
 
 @onready var tick_timer: Timer = $TickTimer
 @onready var telemetry_timer: Timer = $TelemetryTimer
@@ -151,7 +152,6 @@ var _settings_menu_open := false
 var _chat_window_open := false
 var _manual_emote_until_unix := 0
 var _last_face_texture_path := ""
-var _visual_face_mode := PortableBuddyFallback.FACE_MODE_EMBEDDED
 var _roam_speed_px_per_sec := DEFAULT_ROAM_SPEED_PX_PER_SEC
 var _roam_direction := 1
 var _roam_subpixel_x := 0.0
@@ -478,21 +478,8 @@ func _configure_chat_window() -> void:
 
 func _draw() -> void:
     var center := _draw_center
-    var body_size := Vector2.ZERO
-    if _current_texture != null:
-        body_size = _current_texture.get_size()
-    if PortableBuddyFallback.presentation_mode(body_size, _visual_face_mode, false) == "emergency":
-        _draw_emergency_buddy(center)
-        return
-
     _draw_sit_chair(center)
-    if not _draw_character_sprite(center):
-        _draw_emergency_buddy(center)
-        return
-    if _visual_face_mode == PortableBuddyFallback.FACE_MODE_EMBEDDED:
-        return
-    if not _draw_face_overlay():
-        _draw_code_face()
+    _draw_character_sprite(center, _presentation_texture())
 
 
 func _center_point() -> Vector2:
@@ -537,8 +524,9 @@ func _ground_surface_y(viewport_size: Vector2) -> float:
 
 
 func _hit_test(point: Vector2) -> bool:
-    if _current_texture != null:
-        var hit_rect := _sprite_rect_for_texture(_draw_center, _current_texture).grow(8.0)
+    var texture := _presentation_texture()
+    if texture != null:
+        var hit_rect := _presentation_rect(_draw_center, texture).grow(8.0)
         _current_sprite_rect = hit_rect
         return hit_rect.has_point(point)
     if _current_sprite_rect.size.x > 0.0 and _current_sprite_rect.size.y > 0.0:
@@ -1849,16 +1837,12 @@ func _load_visual_assets(pack_id: String, manifest: Dictionary) -> void:
     _active_face_variant = "default"
     _manual_emote_until_unix = 0
     _last_face_texture_path = ""
-    _visual_face_mode = PortableBuddyFallback.FACE_MODE_EMBEDDED
     _sit_chair_texture = null
     _sit_chair_origin_px = Vector2.ZERO
 
     var visual_variant = manifest.get("visual", {})
     if typeof(visual_variant) == TYPE_DICTIONARY:
         var visual: Dictionary = visual_variant
-        _visual_face_mode = str(visual.get("faceMode", PortableBuddyFallback.FACE_MODE_EMBEDDED))
-        if not PortableBuddyFallback.VALID_FACE_MODES.has(_visual_face_mode):
-            _visual_face_mode = PortableBuddyFallback.FACE_MODE_EMBEDDED
         var scale_raw = visual.get("scale", 1.45)
         if typeof(scale_raw) == TYPE_INT or typeof(scale_raw) == TYPE_FLOAT:
             _sprite_scale = maxf(0.2, float(scale_raw))
@@ -2174,16 +2158,42 @@ func _auto_adjust_floor_padding_to_loaded_pivots() -> void:
     _floor_padding = maxf(2.0, _floor_padding - required_delta)
 
 
-func _draw_character_sprite(center: Vector2) -> bool:
-    if _current_texture == null:
+func _presentation_texture() -> Texture2D:
+    var selected_size := Vector2.ZERO
+    if _current_texture != null:
+        selected_size = _current_texture.get_size()
+    var fallback_size := Vector2.ZERO
+    if PORTABLE_FALLBACK_TEXTURE != null:
+        fallback_size = PORTABLE_FALLBACK_TEXTURE.get_size()
+    var mode := PortableBuddyFallback.presentation_mode(selected_size, fallback_size)
+    if mode == PortableBuddyFallback.PRESENTATION_SELECTED_ASSET:
+        return _current_texture
+    if mode == PortableBuddyFallback.PRESENTATION_FALLBACK_ASSET:
+        return PORTABLE_FALLBACK_TEXTURE
+    return null
+
+
+func _presentation_rect(center: Vector2, texture: Texture2D) -> Rect2:
+    if texture == _current_texture:
+        return _sprite_rect_for_texture(center, texture)
+    return PortableBuddyFallback.fitted_asset_rect(
+        get_viewport_rect().size,
+        texture.get_size(),
+        _sprite_scale,
+        SPRITE_VIEW_MARGIN
+    )
+
+
+func _draw_character_sprite(center: Vector2, texture: Texture2D) -> bool:
+    if texture == null:
         return false
 
-    var tex_size: Vector2 = _current_texture.get_size()
+    var tex_size: Vector2 = texture.get_size()
     if tex_size.x <= 0.0 or tex_size.y <= 0.0:
         return false
 
-    _current_sprite_rect = _sprite_rect_for_texture(center, _current_texture)
-    draw_texture_rect(_current_texture, _current_sprite_rect, false)
+    _current_sprite_rect = _presentation_rect(center, texture)
+    draw_texture_rect(texture, _current_sprite_rect, false)
     return true
 
 
@@ -2228,84 +2238,6 @@ func _draw_face_overlay() -> bool:
     )
     draw_texture_rect(face_texture, draw_rect, false)
     return true
-
-
-func _draw_code_face() -> void:
-    if _current_texture == null:
-        return
-    var geometry := code_face_geometry(
-        _current_visual_action,
-        _current_animation_index,
-        _current_texture.get_size(),
-        _current_sprite_rect
-    )
-    if not bool(geometry.get("complete", false)):
-        return
-    var plan: Dictionary = geometry["plan"]
-    var center: Vector2 = geometry["center"]
-    var unit := maxf(1.0, minf(_current_sprite_rect.size.x, _current_sprite_rect.size.y) / 70.0)
-    var eye_spacing := maxf(3.0 * unit, _current_sprite_rect.size.x * float(plan["eye_spacing_normalized"]))
-    var eye_radius := maxf(1.25 * unit, minf(_current_sprite_rect.size.x, _current_sprite_rect.size.y) * float(plan["eye_radius_normalized"]))
-    var ink := Color(0.12, 0.09, 0.15, 1.0)
-    var highlight := Color(0.98, 0.98, 1.0, 0.92)
-    var eye_y := center.y - (1.5 * unit)
-    if _active_emote_semantic == "sleepy":
-        draw_line(Vector2(center.x - eye_spacing - eye_radius, eye_y), Vector2(center.x - eye_spacing + eye_radius, eye_y), ink, maxf(1.0, unit))
-        draw_line(Vector2(center.x + eye_spacing - eye_radius, eye_y), Vector2(center.x + eye_spacing + eye_radius, eye_y), ink, maxf(1.0, unit))
-    else:
-        draw_circle(Vector2(center.x - eye_spacing, eye_y), eye_radius, ink)
-        draw_circle(Vector2(center.x + eye_spacing, eye_y), eye_radius, ink)
-        draw_circle(Vector2(center.x - eye_spacing - eye_radius * 0.25, eye_y - eye_radius * 0.25), maxf(0.7, eye_radius * 0.28), highlight)
-        draw_circle(Vector2(center.x + eye_spacing - eye_radius * 0.25, eye_y - eye_radius * 0.25), maxf(0.7, eye_radius * 0.28), highlight)
-    var mouth_width := maxf(4.0 * unit, _current_sprite_rect.size.x * float(plan["mouth_width_normalized"]))
-    var mouth_center := center + Vector2(0.0, 4.0 * unit)
-    draw_arc(mouth_center, mouth_width * 0.5, 0.15, PI - 0.15, 12, ink, maxf(1.0, unit))
-
-
-static func code_face_geometry(
-    action_id: String,
-    frame_index: int,
-    source_size: Vector2,
-    sprite_rect: Rect2
-) -> Dictionary:
-    var plan := PortableBuddyFallback.face_plan(action_id, frame_index, source_size)
-    if not bool(plan.get("complete", false)):
-        return {}
-    var normalized: Vector2 = plan["center_normalized"]
-    return {
-        "complete": true,
-        "center": sprite_rect.position + Vector2(
-            normalized.x * sprite_rect.size.x,
-            normalized.y * sprite_rect.size.y
-        ),
-        "plan": plan,
-    }
-
-
-func _draw_emergency_buddy(center: Vector2) -> void:
-    _current_sprite_rect = PortableBuddyFallback.emergency_bounds(center)
-    var outline := Color(0.16, 0.12, 0.22, 1.0)
-    var body := Color(0.45, 0.74, 0.82, 1.0)
-    var face := Color(0.91, 0.84, 0.70, 1.0)
-    var accent := Color(0.98, 0.72, 0.34, 1.0)
-    draw_circle(center + Vector2(0.0, 16.0), 25.0, outline)
-    draw_circle(center + Vector2(0.0, 16.0), 22.0, body)
-    draw_circle(center + Vector2(-19.0, -25.0), 9.0, outline)
-    draw_circle(center + Vector2(19.0, -25.0), 9.0, outline)
-    draw_circle(center + Vector2(-19.0, -25.0), 6.0, accent)
-    draw_circle(center + Vector2(19.0, -25.0), 6.0, accent)
-    draw_circle(center + Vector2(0.0, -18.0), 27.0, outline)
-    draw_circle(center + Vector2(0.0, -18.0), 24.0, face)
-    draw_line(center + Vector2(-22.0, 10.0), center + Vector2(-34.0, 24.0), outline, 5.0)
-    draw_line(center + Vector2(22.0, 10.0), center + Vector2(34.0, 24.0), outline, 5.0)
-    draw_line(center + Vector2(-12.0, 35.0), center + Vector2(-16.0, 44.0), outline, 6.0)
-    draw_line(center + Vector2(12.0, 35.0), center + Vector2(16.0, 44.0), outline, 6.0)
-    draw_circle(center + Vector2(-8.0, -20.0), 3.2, outline)
-    draw_circle(center + Vector2(8.0, -20.0), 3.2, outline)
-    draw_circle(center + Vector2(-9.0, -21.0), 0.9, Color.WHITE)
-    draw_circle(center + Vector2(7.0, -21.0), 0.9, Color.WHITE)
-    draw_arc(center + Vector2(0.0, -11.0), 7.0, 0.15, PI - 0.15, 12, outline, 2.0)
-    draw_circle(center + Vector2(0.0, 12.0), 4.0, accent)
 
 
 func _draw_ground() -> void:
@@ -2504,8 +2436,9 @@ func _fit_scale_for_viewport(tex_size: Vector2, viewport_size: Vector2) -> float
 
 
 func _effective_hit_radius() -> float:
-    if _current_texture != null:
-        var tex_size: Vector2 = _current_texture.get_size() * _sprite_scale
+    var texture := _presentation_texture()
+    if texture != null:
+        var tex_size: Vector2 = texture.get_size() * _sprite_scale
         return maxf(FALLBACK_HIT_RADIUS, maxf(tex_size.x, tex_size.y) * 0.28)
     return FALLBACK_HIT_RADIUS
 

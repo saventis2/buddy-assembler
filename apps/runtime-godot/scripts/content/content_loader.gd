@@ -18,8 +18,9 @@ const REQUIRED_KEYS := [
 
 # Last-resort synthetic manifest. The runtime returns to this when the
 # user's selected pack AND core_pack both fail validation. It references
-# no external assets so it cannot itself fail an asset check — the buddy
-# falls back to a code-drawn placeholder, but the app still launches.
+# no external assets so it cannot itself fail an asset check. The renderer
+# falls back to the tracked core idle asset, so the app still launches without
+# inventing replacement artwork.
 const BUILTIN_FALLBACK_MANIFEST := {
     "schemaVersion": 1,
     "runtimeAudience": "user",
@@ -296,7 +297,7 @@ static func validate_manifest(manifest: Dictionary) -> Array:
             var visual: Dictionary = visual_variant
             var face_mode := str(visual.get("faceMode", PortableBuddyFallback.FACE_MODE_EMBEDDED))
             if not PortableBuddyFallback.VALID_FACE_MODES.has(face_mode):
-                errors.append("visual.faceMode must be embedded or overlay_or_code")
+                errors.append("visual.faceMode must be embedded")
             var scale_raw = visual.get("scale", null)
             if scale_raw != null:
                 if typeof(scale_raw) != TYPE_FLOAT and typeof(scale_raw) != TYPE_INT:

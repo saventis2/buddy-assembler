@@ -263,15 +263,15 @@ def validate_manifest(manifest: dict[str, Any]) -> list[ValidationError]:
             dict,
             visual_path,
             errors,
-            'Define "visual" as an object, or omit the "visual" key entirely to use the code-drawn placeholder.',
+            'Define "visual" as an object, or omit the "visual" key to use the tracked core fallback asset.',
         ):
             face_mode = visual.get("faceMode", "embedded")
-            if face_mode not in ("embedded", "overlay_or_code"):
+            if face_mode != "embedded":
                 add_error(
                     errors,
                     f"{visual_path}.faceMode",
-                    f"must be 'embedded' or 'overlay_or_code', found {describe(face_mode)}",
-                    'Use "overlay_or_code" for the repository-authored portable face fallback.',
+                    f"must be 'embedded', found {describe(face_mode)}",
+                    'Use "embedded" so the runtime renders the approved composed asset without replacement graphics.',
                 )
             scale = visual.get("scale")
             if scale is not None and (not is_number(scale) or float(scale) <= 0):
@@ -584,16 +584,6 @@ def validate_manifest_dependencies(
             animation_pack_root = runtime_root / "content" / runtime_relative[1]
         check_one(f"{label}.sheet", animation["sheet"], animation_pack_root)
 
-    if visual.get("faceMode", "embedded") == "overlay_or_code":
-        fallback_rel = "apps/runtime-godot/scripts/visual/portable_buddy_fallback.gd"
-        fallback_path = repo_root / fallback_rel
-        if not fallback_path.is_file() or fallback_rel not in tracked:
-            add_error(
-                errors,
-                "manifest.visual.faceMode",
-                "portable face fallback implementation is missing or untracked",
-                "Track the repository-owned fallback implementation.",
-            )
     return errors
 
 

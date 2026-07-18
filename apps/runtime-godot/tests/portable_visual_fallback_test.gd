@@ -2,29 +2,24 @@ extends Node
 
 const PortableBuddyFallback = preload("res://scripts/visual/portable_buddy_fallback.gd")
 const BuddyOverlayScript = preload("res://scripts/buddy_overlay.gd")
-const ANIMATION_ROOT := "res://content/core_pack/character/animations"
-const ACTIONS := ["idle", "wander", "sit", "sleep", "happy", "gift", "visitor"]
-const EXPECTED_FACE_CENTERS_PX := {
-    "idle": [Vector2(31.0, 36.0), Vector2(30.0, 35.0), Vector2(29.0, 36.0)],
-    "wander": [Vector2(37.0, 36.0), Vector2(37.0, 37.0), Vector2(37.0, 36.0), Vector2(37.0, 35.0)],
-    "sit": [Vector2(25.0, 35.0)],
-    "sleep": [Vector2(34.0, 35.0)],
-    "happy": [Vector2(34.0, 35.0), Vector2(34.0, 35.0), Vector2(34.0, 35.0)],
-    "gift": [Vector2(30.0, 36.0), Vector2(26.0, 35.0), Vector2(33.0, 35.0)],
-    "visitor": [Vector2(37.0, 36.0), Vector2(37.0, 37.0), Vector2(37.0, 36.0), Vector2(37.0, 35.0)],
-}
+const USER_PACK_MANIFESTS := [
+    "res://content/core_pack/manifest.json",
+    "res://content/night_pack/manifest.json",
+]
+const VIEWPORT_SIZE := Vector2(340.0, 340.0)
+const VIEW_MARGIN := 4.0
 
 var _failures: Array[String] = []
 
 
 func _ready() -> void:
     _check_path_boundary()
-    _check_presentation_modes()
-    _check_all_shipping_frames()
+    _check_asset_only_presentation()
+    _check_fallback_viewport()
     _check_process_relative_decoys()
-    _check_red_error_box_removed()
+    _check_shipping_source_policy()
     if _failures.is_empty():
-        print("portable_visual_fallback_test: PASS (19 shipping frames)")
+        print("portable_visual_fallback_test: PASS (existing assets only)")
         get_tree().quit(0)
         return
     for failure in _failures:
@@ -56,68 +51,56 @@ func _check_path_boundary() -> void:
             _failures.append("safe pack id rejected: %s" % pack_id)
 
 
-func _check_presentation_modes() -> void:
-    if PortableBuddyFallback.presentation_mode(Vector2.ZERO, "overlay_or_code", false) != "emergency":
-        _failures.append("missing body did not select emergency buddy")
-    if PortableBuddyFallback.presentation_mode(Vector2(-1.0, 40.0), "overlay_or_code", false) != "emergency":
-        _failures.append("corrupt body dimensions did not select emergency buddy")
-    if PortableBuddyFallback.presentation_mode(Vector2(64.0, 80.0), "overlay_or_code", false) != "code_face":
-        _failures.append("missing approved face did not select code face")
-    if PortableBuddyFallback.presentation_mode(Vector2(64.0, 80.0), "overlay_or_code", true) != "approved_overlay":
-        _failures.append("approved repository face did not retain overlay behavior")
-    if PortableBuddyFallback.presentation_mode(Vector2(64.0, 80.0), "embedded", false) != "embedded":
-        _failures.append("embedded visual behavior was not preserved")
+func _check_asset_only_presentation() -> void:
+    if PortableBuddyFallback.presentation_mode(Vector2(64.0, 80.0), Vector2(65.0, 88.0)) != PortableBuddyFallback.PRESENTATION_SELECTED_ASSET:
+        _failures.append("usable selected asset was not preferred")
+    if PortableBuddyFallback.presentation_mode(Vector2.ZERO, Vector2(65.0, 88.0)) != PortableBuddyFallback.PRESENTATION_FALLBACK_ASSET:
+        _failures.append("missing selected asset did not choose the tracked fallback asset")
+    if PortableBuddyFallback.presentation_mode(Vector2(-1.0, 40.0), Vector2(65.0, 88.0)) != PortableBuddyFallback.PRESENTATION_FALLBACK_ASSET:
+        _failures.append("invalid selected asset dimensions did not choose the tracked fallback asset")
+    if PortableBuddyFallback.presentation_mode(Vector2.ZERO, Vector2.ZERO) != PortableBuddyFallback.PRESENTATION_UNAVAILABLE:
+        _failures.append("missing selected and fallback assets did not fail honestly")
 
-
-func _check_all_shipping_frames() -> void:
-    var checked := 0
-    for action in ACTIONS:
-        var file := FileAccess.open("%s/%s.json" % [ANIMATION_ROOT, action], FileAccess.READ)
+    if PortableBuddyFallback.VALID_FACE_MODES != [PortableBuddyFallback.FACE_MODE_EMBEDDED]:
+        _failures.append("face policy permits a non-embedded drawing mode")
+    for manifest_path in USER_PACK_MANIFESTS:
+        var file := FileAccess.open(manifest_path, FileAccess.READ)
         if file == null:
-            _failures.append("missing animation manifest: %s" % action)
+            _failures.append("missing user pack manifest: %s" % manifest_path)
             continue
         var parsed = JSON.parse_string(file.get_as_text())
         file.close()
         if typeof(parsed) != TYPE_DICTIONARY:
-            _failures.append("invalid animation manifest: %s" % action)
+            _failures.append("invalid user pack manifest: %s" % manifest_path)
             continue
-        for frame_variant in (parsed as Dictionary).get("frames", []):
-            if typeof(frame_variant) != TYPE_DICTIONARY:
-                _failures.append("non-object frame in %s" % action)
-                continue
-            var frame: Dictionary = frame_variant
-            var rect: Array = frame.get("rect", [])
-            if rect.size() < 4:
-                _failures.append("frame without rect in %s" % action)
-                continue
-            var source_size := Vector2(float(rect[2]), float(rect[3]))
-            var frame_index := int(frame.get("index", -1))
-            var plan := PortableBuddyFallback.face_plan(action, frame_index, source_size)
-            if not bool(plan.get("complete", false)):
-                _failures.append("incomplete code face for %s frame %s" % [action, frame.get("index", "?")])
-                continue
-            var expected: Vector2 = EXPECTED_FACE_CENTERS_PX[action][frame_index]
-            var center_px: Vector2 = plan.get("center_px", Vector2(-1.0, -1.0))
-            if not center_px.is_equal_approx(expected):
-                _failures.append("wrong face center for %s[%d]: expected %s, got %s" % [action, frame_index, expected, center_px])
-            var normalized: Vector2 = plan.get("center_normalized", Vector2(-1.0, -1.0))
-            var reconstructed := Vector2(normalized.x * source_size.x, normalized.y * source_size.y)
-            if not reconstructed.is_equal_approx(expected):
-                _failures.append("normalized face center drift for %s[%d]: expected %s, got %s" % [action, frame_index, expected, reconstructed])
-            if expected.x <= 0.0 or expected.y <= 0.0 or expected.x >= source_size.x or expected.y >= source_size.y:
-                _failures.append("face center outside tracked frame for %s[%d]: %s in %s" % [action, frame_index, expected, source_size])
+        var visual = (parsed as Dictionary).get("visual", {})
+        if typeof(visual) != TYPE_DICTIONARY or str((visual as Dictionary).get("faceMode", "")) != PortableBuddyFallback.FACE_MODE_EMBEDDED:
+            _failures.append("user pack does not use embedded repository artwork: %s" % manifest_path)
 
-            var sprite_rect := Rect2(Vector2(100.0, 50.0), source_size * 2.0)
-            var geometry := BuddyOverlayScript.code_face_geometry(action, frame_index, source_size, sprite_rect)
-            var expected_screen := sprite_rect.position + (expected * 2.0)
-            var actual_screen: Vector2 = geometry.get("center", Vector2(-1.0, -1.0))
-            if not actual_screen.is_equal_approx(expected_screen):
-                _failures.append("BuddyOverlay face integration drift for %s[%d]: expected %s, got %s" % [action, frame_index, expected_screen, actual_screen])
-            if action == "sleep" and actual_screen.x >= sprite_rect.get_center().x:
-                _failures.append("sleep face landed on the prone body: %s" % actual_screen)
-            checked += 1
-    if checked != 19:
-        _failures.append("expected 19 shipping frames, checked %d" % checked)
+
+func _check_fallback_viewport() -> void:
+    if PortableBuddyFallback.FALLBACK_TEXTURE_PATH != "res://content/core_pack/character/idle.png":
+        _failures.append("fallback does not identify the approved tracked idle asset")
+        return
+    if not ResourceLoader.exists(PortableBuddyFallback.FALLBACK_TEXTURE_PATH, "Texture2D"):
+        _failures.append("tracked fallback texture is unavailable")
+        return
+    var texture := load(PortableBuddyFallback.FALLBACK_TEXTURE_PATH) as Texture2D
+    if texture == null:
+        _failures.append("tracked fallback texture did not load")
+        return
+    var rect := PortableBuddyFallback.fitted_asset_rect(
+        VIEWPORT_SIZE,
+        texture.get_size(),
+        2.35,
+        VIEW_MARGIN
+    )
+    if rect.size.x <= 0.0 or rect.size.y <= 0.0:
+        _failures.append("fallback asset produced an empty draw rectangle")
+    if rect.position.x < VIEW_MARGIN or rect.position.y < VIEW_MARGIN:
+        _failures.append("fallback asset starts outside the safe viewport: %s" % rect)
+    if rect.end.x > VIEWPORT_SIZE.x - VIEW_MARGIN or rect.end.y > VIEWPORT_SIZE.y - VIEW_MARGIN:
+        _failures.append("fallback asset ends outside the safe viewport: %s" % rect)
 
 
 func _check_process_relative_decoys() -> void:
@@ -141,7 +124,7 @@ func _check_process_relative_decoys() -> void:
     overlay.free()
 
 
-func _check_red_error_box_removed() -> void:
+func _check_shipping_source_policy() -> void:
     var file := FileAccess.open("res://scripts/buddy_overlay.gd", FileAccess.READ)
     if file == null:
         _failures.append("could not inspect shipping overlay source")
@@ -150,8 +133,14 @@ func _check_red_error_box_removed() -> void:
     file.close()
     if source.contains("missing_rect"):
         _failures.append("red missing-asset box remains in shipping draw path")
-    if not source.contains("_draw_emergency_buddy"):
-        _failures.append("emergency buddy draw path is absent")
+    if source.contains("_draw_code_face") or source.contains("code_face_geometry"):
+        _failures.append("shipping runtime still contains a code-drawn face path")
+    if source.contains("_draw_emergency_buddy"):
+        _failures.append("shipping runtime still contains a code-drawn emergency buddy")
+    if source.contains("draw_circle(") or source.contains("draw_arc("):
+        _failures.append("shipping overlay still draws replacement facial or character graphics")
+    if not source.contains("PORTABLE_FALLBACK_TEXTURE") or not source.contains(PortableBuddyFallback.FALLBACK_TEXTURE_PATH):
+        _failures.append("shipping runtime does not preload the approved fallback asset")
     if source.contains("_load_face_overlay_for_frame") or source.contains("/frames/%03d.json"):
         _failures.append("shipping runtime still loads excluded per-frame metadata")
     if source.contains("_load_texture_from_file(path_spec)") or source.contains("_read_text_file(path_spec)"):

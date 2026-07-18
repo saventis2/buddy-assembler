@@ -106,7 +106,7 @@ jobs:
         run: |
           set -euo pipefail
           timeout 90s godot --headless --path ../../../.. res://tests/PortableVisualFallbackTest.tscn 2>&1 | tee ../../../../../../portable-visual-fallback.log
-          grep -E "portable_visual_fallback_test: PASS \(19 shipping frames\)" ../../../../../../portable-visual-fallback.log
+          grep -E "portable_visual_fallback_test: PASS \(existing assets only\)" ../../../../../../portable-visual-fallback.log
 
       - name: World + economy flow test
         working-directory: ${{ env.RUNTIME_DIR }}

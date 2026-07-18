@@ -90,7 +90,7 @@ These are known at V1 ship but do not block release:
 | F8 | Move to next monitor |
 | F9 | Cycle content pack |
 | F10 | Toggle emote debug panel |
-| 1–0 | Trigger specific face emote |
+| 1–0 | Debug semantic selection only; v0.1 does not overlay replacement faces |
 
 ### Common problems
 

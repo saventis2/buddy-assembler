@@ -41,7 +41,7 @@ content/<pack_id>/
     "traits": ["calm", "playful"]
   },
   "visual": {
-    "faceMode": "overlay_or_code",
+    "faceMode": "embedded",
     "scale": 2.35,
     "anchor": [0.5, 1.0],
     "animations": {
@@ -98,7 +98,7 @@ content/<pack_id>/
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `visual` | object | If omitted or unusable, the complete code-drawn emergency buddy is used |
+| `visual` | object | If omitted or unusable, the tracked core idle asset is used |
 | `encounterActions` | array | Actions playable via event rules |
 | `items` | array | Optional runtime item definitions (id, category, rarity, theme) |
 | `currencies` | object | Optional currency defaults (for V1, usually `crystals`) |
@@ -108,11 +108,13 @@ content/<pack_id>/
 | `quests` | array | Optional quest pool with `rewards` payload |
 | `encounters` | array | Optional encounter pool with engage/skip rewards |
 
-`visual.faceMode` is `embedded` by default. `overlay_or_code` preserves a
-valid repository asset overlay when available and otherwise draws the
-repository-authored portable face over the tracked body. Asset paths must be
-pack-relative or `res://`; drive-letter, filesystem-absolute, `user://`,
-traversal, missing, ignored, and untracked dependencies fail validation.
+`visual.faceMode` is `embedded`, which renders the approved composed character
+asset without adding replacement face or eye graphics. If selected visual
+content is missing or unusable, the runtime displays the tracked
+`res://content/core_pack/character/idle.png` asset fully inside the viewport.
+Asset paths must be pack-relative or `res://`; drive-letter,
+filesystem-absolute, `user://`, traversal, missing, ignored, and untracked
+dependencies fail validation.
 
 `runtimeAudience: development` packs are absent from the normal user cycle.
 Developers can exercise them from a source checkout with

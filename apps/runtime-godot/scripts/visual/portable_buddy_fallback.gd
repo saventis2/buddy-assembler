@@ -1,30 +1,11 @@
 extends RefCounted
 
 const FACE_MODE_EMBEDDED := "embedded"
-const FACE_MODE_OVERLAY_OR_CODE := "overlay_or_code"
-const VALID_FACE_MODES := [FACE_MODE_EMBEDDED, FACE_MODE_OVERLAY_OR_CODE]
-
-const FACE_CENTERS_PX := {
-    # Face asset origins projected into each tracked shipping frame. Exported
-    # builds never need the excluded per-frame workstation metadata.
-    "idle": [Vector2(31.0, 36.0), Vector2(30.0, 35.0), Vector2(29.0, 36.0)],
-    "wander": [Vector2(37.0, 36.0), Vector2(37.0, 37.0), Vector2(37.0, 36.0), Vector2(37.0, 35.0)],
-    "sit": [Vector2(25.0, 35.0)],
-    "sleep": [Vector2(34.0, 35.0)],
-    "happy": [Vector2(34.0, 35.0), Vector2(34.0, 35.0), Vector2(34.0, 35.0)],
-    "gift": [Vector2(30.0, 36.0), Vector2(26.0, 35.0), Vector2(33.0, 35.0)],
-    "visitor": [Vector2(37.0, 36.0), Vector2(37.0, 37.0), Vector2(37.0, 36.0), Vector2(37.0, 35.0)],
-}
-
-const FRAME_SIZES_PX := {
-    "idle": [Vector2(65.0, 89.0), Vector2(65.0, 89.0), Vector2(65.0, 89.0)],
-    "wander": [Vector2(73.0, 85.0), Vector2(73.0, 85.0), Vector2(73.0, 85.0), Vector2(73.0, 85.0)],
-    "sit": [Vector2(59.0, 77.0)],
-    "sleep": [Vector2(87.0, 64.0)],
-    "happy": [Vector2(68.0, 83.0), Vector2(68.0, 83.0), Vector2(68.0, 83.0)],
-    "gift": [Vector2(67.0, 84.0), Vector2(67.0, 84.0), Vector2(67.0, 84.0)],
-    "visitor": [Vector2(73.0, 85.0), Vector2(73.0, 85.0), Vector2(73.0, 85.0), Vector2(73.0, 85.0)],
-}
+const VALID_FACE_MODES := [FACE_MODE_EMBEDDED]
+const FALLBACK_TEXTURE_PATH := "res://content/core_pack/character/idle.png"
+const PRESENTATION_SELECTED_ASSET := "selected_asset"
+const PRESENTATION_FALLBACK_ASSET := "fallback_asset"
+const PRESENTATION_UNAVAILABLE := "unavailable"
 
 
 static func is_repository_asset_path(path_spec: String) -> bool:
@@ -57,44 +38,35 @@ static func is_pack_id(pack_id: String) -> bool:
     return true
 
 
-static func presentation_mode(
-    body_size: Vector2,
-    face_mode: String,
-    approved_face_available: bool
-) -> String:
-    if body_size.x <= 0.0 or body_size.y <= 0.0:
-        return "emergency"
-    if face_mode == FACE_MODE_EMBEDDED:
-        return "embedded"
-    if face_mode == FACE_MODE_OVERLAY_OR_CODE and approved_face_available:
-        return "approved_overlay"
-    return "code_face"
+static func presentation_mode(selected_size: Vector2, fallback_size: Vector2) -> String:
+    if selected_size.x > 0.0 and selected_size.y > 0.0:
+        return PRESENTATION_SELECTED_ASSET
+    if fallback_size.x > 0.0 and fallback_size.y > 0.0:
+        return PRESENTATION_FALLBACK_ASSET
+    return PRESENTATION_UNAVAILABLE
 
 
-static func face_plan(action_id: String, frame_index: int, source_size: Vector2) -> Dictionary:
-    if source_size.x <= 0.0 or source_size.y <= 0.0:
-        return {}
-    var centers_variant = FACE_CENTERS_PX.get(action_id, [])
-    var sizes_variant = FRAME_SIZES_PX.get(action_id, [])
-    if typeof(centers_variant) != TYPE_ARRAY or typeof(sizes_variant) != TYPE_ARRAY:
-        return {}
-    var centers: Array = centers_variant
-    var sizes: Array = sizes_variant
-    if frame_index < 0 or frame_index >= centers.size() or frame_index >= sizes.size():
-        return {}
-    var expected_size: Vector2 = sizes[frame_index]
-    if not source_size.is_equal_approx(expected_size):
-        return {}
-    var center_px: Vector2 = centers[frame_index]
-    return {
-        "complete": true,
-        "center_px": center_px,
-        "center_normalized": Vector2(center_px.x / source_size.x, center_px.y / source_size.y),
-        "eye_spacing_normalized": 0.055,
-        "eye_radius_normalized": 0.018,
-        "mouth_width_normalized": 0.10,
-    }
+static func fitted_asset_rect(
+    viewport_size: Vector2,
+    texture_size: Vector2,
+    requested_scale: float,
+    margin: float
+) -> Rect2:
+    if viewport_size.x <= 0.0 or viewport_size.y <= 0.0:
+        return Rect2()
+    if texture_size.x <= 0.0 or texture_size.y <= 0.0:
+        return Rect2()
 
-
-static func emergency_bounds(center: Vector2) -> Rect2:
-    return Rect2(center - Vector2(39.0, 51.0), Vector2(78.0, 98.0))
+    var safe_margin := maxf(0.0, margin)
+    var max_width := maxf(1.0, viewport_size.x - (safe_margin * 2.0))
+    var max_height := maxf(1.0, viewport_size.y - (safe_margin * 2.0))
+    var scale := minf(
+        maxf(0.01, requested_scale),
+        minf(max_width / texture_size.x, max_height / texture_size.y)
+    )
+    var draw_size := texture_size * scale
+    var top_left := Vector2(
+        (viewport_size.x - draw_size.x) * 0.5,
+        viewport_size.y - safe_margin - draw_size.y
+    )
+    return Rect2(top_left, draw_size)

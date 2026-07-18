@@ -5,9 +5,11 @@
 
 ## What this proves
 
-The runtime content pipeline is generic. It does not require MapleStory assets
-to function. A conforming pack can load and validate with no visual assets;
-the runtime then uses the complete repository-authored emergency buddy.
+The manifest and validation lane is generic: a conforming development pack can
+load and validate with no visual assets. This does not prove an asset-free
+shipping runtime; when that pack has no visual, the runtime deliberately uses
+the existing tracked and approved core idle asset rather than generating
+replacement art.
 
 ## How it was proven
 

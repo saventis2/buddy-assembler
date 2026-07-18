@@ -34,14 +34,14 @@ manifest required by PR-13.
 | Notes | The semantic `manifest.json` remains tracked. Workstation-local face PNG paths are not shipping dependencies and are rejected by the runtime. |
 | Status | Optional only; not required by the V1 shipping closure |
 
-### Portable face and emergency buddy — repository code
+### Portable missing-visual fallback — approved repository asset
 
 | Attribute | Value |
 |-----------|-------|
-| Source | Original repository-authored Godot drawing code |
-| Implementation | `scripts/visual/portable_buddy_fallback.gd` plus drawing primitives in `buddy_overlay.gd` |
-| Runtime behavior | Draws a deterministic complete face over the tracked body; draws a complete emergency buddy if the body is missing or unusable |
-| External assets | None; no WZ/NX extract, ignored file, test fixture, or runtime generator |
+| Source | Existing tracked and approved `character/idle.png` composed character asset |
+| Implementation | `scripts/visual/portable_buddy_fallback.gd` selects and fits the existing asset; `buddy_overlay.gd` renders it through `draw_texture_rect` |
+| Runtime behavior | Preserves embedded face artwork and displays the tracked idle asset if selected visual content is missing or unusable |
+| Generated graphics | None; the shipping path does not construct replacement eyes, faces, or emergency characters in code |
 | Status | Required portable V1 fallback; this provenance statement does not resolve repository licensing or public-release authority |
 
 ### `character/animations/*.json` — animation manifests

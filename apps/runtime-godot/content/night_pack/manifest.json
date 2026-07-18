@@ -14,7 +14,7 @@
     ]
   },
   "visual": {
-    "faceMode": "overlay_or_code",
+    "faceMode": "embedded",
     "scale": 2.35,
     "anchor": [
       0.5,

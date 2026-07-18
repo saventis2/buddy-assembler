@@ -67,7 +67,7 @@
       "properties": {
         "faceMode": {
           "type": "string",
-          "enum": ["embedded", "overlay_or_code"],
+          "enum": ["embedded"],
           "default": "embedded"
         },
         "scale": {
