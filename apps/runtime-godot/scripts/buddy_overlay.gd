@@ -2233,18 +2233,16 @@ func _draw_face_overlay() -> bool:
 func _draw_code_face() -> void:
     if _current_texture == null:
         return
-    var plan := PortableBuddyFallback.face_plan(
+    var geometry := code_face_geometry(
         _current_visual_action,
         _current_animation_index,
-        _current_texture.get_size()
+        _current_texture.get_size(),
+        _current_sprite_rect
     )
-    if not bool(plan.get("complete", false)):
+    if not bool(geometry.get("complete", false)):
         return
-    var normalized: Vector2 = plan.get("center_normalized", Vector2(0.5, 0.38))
-    var center := _current_sprite_rect.position + Vector2(
-        normalized.x * _current_sprite_rect.size.x,
-        normalized.y * _current_sprite_rect.size.y
-    )
+    var plan: Dictionary = geometry["plan"]
+    var center: Vector2 = geometry["center"]
     var unit := maxf(1.0, minf(_current_sprite_rect.size.x, _current_sprite_rect.size.y) / 70.0)
     var eye_spacing := maxf(3.0 * unit, _current_sprite_rect.size.x * float(plan["eye_spacing_normalized"]))
     var eye_radius := maxf(1.25 * unit, minf(_current_sprite_rect.size.x, _current_sprite_rect.size.y) * float(plan["eye_radius_normalized"]))
@@ -2262,6 +2260,26 @@ func _draw_code_face() -> void:
     var mouth_width := maxf(4.0 * unit, _current_sprite_rect.size.x * float(plan["mouth_width_normalized"]))
     var mouth_center := center + Vector2(0.0, 4.0 * unit)
     draw_arc(mouth_center, mouth_width * 0.5, 0.15, PI - 0.15, 12, ink, maxf(1.0, unit))
+
+
+static func code_face_geometry(
+    action_id: String,
+    frame_index: int,
+    source_size: Vector2,
+    sprite_rect: Rect2
+) -> Dictionary:
+    var plan := PortableBuddyFallback.face_plan(action_id, frame_index, source_size)
+    if not bool(plan.get("complete", false)):
+        return {}
+    var normalized: Vector2 = plan["center_normalized"]
+    return {
+        "complete": true,
+        "center": sprite_rect.position + Vector2(
+            normalized.x * sprite_rect.size.x,
+            normalized.y * sprite_rect.size.y
+        ),
+        "plan": plan,
+    }
 
 
 func _draw_emergency_buddy(center: Vector2) -> void:
@@ -2495,6 +2513,8 @@ func _effective_hit_radius() -> float:
 func _resolve_texture(path_spec: String, pack_id: String) -> Texture2D:
     if not PortableBuddyFallback.is_repository_asset_path(path_spec):
         return null
+    if not path_spec.begins_with("res://") and not PortableBuddyFallback.is_pack_id(pack_id):
+        return null
     var res_candidates: Array[String] = []
     if path_spec.begins_with("res://"):
         res_candidates.append(path_spec)
@@ -2511,11 +2531,6 @@ func _resolve_texture(path_spec: String, pack_id: String) -> Texture2D:
         var loaded_fs := _load_texture_from_file(fs_path)
         if loaded_fs != null:
             return loaded_fs
-
-    if not path_spec.begins_with("res://"):
-        var direct_loaded := _load_texture_from_file(path_spec)
-        if direct_loaded != null:
-            return direct_loaded
 
     return null
 
@@ -2543,9 +2558,6 @@ func _load_animation_spec(path_spec: String, pack_id: String) -> Dictionary:
     if typeof(parsed) != TYPE_DICTIONARY:
         return {}
     var animation_data: Dictionary = parsed
-    var animation_state := str(animation_data.get("state", ""))
-    var animation_dir := animation_source_path.get_base_dir()
-
     var sheet_path := str(animation_data.get("sheet", ""))
     if sheet_path == "":
         return {}
@@ -2586,8 +2598,9 @@ func _load_animation_spec(path_spec: String, pack_id: String) -> Dictionary:
         atlas.atlas = sheet_texture
         atlas.region = Rect2(rect_x, rect_y, rect_w, rect_h)
         frames.append(atlas)
-        var source_frame := int(frame_data.get("source_frame", int(frame_data.get("index", 0))))
-        face_overlays.append(_load_face_overlay_for_frame(animation_dir, animation_state, source_frame))
+        # Per-frame face metadata is excluded from shipping. Keep the runtime
+        # overlay array aligned without reading those development-only files.
+        face_overlays.append({})
 
         var duration_ms_raw = frame_data.get("duration_ms", 120)
         var duration_seconds := 0.12
@@ -2624,52 +2637,6 @@ func _load_animation_spec(path_spec: String, pack_id: String) -> Dictionary:
     }
 
 
-func _load_face_overlay_for_frame(animation_dir: String, animation_state: String, source_frame: int) -> Dictionary:
-    if animation_dir == "" or animation_state == "":
-        return {}
-    var frame_rel_path := "%s/frames/%03d.json" % [animation_state, source_frame]
-    var metadata_path := animation_dir.path_join(frame_rel_path)
-    var raw := _read_text_file(metadata_path)
-    if raw == "":
-        return {}
-
-    var parsed = JSON.parse_string(raw)
-    if typeof(parsed) != TYPE_DICTIONARY:
-        return {}
-    var metadata: Dictionary = parsed
-    var bounds_variant = metadata.get("frame_bounds_world", {})
-    if typeof(bounds_variant) != TYPE_DICTIONARY:
-        return {}
-    var bounds: Dictionary = bounds_variant
-    var bounds_left := float(bounds.get("left", 0.0))
-    var bounds_top := float(bounds.get("top", 0.0))
-
-    var draw_order_variant = metadata.get("draw_order", [])
-    if typeof(draw_order_variant) != TYPE_ARRAY:
-        return {}
-    var draw_order: Array = draw_order_variant
-    for entry_variant in draw_order:
-        if typeof(entry_variant) != TYPE_DICTIONARY:
-            continue
-        var entry: Dictionary = entry_variant
-        if str(entry.get("asset_kind", "")) != "face":
-            continue
-        var top_left_variant = entry.get("top_left", [])
-        if typeof(top_left_variant) != TYPE_ARRAY or (top_left_variant as Array).size() < 2:
-            continue
-        var top_left: Array = top_left_variant
-        var local_x := float(top_left[0]) - bounds_left
-        var local_y := float(top_left[1]) - bounds_top
-        var default_path := str(entry.get("png", ""))
-        if default_path == "":
-            continue
-        return {
-            "default_png": default_path,
-            "local_top_left": [local_x, local_y],
-        }
-    return {}
-
-
 func _resolve_text(path_spec: String, pack_id: String) -> String:
     var bundle := _resolve_text_with_source(path_spec, pack_id)
     return str(bundle.get("text", ""))
@@ -2677,6 +2644,8 @@ func _resolve_text(path_spec: String, pack_id: String) -> String:
 
 func _resolve_text_with_source(path_spec: String, pack_id: String) -> Dictionary:
     if not PortableBuddyFallback.is_repository_asset_path(path_spec):
+        return {}
+    if not path_spec.begins_with("res://") and not PortableBuddyFallback.is_pack_id(pack_id):
         return {}
     var res_candidates: Array[String] = []
     if path_spec.begins_with("res://"):
@@ -2694,10 +2663,6 @@ func _resolve_text_with_source(path_spec: String, pack_id: String) -> Dictionary
         if from_fs != "":
             return {"text": from_fs, "source": fs_path}
 
-    if not path_spec.begins_with("res://"):
-        var from_direct := _read_text_file(path_spec)
-        if from_direct != "":
-            return {"text": from_direct, "source": path_spec}
     return {}
 
 

@@ -30,7 +30,13 @@ paths.
 
 Run `python validate_shipping_closure.py` from any directory to verify the
 two user packs, the development-pack boundary, and the reviewed Windows
-export include/exclude declaration.
+positive export declaration in `shipping_inventory.json`.
+
+`release_artifact_checks.py` reads the actual unencrypted Godot 4.2 PCK
+directory and compares it to that same contract. It also writes and verifies
+artifact-root-relative `SHA256SUMS` manifests. Run
+`python test_release_artifact_checks.py` for missing, mismatched, unlisted,
+unexpected-PCK-file, and PCK-parser negative coverage.
 
 ```
 INVALID manifest -> ...\fixtures\invalid_missing_action.json

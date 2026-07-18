@@ -8,7 +8,7 @@ later release.
 The `buddy-runtime-windows` CI artifact contains:
 
 ```
-build/windows/
+buddy-runtime-windows/
 ├── BuddyRuntime.exe     # Godot runner + embedded or paired .pck
 ├── BuddyRuntime.pck     # Content pack (absent if embed_pck=true)
 └── SHA256SUMS           # One line per file: "<sha256>  <relative path>"
@@ -69,22 +69,30 @@ separate console window would be jarring).
 
 ## CI gates
 
-The export preset uses a reviewed all-resources-plus-denylist closure. It
-includes the exact JSON control plane needed by the runtime and excludes
-sample/development packs, importer tooling, tests, vertical-slice resources,
-and unused demo/runtime lanes.
+The export preset uses a positive selected-resources closure. The approved
+source roots, exact JSON control plane, and exact generated PCK directory are
+reviewed together in `packages/content-validator/shipping_inventory.json`.
+Anything outside that inventory is absent by default, including sample packs,
+tests, tools, vertical-slice, imported/intermediate, WZ/NX, ignored, and
+workstation-local content.
 
 1. `validate_shipping_closure.py` checks the tracked manifest dependency
-   graph and the export include/exclude declaration.
-2. `windows-export` produces `BuddyRuntime.exe` under
-   `build/windows/`. Missing .exe fails the step.
-3. The exported executable runs `--verify-export-closure` and must emit the
+   graph and exact positive export declaration. Release artifact unit tests
+   prove missing, mismatched, unlisted, and unexpected PCK files fail closed.
+2. `windows-export` installs SHA256-pinned `rcedit` v2.0.0 and fails on a
+   non-zero export or any exporter error line.
+3. The produced executable's Windows `VersionInfo` must exactly match the
+   company, product, description, and versions declared in
+   `export_presets.cfg`; `Godot Engine` metadata is rejected.
+4. The actual `BuddyRuntime.pck` directory must exactly equal the approved
+   `pck_files` inventory.
+5. The exported executable runs `--verify-export-closure` and must emit the
    exact `export_closure_check: PASS` marker after proving required resources
    present and development sentinels absent.
-4. `Compute SHA256SUMS` writes `SHA256SUMS` into the same
-   directory. The artifact uploaded contains both the build and the
-   hash manifest.
-5. Release tag cut only after RC scenario suite
+6. The EXE and PCK are copied into a download-equivalent staging root.
+   `SHA256SUMS` uses paths relative to that root and is verified successfully
+   from inside it before upload.
+7. Release tag cut only after RC scenario suite
    (`RC_SCENARIO_SUITE.md`) passes on the artifact.
 
 ## Release-time checklist
