@@ -100,6 +100,26 @@ def run_suite(
         print(f"headless_suite: invalid contract: {exc}", file=sys.stderr)
         return 1
 
+    # Godot 4.2.2 can return 1 from a successful Windows headless import while
+    # emitting only display/importer warnings. Treat the import as a cache-
+    # population prepass and let the required startup/scene cases make success
+    # authoritative: a missing import or parse failure makes those cases red.
+    print("\n=== clean-checkout-import ===")
+    try:
+        import_result = command_runner(
+            [godot, "--headless", "--path", str(project), "--import"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired:
+        print("headless_suite[clean-checkout-import]: timed out", file=sys.stderr)
+        return 1
+    import_output = import_result.stdout + import_result.stderr
+    print(import_output, end="" if import_output.endswith("\n") else "\n")
+    print(f"headless_suite: import prepass exit={import_result.returncode} (non-authoritative)")
+
     executed = 0
     for case in cases:
         command = [godot, "--headless", "--path", str(project)]

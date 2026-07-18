@@ -88,6 +88,7 @@ class RunnerTests(unittest.TestCase):
             runner = mock.Mock(
                 side_effect=[
                     subprocess.CompletedProcess(["godot", "--version"], 0, "4.2.2.stable.test\n", ""),
+                    subprocess.CompletedProcess(["godot", "--import"], 1, "import warning\n", ""),
                     child,
                 ]
             )
@@ -103,6 +104,10 @@ class RunnerTests(unittest.TestCase):
     def test_child_failure_is_not_false_green(self) -> None:
         result = self._run_with(subprocess.CompletedProcess(["godot"], 9, "startup: PASS\n", ""))
         self.assertEqual(result, 1)
+
+    def test_nonzero_import_prepass_is_tolerated_when_required_case_passes(self) -> None:
+        result = self._run_with(subprocess.CompletedProcess(["godot"], 0, "startup: PASS\n", ""))
+        self.assertEqual(result, 0)
 
     def test_missing_pass_marker_is_not_false_green(self) -> None:
         result = self._run_with(subprocess.CompletedProcess(["godot"], 0, "no marker\n", ""))
