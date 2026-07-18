@@ -1,5 +1,6 @@
 {
   "schemaVersion": 1,
+  "runtimeAudience": "user",
   "id": "night-pack",
   "name": "Night Companion Pack",
   "version": "0.1.0",
@@ -13,6 +14,7 @@
     ]
   },
   "visual": {
+    "faceMode": "embedded",
     "scale": 2.35,
     "anchor": [
       0.5,

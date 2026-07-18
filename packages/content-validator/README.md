@@ -23,7 +23,20 @@ python validate_pack.py ..\..\apps\runtime-godot\content\core_pack\manifest.json
 
 Returns non-zero exit code when validation fails. Failures report the JSON
 path of the offending field (e.g. `manifest.eventRules[2].action`) plus a
-one-line hint on how to fix it:
+one-line hint on how to fix it. For on-disk packs, validation also resolves
+animation sheets and other declared visual dependencies, and rejects missing,
+ignored, untracked, drive-letter, absolute, traversal, and workstation-local
+paths.
+
+Run `python validate_shipping_closure.py` from any directory to verify the
+two user packs, the development-pack boundary, and the reviewed Windows
+positive export declaration in `shipping_inventory.json`.
+
+`release_artifact_checks.py` reads the actual unencrypted Godot 4.2 PCK
+directory and compares it to that same contract. It also writes and verifies
+artifact-root-relative `SHA256SUMS` manifests. Run
+`python test_release_artifact_checks.py` for missing, mismatched, unlisted,
+unexpected-PCK-file, and PCK-parser negative coverage.
 
 ```
 INVALID manifest -> ...\fixtures\invalid_missing_action.json

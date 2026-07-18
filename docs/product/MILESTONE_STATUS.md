@@ -86,10 +86,9 @@ Updated: 2026-04-20 (world variety + prompt cadence guard)
   Teleport (visitor depart)
 - [done] Replaced Label-on-forehead bubble with WZ `UI.wz/ChatBalloon.img/0`
   9-slice Node2D
-- [done] 14 face emote variants exposed (stunned, proud, embarrassed,
-  sparkle, humming, kiss, bow, sleepy, sick, pain, wink, hot, vomit, despair,
-  troubled) — base-name `semantic_defaults`, behavior rotation, hotkeys
-  U/I/O/P/H/K/B
+- [deferred] Face-emote metadata and debug semantics exist, but the variant
+  PNGs are not part of the tracked v0.1 shipping closure. The portable runtime
+  preserves the embedded composed frames and does not draw replacement faces.
 - [done] Visitor as second BuddyActor with distinct skin (walk-in, wave,
   walk-off + Teleport sparkle)
 - [done] WZ catalog tooling: `build_wz_index.py` + `analysis/wz_index/`

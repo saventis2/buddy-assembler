@@ -25,6 +25,8 @@ on:
 env:
   GODOT_VERSION: "4.2.2"
   GODOT_RELEASE: "4.2.2-stable"
+  RCEDIT_VERSION: "2.0.0"
+  RCEDIT_SHA256: "3e7801db1a5edbec91b49a24a094aad776cb4515488ea5a4ca2289c400eade2a"
   RUNTIME_DIR: apps/runtime-godot
 
 jobs:
@@ -99,6 +101,13 @@ jobs:
           timeout 90s godot --headless --path . res://tests/PackValidationTest.tscn 2>&1 | tee ../../pack-validation.log
           grep -E "pack_validation_test: PASS" ../../pack-validation.log
 
+      - name: Portable visual fallback test
+        working-directory: ${{ env.RUNTIME_DIR }}/content/core_pack/character/animations
+        run: |
+          set -euo pipefail
+          timeout 90s godot --headless --path ../../../.. res://tests/PortableVisualFallbackTest.tscn 2>&1 | tee ../../../../../../portable-visual-fallback.log
+          grep -E "portable_visual_fallback_test: PASS \(existing assets only\)" ../../../../../../portable-visual-fallback.log
+
       - name: World + economy flow test
         working-directory: ${{ env.RUNTIME_DIR }}
         run: |
@@ -159,6 +168,7 @@ jobs:
             smoke.log
             save-store.log
             pack-validation.log
+            portable-visual-fallback.log
             world-economy-flow.log
             companion-depth.log
             economy-tuning.log
@@ -175,6 +185,11 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Setup Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.11"
 
       - name: Resolve Godot export-templates path (Windows)
         shell: pwsh
@@ -236,6 +251,23 @@ jobs:
           }
           Get-ChildItem $base | Select-Object -First 5
 
+      - name: Install pinned rcedit ${{ env.RCEDIT_VERSION }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $toolDir = Join-Path (Get-Location).Path "rcedit-bin"
+          New-Item -ItemType Directory -Force -Path $toolDir | Out-Null
+          $rcedit = Join-Path $toolDir "rcedit.exe"
+          $url = "https://github.com/electron/rcedit/releases/download/v$($env:RCEDIT_VERSION)/rcedit-x64.exe"
+          Invoke-WebRequest -Uri $url -OutFile $rcedit
+          $actual = (Get-FileHash -Algorithm SHA256 $rcedit).Hash.ToLower()
+          if ($actual -ne $env:RCEDIT_SHA256) {
+            Write-Error "rcedit SHA256 mismatch: expected $($env:RCEDIT_SHA256), got $actual"
+            exit 1
+          }
+          $toolDir | Out-File -FilePath $env:GITHUB_PATH -Append
+          Write-Host "Pinned rcedit verified: v$($env:RCEDIT_VERSION) $actual"
+
       - name: Headless import (populate .godot cache)
         shell: pwsh
         working-directory: ${{ env.RUNTIME_DIR }}
@@ -266,13 +298,79 @@ jobs:
           # follow-up; PR-07 formalizes packaging layout.
           godot.exe --headless --export-release "Windows Desktop" $exe 2>&1 |
             Tee-Object -FilePath ..\..\win-export.log
+          $exportExit = $LASTEXITCODE
+          if ($exportExit -ne 0) {
+            Write-Error "Godot export failed with exit $exportExit — see win-export.log"
+            exit $exportExit
+          }
+          if (Select-String -Path ..\..\win-export.log -Pattern '^(ERROR|SCRIPT ERROR):' -Quiet) {
+            Write-Error "Exporter emitted an error — see win-export.log"
+            exit 1
+          }
           if (-not (Test-Path $exe)) {
             Write-Error "Export did not produce $exe — see win-export.log"
             exit 1
           }
           Get-ChildItem $out
 
-      - name: Compute SHA256SUMS
+      - name: Verify Buddy Windows VersionInfo
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $preset = Get-Content -Raw apps/runtime-godot/export_presets.cfg
+          function Get-PresetString([string]$key) {
+            $pattern = '(?m)^' + [regex]::Escape($key) + '="([^"]*)"\r?$'
+            $match = [regex]::Match($preset, $pattern)
+            if (-not $match.Success) {
+              throw "Missing export preset setting: $key"
+            }
+            return $match.Groups[1].Value
+          }
+          $versionInfo = (Get-Item build/windows/BuddyRuntime.exe).VersionInfo
+          $expected = [ordered]@{
+            CompanyName = Get-PresetString 'application/company_name'
+            ProductName = Get-PresetString 'application/product_name'
+            FileDescription = Get-PresetString 'application/file_description'
+            FileVersion = Get-PresetString 'application/file_version'
+            ProductVersion = Get-PresetString 'application/product_version'
+          }
+          foreach ($field in $expected.Keys) {
+            $actual = [string]$versionInfo.$field
+            if ($actual -ne $expected[$field]) {
+              Write-Error "VersionInfo $field mismatch: expected '$($expected[$field])', got '$actual'"
+              exit 1
+            }
+            Write-Host "$field=$actual"
+          }
+          if ($versionInfo.ProductName -eq 'Godot Engine' -or $versionInfo.CompanyName -eq 'Godot Engine') {
+            Write-Error "Exported executable still identifies itself as Godot Engine"
+            exit 1
+          }
+
+      - name: Verify exact exported PCK inventory
+        shell: pwsh
+        run: |
+          python packages/content-validator/release_artifact_checks.py verify-pck --pck build/windows/BuddyRuntime.pck --contract packages/content-validator/shipping_inventory.json
+
+      - name: Run exported payload self-check
+        shell: pwsh
+        working-directory: build/windows
+        run: |
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $false
+          $exe = Join-Path (Get-Location).Path "BuddyRuntime.exe"
+          & $exe --headless -- --verify-export-closure 2>&1 |
+            Tee-Object -FilePath ..\..\win-export-closure.log
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Exported runtime closure self-check failed with exit $LASTEXITCODE"
+            exit $LASTEXITCODE
+          }
+          if (-not (Select-String -Path ..\..\win-export-closure.log -Pattern '^export_closure_check: PASS$' -Quiet)) {
+            Write-Error "Exported runtime did not emit the exact closure PASS marker"
+            exit 1
+          }
+
+      - name: Stage artifact and generate portable SHA256SUMS
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
@@ -281,20 +379,34 @@ jobs:
             Write-Error "build\windows missing — export must have failed"
             exit 1
           }
-          Get-ChildItem -Path $out -Recurse -File | Sort-Object FullName | ForEach-Object {
-            $hash = (Get-FileHash -Algorithm SHA256 $_.FullName).Hash.ToLower()
-            $rel  = Resolve-Path -Relative $_.FullName
-            "$hash  $rel"
-          } | Set-Content -Path (Join-Path $out "SHA256SUMS") -Encoding ascii
+          $stage = Join-Path (Get-Location).Path "build\artifact-stage"
+          New-Item -ItemType Directory -Path $stage | Out-Null
+          Copy-Item (Join-Path $out "BuddyRuntime.exe") $stage
+          Copy-Item (Join-Path $out "BuddyRuntime.pck") $stage
+          python packages/content-validator/release_artifact_checks.py write-checksums --root $stage
           Write-Host "--- SHA256SUMS ---"
-          Get-Content (Join-Path $out "SHA256SUMS")
+          Get-Content (Join-Path $stage "SHA256SUMS")
+
+      - name: Verify checksum from staged download-equivalent layout
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $checker = (Resolve-Path packages/content-validator/release_artifact_checks.py).Path
+          Push-Location build/artifact-stage
+          try {
+            python $checker verify-checksums --root .
+            if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+            }
+          } finally {
+            Pop-Location
+          }
 
       - name: Upload Windows build artifact
-        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: buddy-runtime-windows
-          path: build/windows/**
+          path: build/artifact-stage/**
           retention-days: 14
           if-no-files-found: error
 
@@ -306,5 +418,6 @@ jobs:
           path: |
             win-import.log
             win-export.log
+            win-export-closure.log
           retention-days: 14
           if-no-files-found: warn

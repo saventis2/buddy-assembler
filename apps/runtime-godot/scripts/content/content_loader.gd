@@ -1,5 +1,6 @@
 extends RefCounted
 
+const PortableBuddyFallback = preload("res://scripts/visual/portable_buddy_fallback.gd")
 const CONTENT_ROOT := "res://content"
 const CORE_PACK_ID := "core_pack"
 const BUILTIN_PACK_ID := "__builtin_safe"
@@ -17,10 +18,12 @@ const REQUIRED_KEYS := [
 
 # Last-resort synthetic manifest. The runtime returns to this when the
 # user's selected pack AND core_pack both fail validation. It references
-# no external assets so it cannot itself fail an asset check — the buddy
-# falls back to a code-drawn placeholder, but the app still launches.
+# no external assets so it cannot itself fail an asset check. The renderer
+# falls back to the tracked core idle asset, so the app still launches without
+# inventing replacement artwork.
 const BUILTIN_FALLBACK_MANIFEST := {
     "schemaVersion": 1,
+    "runtimeAudience": "user",
     "id": "builtin-safe",
     "name": "Built-in Safe Mode",
     "version": "0.0.0",
@@ -57,7 +60,7 @@ static func list_pack_ids(root_override: String = "") -> Array:
     return ids
 
 
-static func list_cycleable_pack_ids(root_override: String = "") -> Array:
+static func list_cycleable_pack_ids(root_override: String = "", include_development: bool = false) -> Array:
     var ids := list_pack_ids(root_override)
     var cycleable: Array = []
     var seen_visual_signatures := {}
@@ -69,6 +72,8 @@ static func list_cycleable_pack_ids(root_override: String = "") -> Array:
         if typeof(manifest_variant) != TYPE_DICTIONARY:
             continue
         var manifest: Dictionary = manifest_variant
+        if not _is_manifest_visible(manifest, include_development):
+            continue
         var signature := _manifest_visual_signature(manifest)
         if seen_visual_signatures.has(signature):
             continue
@@ -90,6 +95,11 @@ static func _manifest_visual_signature(manifest: Dictionary) -> String:
         "anchor": visual.get("anchor", []),
     }
     return JSON.stringify(key_map)
+
+
+static func _is_manifest_visible(manifest: Dictionary, include_development: bool) -> bool:
+    var audience := str(manifest.get("runtimeAudience", "user"))
+    return audience == "user" or (include_development and audience == "development")
 
 
 static func load_pack(pack_id: String, root_override: String = "") -> Dictionary:
@@ -156,11 +166,15 @@ static func load_pack(pack_id: String, root_override: String = "") -> Dictionary
 #                     human-readable string
 #   errors_by_tier  : { "<tier>": Array[String] } of validation errors
 #                     collected on the way down
-static func load_with_fallback(selected_pack_id: String, root_override: String = "") -> Dictionary:
+static func load_with_fallback(
+    selected_pack_id: String,
+    root_override: String = "",
+    include_development: bool = false
+) -> Dictionary:
     var errors_by_tier := {}
 
     var selected := load_pack(selected_pack_id, root_override)
-    if bool(selected.get("ok", false)):
+    if bool(selected.get("ok", false)) and _is_manifest_visible(selected.get("manifest", {}), include_development):
         return {
             "pack_id": selected.get("pack_id", selected_pack_id),
             "manifest": selected.get("manifest", {}),
@@ -168,8 +182,11 @@ static func load_with_fallback(selected_pack_id: String, root_override: String =
             "fallback_reason": "",
             "errors_by_tier": errors_by_tier,
         }
-    errors_by_tier[selected_pack_id] = selected.get("errors", [])
-    push_warning("content: selected pack %s failed: %s" % [selected_pack_id, selected.get("errors", [])])
+    var selected_errors: Array = selected.get("errors", [])
+    if bool(selected.get("ok", false)):
+        selected_errors = ["Pack runtimeAudience is development; use the explicit development path"]
+    errors_by_tier[selected_pack_id] = selected_errors
+    push_warning("content: selected pack %s unavailable: %s" % [selected_pack_id, selected_errors])
 
     if selected_pack_id != CORE_PACK_ID:
         var core := load_pack(CORE_PACK_ID, root_override)
@@ -214,10 +231,14 @@ static func validate_assets(manifest: Dictionary, pack_root: String) -> Array:
             var rel := str(group[key])
             if rel == "":
                 continue
+            if not PortableBuddyFallback.is_repository_asset_path(rel):
+                errors.append("visual.%s.%s -> %s (non-repository path)" % [field, key, rel])
+                continue
             var abs_path := _resolve_asset_path(rel, pack_root)
             if abs_path == "":
-                continue  # absolute res:// path left to Godot; skip
-            if not FileAccess.file_exists(abs_path):
+                continue
+            var asset_exists := ResourceLoader.exists(abs_path) if field == "sprites" else FileAccess.file_exists(abs_path)
+            if not asset_exists:
                 errors.append(
                     "visual.%s.%s -> %s (missing at %s)" % [field, key, rel, abs_path]
                 )
@@ -225,8 +246,8 @@ static func validate_assets(manifest: Dictionary, pack_root: String) -> Array:
 
 
 static func _resolve_asset_path(rel: String, pack_root: String) -> String:
-    if rel.begins_with("res://") or rel.begins_with("user://"):
-        return rel  # caller treats as already-absolute; we don't check
+    if rel.begins_with("res://"):
+        return rel
     return "%s/%s" % [pack_root, rel]
 
 
@@ -255,6 +276,10 @@ static func validate_manifest(manifest: Dictionary) -> Array:
     if _is_blank(manifest.get("version")):
         errors.append("version must be non-empty string")
 
+    var runtime_audience := str(manifest.get("runtimeAudience", "user"))
+    if runtime_audience not in ["user", "development"]:
+        errors.append("runtimeAudience must be user or development")
+
     var companion = manifest.get("companion")
     if typeof(companion) != TYPE_DICTIONARY:
         errors.append("companion must be object")
@@ -270,6 +295,9 @@ static func validate_manifest(manifest: Dictionary) -> Array:
             errors.append("visual must be object when set")
         else:
             var visual: Dictionary = visual_variant
+            var face_mode := str(visual.get("faceMode", PortableBuddyFallback.FACE_MODE_EMBEDDED))
+            if not PortableBuddyFallback.VALID_FACE_MODES.has(face_mode):
+                errors.append("visual.faceMode must be embedded")
             var scale_raw = visual.get("scale", null)
             if scale_raw != null:
                 if typeof(scale_raw) != TYPE_FLOAT and typeof(scale_raw) != TYPE_INT:

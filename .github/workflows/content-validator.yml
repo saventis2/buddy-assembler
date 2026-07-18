@@ -30,6 +30,14 @@ jobs:
         run: |
           python packages/content-validator/run_fixture_checks.py
 
+      - name: Verify shipping payload declaration
+        run: |
+          python packages/content-validator/validate_shipping_closure.py
+
+      - name: Run release artifact contract negatives
+        run: |
+          python packages/content-validator/test_release_artifact_checks.py
+
   verify-provenance:
     runs-on: ubuntu-latest
     steps:
