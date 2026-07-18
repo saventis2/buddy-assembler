@@ -28,18 +28,19 @@ support for V1) are explicitly out of scope and won't be accepted.
   install -r requirements.txt` (currently just `Pillow`). Entry point is
   `python tools/importers/character_tooling_gui.py`; see
   `docs/WORKFLOW.md` for the operator flow.
-- **Godot runtime**: the shipping runtime is pinned to **Godot 4.2**
-  (see `config/features` in `apps/runtime-godot/project.godot`). Use a
-  matching Godot 4.2 editor/console build.
+- **Godot runtime**: the v0.1 toolchain is pinned to **Godot 4.2.2-stable**
+  in `apps/runtime-godot/toolchain.json`. The `config/features="4.2"`
+  value in `project.godot` is only the engine compatibility level, not the
+  exact toolchain pin. Local gate scripts reject a different Godot version.
 - **Headless checks**: before proposing a runtime change, run
 
   ```powershell
   pwsh ./apps/runtime-godot/tests/run_headless_checks.ps1
   ```
 
-  This verifies the project parses cleanly and runs the smoke
-  floor-lock and save-store durability tests. Add `--profile` to also
-  run the frame-time profiling scene.
+  This starts the real default project path and runs every scene in the
+  shared required-suite contract with exact PASS markers and timeouts. Add
+  `-Profile` to also run the non-blocking frame-time profiling scene.
 
 ## How to propose a change
 

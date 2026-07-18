@@ -1,154 +1,36 @@
 param(
-    [switch]$Profile
+    [switch]$Profile,
+    [string]$Godot = "godot",
+    [string]$Python = "python"
 )
 
 $ErrorActionPreference = "Stop"
+$PSNativeCommandUseErrorActionPreference = $false
 
-$projectPath = Join-Path $PSScriptRoot ".."
-$projectPath = (Resolve-Path $projectPath).Path
+$projectPath = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path
+$runner = Join-Path $repoRoot "packages\content-validator\headless_suite.py"
+$contract = Join-Path $PSScriptRoot "required_headless_scenes.json"
+$toolchain = Join-Path $projectPath "toolchain.json"
 
 Write-Host "Runtime project path: $projectPath"
-
-$godotCmd = Get-Command godot -ErrorAction SilentlyContinue
-if (-not $godotCmd) {
-    Write-Host "Godot is not on PATH. Install Godot 4 and rerun this script."
-    exit 2
+& $Python $runner `
+    --godot $Godot `
+    --project $projectPath `
+    --contract $contract `
+    --toolchain $toolchain `
+    --timeout 90
+$suiteExit = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
+if ($suiteExit -ne 0) {
+    Write-Error "Required headless suite failed with exit $suiteExit"
+    exit $suiteExit
 }
 
-function Invoke-GodotHeadless {
-    param([string[]]$ExtraArgs, [string]$Label)
-    & godot --headless --path $projectPath @ExtraArgs
-    $code = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
-    return $code
-}
-
-# --- Parse check ---
-Write-Host ""
-Write-Host "=== Parse check ==="
-$parseCode = Invoke-GodotHeadless -ExtraArgs @("--quit") -Label "parse"
-if ($parseCode -ne 0) {
-    Write-Host "Parse check FAILED (exit $parseCode)"
-    exit $parseCode
-}
-Write-Host "Parse check PASSED."
-
-# --- Smoke floor-lock test ---
-Write-Host ""
-Write-Host "=== Smoke floor-lock test ==="
-$smokeCode = Invoke-GodotHeadless -ExtraArgs @("--scene", "res://tests/SmokeFloorLockTest.tscn") -Label "smoke"
-if ($smokeCode -ne 0) {
-    Write-Host "Smoke floor-lock test FAILED (exit $smokeCode)"
-    exit $smokeCode
-}
-Write-Host "Smoke floor-lock test PASSED."
-
-# --- Save store durability test ---
-Write-Host ""
-Write-Host "=== Save store durability test ==="
-$saveCode = Invoke-GodotHeadless -ExtraArgs @("--scene", "res://tests/SaveStoreTest.tscn") -Label "save-store"
-if ($saveCode -ne 0) {
-    Write-Host "Save store durability test FAILED (exit $saveCode)"
-    exit $saveCode
-}
-Write-Host "Save store durability test PASSED."
-
-# --- Pack validation + fallback test ---
-Write-Host ""
-Write-Host "=== Pack validation + fallback test ==="
-$packCode = Invoke-GodotHeadless -ExtraArgs @("--scene", "res://tests/PackValidationTest.tscn") -Label "pack-validation"
-if ($packCode -ne 0) {
-    Write-Host "Pack validation test FAILED (exit $packCode)"
-    exit $packCode
-}
-Write-Host "Pack validation test PASSED."
-
-# --- Portable visual fallback test ---
-Write-Host ""
-Write-Host "=== Portable visual fallback test ==="
-$portableVisualCode = Invoke-GodotHeadless -ExtraArgs @("--scene", "res://tests/PortableVisualFallbackTest.tscn") -Label "portable-visual-fallback"
-if ($portableVisualCode -ne 0) {
-    Write-Host "Portable visual fallback test FAILED (exit $portableVisualCode)"
-    exit $portableVisualCode
-}
-Write-Host "Portable visual fallback test PASSED."
-
-# --- World + economy flow test ---
-Write-Host ""
-Write-Host "=== World + economy flow test ==="
-$worldEcoCode = Invoke-GodotHeadless -ExtraArgs @("--scene", "res://tests/WorldEconomyFlowTest.tscn") -Label "world-economy-flow"
-if ($worldEcoCode -ne 0) {
-    Write-Host "World + economy flow test FAILED (exit $worldEcoCode)"
-    exit $worldEcoCode
-}
-Write-Host "World + economy flow test PASSED."
-
-# --- Companion depth cadence test ---
-Write-Host ""
-Write-Host "=== Companion depth cadence test ==="
-$depthCode = Invoke-GodotHeadless -ExtraArgs @("--scene", "res://tests/CompanionDepthTest.tscn") -Label "companion-depth"
-if ($depthCode -ne 0) {
-    Write-Host "Companion depth cadence test FAILED (exit $depthCode)"
-    exit $depthCode
-}
-Write-Host "Companion depth cadence test PASSED."
-
-# --- Economy tuning test ---
-Write-Host ""
-Write-Host "=== Economy tuning test ==="
-$economyCode = Invoke-GodotHeadless -ExtraArgs @("--scene", "res://tests/EconomyTuningTest.tscn") -Label "economy-tuning"
-if ($economyCode -ne 0) {
-    Write-Host "Economy tuning test FAILED (exit $economyCode)"
-    exit $economyCode
-}
-Write-Host "Economy tuning test PASSED."
-
-# --- World variety test ---
-Write-Host ""
-Write-Host "=== World variety test ==="
-$varietyCode = Invoke-GodotHeadless -ExtraArgs @("--scene", "res://tests/WorldVarietyTest.tscn") -Label "world-variety"
-if ($varietyCode -ne 0) {
-    Write-Host "World variety test FAILED (exit $varietyCode)"
-    exit $varietyCode
-}
-Write-Host "World variety test PASSED."
-
-# --- Prompt cadence test ---
-Write-Host ""
-Write-Host "=== Prompt cadence test ==="
-$promptCadenceCode = Invoke-GodotHeadless -ExtraArgs @("--scene", "res://tests/PromptCadenceTest.tscn") -Label "prompt-cadence"
-if ($promptCadenceCode -ne 0) {
-    Write-Host "Prompt cadence test FAILED (exit $promptCadenceCode)"
-    exit $promptCadenceCode
-}
-Write-Host "Prompt cadence test PASSED."
-
-# --- Chat command router test ---
-Write-Host ""
-Write-Host "=== Chat command router test ==="
-$chatRouterCode = Invoke-GodotHeadless -ExtraArgs @("--scene", "res://tests/ChatCommandRouterTest.tscn") -Label "chat-command-router"
-if ($chatRouterCode -ne 0) {
-    Write-Host "Chat command router test FAILED (exit $chatRouterCode)"
-    exit $chatRouterCode
-}
-Write-Host "Chat command router test PASSED."
-
-# --- Manual verification report test ---
-Write-Host ""
-Write-Host "=== Manual verification report test ==="
-$manualReportCode = Invoke-GodotHeadless -ExtraArgs @("--scene", "res://tests/ManualVerificationReportTest.tscn") -Label "manual-verification-report"
-if ($manualReportCode -ne 0) {
-    Write-Host "Manual verification report test FAILED (exit $manualReportCode)"
-    exit $manualReportCode
-}
-Write-Host "Manual verification report test PASSED."
-
-# --- Optional: frame-time profiling ---
 if ($Profile) {
     Write-Host ""
-    Write-Host "=== Frame-time profiling (20 actors, 300 frames) ==="
-    Invoke-GodotHeadless -ExtraArgs @("--scene", "res://tests/ProfileScene.tscn") -Label "profile" | Out-Null
-    Write-Host "Profiling run complete (non-blocking)."
+    Write-Host "=== Frame-time profiling (20 actors, 300 frames; non-blocking) ==="
+    & $Godot --headless --path $projectPath res://tests/ProfileScene.tscn
+    Write-Host "Profiling run exited with $LASTEXITCODE (non-blocking)."
 }
 
-Write-Host ""
-Write-Host "All headless checks completed successfully."
+Write-Host "All required headless checks completed successfully."

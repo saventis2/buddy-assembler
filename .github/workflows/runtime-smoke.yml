@@ -8,11 +8,13 @@ on:
 
 # Two jobs:
 #  - parse-and-smoke (ubuntu): fast gate. Headless Godot import, parse check,
-#    and the SmokeFloorLockTest scene. Catches broken GDScript and obvious
-#    runtime breakage on every PR.
+#    the shared required-scene contract, exact PASS markers, and a controlled
+#    burn-in failure. Catches broken GDScript, false-green wrappers, and runtime
+#    breakage on every PR.
 #  - windows-export (windows): release-truth gate. Installs export templates,
-#    exports the Windows build, uploads it as an artifact. Editor-play is not
-#    sufficient for release claims — this artifact is.
+#    exports the Windows build, starts its default runtime, and uploads it as an
+#    artifact. Editor-play is not sufficient for release claims — this artifact
+#    is.
 #
 # Both jobs upload logs on failure. Artifacts are retained 14 days.
 #
@@ -37,6 +39,11 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
+      - name: Setup Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.11"
+
       - name: Cache Godot ${{ env.GODOT_VERSION }} binary (Linux)
         id: cache-godot-linux
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -56,7 +63,12 @@ jobs:
             mv "Godot_v${GODOT_RELEASE}_linux.x86_64" /usr/local/bin/godot
             chmod +x /usr/local/bin/godot
           fi
-          godot --version
+          actual_version="$(godot --version)"
+          echo "Godot ${actual_version}"
+          case "${actual_version}" in
+            "${GODOT_VERSION}.stable"*) ;;
+            *) echo "Expected Godot ${GODOT_VERSION}.stable, got ${actual_version}" >&2; exit 1 ;;
+          esac
 
       - name: Headless import (populate .godot cache)
         working-directory: ${{ env.RUNTIME_DIR }}
@@ -78,84 +90,25 @@ jobs:
             exit 1
           fi
 
-      - name: Smoke floor-lock test
-        working-directory: ${{ env.RUNTIME_DIR }}
+      - name: Required headless suite (shared local/CI contract)
         run: |
           set -euo pipefail
-          # Hard per-test timeout: if Godot hangs (e.g. scene fails to parse and
-          # _ready never runs so get_tree().quit() is never reached), we want a
-          # fast red signal instead of burning the 15-min job budget.
-          timeout 90s godot --headless --path . res://tests/SmokeFloorLockTest.tscn 2>&1 | tee ../../smoke.log
+          python packages/content-validator/headless_suite.py \
+            --godot godot \
+            --project "${RUNTIME_DIR}" \
+            --contract "${RUNTIME_DIR}/tests/required_headless_scenes.json" \
+            --toolchain "${RUNTIME_DIR}/toolchain.json" \
+            --timeout 90 2>&1 | tee headless-suite.log
 
-      - name: Save-store durability test
-        working-directory: ${{ env.RUNTIME_DIR }}
+      - name: Burn-in wrapper exit propagation negative
+        shell: pwsh
         run: |
-          set -euo pipefail
-          timeout 90s godot --headless --path . res://tests/SaveStoreTest.tscn 2>&1 | tee ../../save-store.log
-          grep -E "save_store_test: PASS" ../../save-store.log
-
-      - name: Pack validation + fallback test
-        working-directory: ${{ env.RUNTIME_DIR }}
-        run: |
-          set -euo pipefail
-          timeout 90s godot --headless --path . res://tests/PackValidationTest.tscn 2>&1 | tee ../../pack-validation.log
-          grep -E "pack_validation_test: PASS" ../../pack-validation.log
-
-      - name: Portable visual fallback test
-        working-directory: ${{ env.RUNTIME_DIR }}/content/core_pack/character/animations
-        run: |
-          set -euo pipefail
-          timeout 90s godot --headless --path ../../../.. res://tests/PortableVisualFallbackTest.tscn 2>&1 | tee ../../../../../../portable-visual-fallback.log
-          grep -E "portable_visual_fallback_test: PASS \(existing assets only\)" ../../../../../../portable-visual-fallback.log
-
-      - name: World + economy flow test
-        working-directory: ${{ env.RUNTIME_DIR }}
-        run: |
-          set -euo pipefail
-          timeout 90s godot --headless --path . res://tests/WorldEconomyFlowTest.tscn 2>&1 | tee ../../world-economy-flow.log
-          grep -E "world_economy_flow_test: PASS" ../../world-economy-flow.log
-
-      - name: Companion depth cadence test
-        working-directory: ${{ env.RUNTIME_DIR }}
-        run: |
-          set -euo pipefail
-          timeout 90s godot --headless --path . res://tests/CompanionDepthTest.tscn 2>&1 | tee ../../companion-depth.log
-          grep -E "companion_depth_test: PASS" ../../companion-depth.log
-
-      - name: Economy tuning test
-        working-directory: ${{ env.RUNTIME_DIR }}
-        run: |
-          set -euo pipefail
-          timeout 90s godot --headless --path . res://tests/EconomyTuningTest.tscn 2>&1 | tee ../../economy-tuning.log
-          grep -E "economy_tuning_test: PASS" ../../economy-tuning.log
-
-      - name: World variety test
-        working-directory: ${{ env.RUNTIME_DIR }}
-        run: |
-          set -euo pipefail
-          timeout 90s godot --headless --path . res://tests/WorldVarietyTest.tscn 2>&1 | tee ../../world-variety.log
-          grep -E "world_variety_test: PASS" ../../world-variety.log
-
-      - name: Prompt cadence test
-        working-directory: ${{ env.RUNTIME_DIR }}
-        run: |
-          set -euo pipefail
-          timeout 90s godot --headless --path . res://tests/PromptCadenceTest.tscn 2>&1 | tee ../../prompt-cadence.log
-          grep -E "prompt_cadence_test: PASS" ../../prompt-cadence.log
-
-      - name: Chat command router test
-        working-directory: ${{ env.RUNTIME_DIR }}
-        run: |
-          set -euo pipefail
-          timeout 90s godot --headless --path . res://tests/ChatCommandRouterTest.tscn 2>&1 | tee ../../chat-command-router.log
-          grep -E "chat_command_router_test: PASS" ../../chat-command-router.log
-
-      - name: Manual verification report test
-        working-directory: ${{ env.RUNTIME_DIR }}
-        run: |
-          set -euo pipefail
-          timeout 90s godot --headless --path . res://tests/ManualVerificationReportTest.tscn 2>&1 | tee ../../manual-verification-report.log
-          grep -E "manual_verification_report_test: PASS" ../../manual-verification-report.log
+          $ErrorActionPreference = "Stop"
+          pwsh -NoProfile -File apps/runtime-godot/tests/test_run_burn_in.ps1 2>&1 |
+            Tee-Object -FilePath burn-in-wrapper.log
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
 
       - name: Upload logs (always)
         if: always()
@@ -165,17 +118,8 @@ jobs:
           path: |
             import.log
             parse.log
-            smoke.log
-            save-store.log
-            pack-validation.log
-            portable-visual-fallback.log
-            world-economy-flow.log
-            companion-depth.log
-            economy-tuning.log
-            world-variety.log
-            prompt-cadence.log
-            chat-command-router.log
-            manual-verification-report.log
+            headless-suite.log
+            burn-in-wrapper.log
           retention-days: 14
           if-no-files-found: warn
 
@@ -227,7 +171,13 @@ jobs:
             Write-Host "Godot $release restored from cache."
           }
           "$((Get-Location).Path)\godot-bin" | Out-File -FilePath $env:GITHUB_PATH -Append
-          & "$((Get-Location).Path)\godot-bin\godot.exe" --version
+          $actualVersion = (& "$((Get-Location).Path)\godot-bin\godot.exe" --version).Trim()
+          Write-Host "Godot $actualVersion"
+          $expectedPrefix = "$($env:GODOT_VERSION).stable"
+          if (-not $actualVersion.StartsWith($expectedPrefix)) {
+            Write-Error "Expected Godot version prefix '$expectedPrefix', got '$actualVersion'"
+            exit 1
+          }
 
       - name: Install export templates
         shell: pwsh
@@ -370,6 +320,24 @@ jobs:
             exit 1
           }
 
+      - name: Start and cleanly exit exported default runtime
+        shell: pwsh
+        working-directory: build/windows
+        run: |
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $false
+          $exe = Join-Path (Get-Location).Path "BuddyRuntime.exe"
+          & $exe --headless -- --ci-startup-smoke 2>&1 |
+            Tee-Object -FilePath ..\..\win-startup-smoke.log
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Exported default-runtime startup failed with exit $LASTEXITCODE"
+            exit $LASTEXITCODE
+          }
+          if (-not (Select-String -Path ..\..\win-startup-smoke.log -Pattern '^project_startup_smoke: PASS$' -Quiet)) {
+            Write-Error "Exported default runtime did not emit the exact startup PASS marker"
+            exit 1
+          }
+
       - name: Stage artifact and generate portable SHA256SUMS
         shell: pwsh
         run: |
@@ -419,5 +387,6 @@ jobs:
             win-import.log
             win-export.log
             win-export-closure.log
+            win-startup-smoke.log
           retention-days: 14
           if-no-files-found: warn
