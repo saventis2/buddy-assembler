@@ -4,11 +4,34 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import re
 import sys
 from pathlib import Path
 
 from headless_suite import load_contract, load_toolchain
+
+
+_AUTHORITY_WORKFLOW_SHA256 = {
+    ".github/workflows/runtime-smoke.yml": (
+        "9f16f5a4b2909c781710ef8b9cd04607ff936320c7b88d9ed360f988580dda2a"
+    ),
+    ".github/workflows/python-lint.yml": (
+        "0f19dfd99a79f0e50f6a8d46cf2a1d89b75547358d7496713798729f09c648fc"
+    ),
+}
+
+
+def _normalized_text_sha256(text: str) -> str:
+    """Hash exact text after universal-newline normalization.
+
+    ``Path.read_text`` normalizes checkout CRLF and LF to ``\n`` while retaining
+    terminal-newline presence. Everything else, including comments and
+    whitespace, remains authority-bearing. Any legitimate edit to either gate
+    workflow must intentionally update this digest and the contract tests in
+    the same reviewed change.
+    """
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 _STRUCTURAL_ANCHOR_OR_ALIAS = re.compile(r"(?<!\S)[&*][^\s\[\]{},]+")
@@ -430,6 +453,18 @@ def validate(repo: Path) -> list[str]:
     local_runner_lines = _active_script_lines(local_runner)
     burn_in_lines = _active_script_lines(burn_in)
 
+    workflow_digests = (
+        ("runtime", workflow_path, workflow),
+        ("python", python_workflow_path, python_workflow),
+    )
+    for label, workflow_file_path, text in workflow_digests:
+        relative = workflow_file_path.relative_to(repo).as_posix()
+        expected_digest = _AUTHORITY_WORKFLOW_SHA256[relative]
+        if _normalized_text_sha256(text) != expected_digest:
+            errors.append(
+                f"{label} workflow differs from canonical full-file authority digest"
+            )
+
     if _workflow_has_structural_anchor_or_alias(workflow):
         errors.append("runtime workflow must not use YAML anchors or aliases in workflow structure")
     if _workflow_has_structural_anchor_or_alias(python_workflow):
@@ -564,15 +599,21 @@ def validate(repo: Path) -> list[str]:
         ),
         ("CI-contract Python unit suite (zero tests fails)", "packages/content-validator"),
     )
-    for step_name, path in required_python_suites:
-        expected_command = f"env -u PYTEST_ADDOPTS python -m pytest -q -o addopts= {path}"
+    for step_name, suite_relative in required_python_suites:
+        expected_command = (
+            "env -u PYTEST_ADDOPTS python -m pytest -q -o addopts= "
+            f"{suite_relative}"
+        )
         if not _required_step_enforces(
             python_workflow,
             "python-lint",
             step_name,
             (expected_command,),
         ):
-            errors.append(f"python workflow does not actively execute required suite: {path}")
+            errors.append(
+                "python workflow does not actively execute required suite: "
+                f"{suite_relative}"
+            )
     return errors
 
 

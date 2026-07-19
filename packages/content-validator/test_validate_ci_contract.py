@@ -146,6 +146,136 @@ class CiContractDriftTests(unittest.TestCase):
     def test_repository_contract_passes(self) -> None:
         self.assertEqual(self._errors_after(), [])
 
+    def test_authority_workflow_digests_match_repository(self) -> None:
+        for relative, expected in validate_ci_contract._AUTHORITY_WORKFLOW_SHA256.items():
+            with self.subTest(workflow=relative):
+                text = (REPO_ROOT / relative).read_text(encoding="utf-8")
+                self.assertEqual(
+                    validate_ci_contract._normalized_text_sha256(text), expected
+                )
+
+    def test_runtime_workflow_digest_rejects_top_level_bash_env(self) -> None:
+        def mutate(root: Path) -> None:
+            self._insert_direct_key(
+                root / ".github/workflows/runtime-smoke.yml",
+                "env:",
+                "BASH_ENV: /tmp/buddy-ci-skip.sh",
+            )
+
+        errors = self._errors_after(mutate)
+        self.assertIn(
+            "runtime workflow differs from canonical full-file authority digest",
+            errors,
+        )
+
+    def test_runtime_workflow_digest_rejects_runtime_dir_decoy(self) -> None:
+        def mutate(root: Path) -> None:
+            self._replace(
+                root / ".github/workflows/runtime-smoke.yml",
+                "  RUNTIME_DIR: apps/runtime-godot",
+                "  RUNTIME_DIR: .ci/decoy-runtime",
+            )
+
+        errors = self._errors_after(mutate)
+        self.assertIn(
+            "runtime workflow differs from canonical full-file authority digest",
+            errors,
+        )
+
+    def test_runtime_workflow_digest_rejects_prior_github_env_poisoning(self) -> None:
+        def mutate(root: Path) -> None:
+            path = root / ".github/workflows/runtime-smoke.yml"
+            target = "      - name: Required headless suite (shared local/CI contract)"
+            injected = (
+                "      - name: Poison required shell environment\n"
+                "        run: |\n"
+                "          printf 'exit 0\\n' > /tmp/buddy-ci-skip.sh\n"
+                "          echo 'BASH_ENV=/tmp/buddy-ci-skip.sh' >> \"$GITHUB_ENV\"\n\n"
+            )
+            self._replace(path, target, injected + target)
+
+        errors = self._errors_after(mutate)
+        self.assertIn(
+            "runtime workflow differs from canonical full-file authority digest",
+            errors,
+        )
+
+    def test_runtime_workflow_digest_rejects_prior_github_path_poisoning(self) -> None:
+        def mutate(root: Path) -> None:
+            path = root / ".github/workflows/runtime-smoke.yml"
+            target = "      - name: Required headless suite (shared local/CI contract)"
+            injected = (
+                "      - name: Prepend fake Python\n"
+                "        run: |\n"
+                "          mkdir -p /tmp/buddy-ci-bin\n"
+                "          printf '#!/bin/sh\\nexit 0\\n' > /tmp/buddy-ci-bin/python\n"
+                "          chmod +x /tmp/buddy-ci-bin/python\n"
+                "          echo /tmp/buddy-ci-bin >> \"$GITHUB_PATH\"\n\n"
+            )
+            self._replace(path, target, injected + target)
+
+        errors = self._errors_after(mutate)
+        self.assertIn(
+            "runtime workflow differs from canonical full-file authority digest",
+            errors,
+        )
+
+    def test_runtime_workflow_digest_rejects_prior_runner_overwrite(self) -> None:
+        def mutate(root: Path) -> None:
+            path = root / ".github/workflows/runtime-smoke.yml"
+            target = "      - name: Required headless suite (shared local/CI contract)"
+            injected = (
+                "      - name: Replace required runner\n"
+                "        run: |\n"
+                "          printf 'raise SystemExit(0)\\n' > "
+                "packages/content-validator/headless_suite.py\n\n"
+            )
+            self._replace(path, target, injected + target)
+
+        errors = self._errors_after(mutate)
+        self.assertIn(
+            "runtime workflow differs from canonical full-file authority digest",
+            errors,
+        )
+
+    def test_python_workflow_digest_rejects_prior_github_path_poisoning(self) -> None:
+        def mutate(root: Path) -> None:
+            path = root / ".github/workflows/python-lint.yml"
+            target = "      - name: Importer Python unit suite (zero tests fails)"
+            injected = (
+                "      - name: Prepend fake Python\n"
+                "        run: |\n"
+                "          mkdir -p /tmp/buddy-ci-bin\n"
+                "          printf '#!/bin/sh\\nexit 0\\n' > /tmp/buddy-ci-bin/python\n"
+                "          chmod +x /tmp/buddy-ci-bin/python\n"
+                "          echo /tmp/buddy-ci-bin >> \"$GITHUB_PATH\"\n\n"
+            )
+            self._replace(path, target, injected + target)
+
+        errors = self._errors_after(mutate)
+        self.assertIn(
+            "python workflow differs from canonical full-file authority digest",
+            errors,
+        )
+
+    def test_runtime_workflow_digest_rejects_quoted_duplicate_job(self) -> None:
+        def mutate(root: Path) -> None:
+            self._replace(
+                root / ".github/workflows/runtime-smoke.yml",
+                "jobs:\n  parse-and-smoke:",
+                "jobs:\n"
+                '  "parse-and-smoke":\n'
+                "    runs-on: ubuntu-latest\n"
+                "    steps: []\n"
+                "  parse-and-smoke:",
+            )
+
+        errors = self._errors_after(mutate)
+        self.assertIn(
+            "runtime workflow differs from canonical full-file authority digest",
+            errors,
+        )
+
     def test_removing_project_startup_case_fails(self) -> None:
         def mutate(root: Path) -> None:
             path = root / "apps/runtime-godot/tests/required_headless_scenes.json"
@@ -597,7 +727,7 @@ class CiContractDriftTests(unittest.TestCase):
                 errors = self._errors_after(mutate)
                 self.assertTrue(any(path in error for error in errors), errors)
 
-    def test_python_suite_explicit_false_continue_on_error_is_allowed(self) -> None:
+    def test_python_suite_explicit_false_requires_authority_digest_update(self) -> None:
         def mutate(root: Path) -> None:
             path = root / ".github/workflows/python-lint.yml"
             self._insert_direct_key(path, "  python-lint:", "continue-on-error: false")
@@ -612,7 +742,10 @@ class CiContractDriftTests(unittest.TestCase):
                     "continue-on-error: false",
                 )
 
-        self.assertEqual(self._errors_after(mutate), [])
+        self.assertEqual(
+            self._errors_after(mutate),
+            ["python workflow differs from canonical full-file authority digest"],
+        )
 
     def test_required_steps_reject_custom_direct_shells(self) -> None:
         cases = (
@@ -731,7 +864,7 @@ class CiContractDriftTests(unittest.TestCase):
                 errors = self._errors_after(mutate)
                 self.assertTrue(any(expected_error in error for error in errors), errors)
 
-    def test_yaml_anchor_alias_tokens_in_run_bodies_are_allowed(self) -> None:
+    def test_run_body_anchor_tokens_only_require_authority_digest_update(self) -> None:
         def mutate(root: Path) -> None:
             path = root / ".github/workflows/runtime-smoke.yml"
             self._replace(
@@ -743,7 +876,10 @@ class CiContractDriftTests(unittest.TestCase):
                 "          pwsh -NoProfile -File apps/runtime-godot/tests/test_run_burn_in.ps1",
             )
 
-        self.assertEqual(self._errors_after(mutate), [])
+        self.assertEqual(
+            self._errors_after(mutate),
+            ["runtime workflow differs from canonical full-file authority digest"],
+        )
 
     def test_escaped_required_step_key_fails_closed(self) -> None:
         def mutate(root: Path) -> None:
