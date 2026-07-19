@@ -21,6 +21,7 @@ REPO_ROOT = MODULE_PATH.parents[2]
 FIXTURE_FILES = (
     ".github/workflows/runtime-smoke.yml",
     ".github/workflows/python-lint.yml",
+    ".github/workflows/content-validator.yml",
     "apps/runtime-godot/project.godot",
     "apps/runtime-godot/toolchain.json",
     "apps/runtime-godot/tests/required_headless_scenes.json",
@@ -153,6 +154,42 @@ class CiContractDriftTests(unittest.TestCase):
                 self.assertEqual(
                     validate_ci_contract._normalized_text_sha256(text), expected
                 )
+
+    def test_content_validator_step_condition_cannot_bypass_contract_validation(self) -> None:
+        def mutate(root: Path) -> None:
+            self._insert_direct_key(
+                root / ".github/workflows/content-validator.yml",
+                "      - name: Verify CI/toolchain suite contract",
+                "if: ${{ false }}",
+            )
+
+        errors = self._errors_after(mutate)
+        self.assertTrue(
+            any(
+                "content workflow does not actively execute CI/toolchain contract validation"
+                in error
+                for error in errors
+            ),
+            errors,
+        )
+
+    def test_python_lint_requires_redundant_contract_validation(self) -> None:
+        def mutate(root: Path) -> None:
+            self._insert_direct_key(
+                root / ".github/workflows/python-lint.yml",
+                "      - name: Verify CI/toolchain contract authority (redundant)",
+                "continue-on-error: true",
+            )
+
+        errors = self._errors_after(mutate)
+        self.assertTrue(
+            any(
+                "python workflow does not actively execute redundant CI/toolchain contract validation"
+                in error
+                for error in errors
+            ),
+            errors,
+        )
 
     def test_runtime_workflow_digest_rejects_top_level_bash_env(self) -> None:
         def mutate(root: Path) -> None:

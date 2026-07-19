@@ -17,7 +17,10 @@ _AUTHORITY_WORKFLOW_SHA256 = {
         "9f16f5a4b2909c781710ef8b9cd04607ff936320c7b88d9ed360f988580dda2a"
     ),
     ".github/workflows/python-lint.yml": (
-        "0f19dfd99a79f0e50f6a8d46cf2a1d89b75547358d7496713798729f09c648fc"
+        "46ecd044cb13fc5f55272bd08ef5a0c844fc37e8293fadb2375c430e5b966356"
+    ),
+    ".github/workflows/content-validator.yml": (
+        "d32bef8a238b764b062be6a37628b0cf6e5062c026a49b399498e713d0c9df74"
     ),
 }
 
@@ -400,6 +403,7 @@ def _required_step_enforces(
             "    steps:",
         ),
         "python-lint": ("    runs-on: ubuntu-latest", "    steps:"),
+        "validate-content": ("    runs-on: ubuntu-latest", "    steps:"),
     }
     if job is None or not _mapping_has_only_canonical_direct_lines(
         job, canonical_job_lines[job_id]
@@ -434,6 +438,7 @@ def validate(repo: Path) -> list[str]:
     suite_path = runtime / "tests" / "required_headless_scenes.json"
     workflow_path = repo / ".github" / "workflows" / "runtime-smoke.yml"
     python_workflow_path = repo / ".github" / "workflows" / "python-lint.yml"
+    content_workflow_path = repo / ".github" / "workflows" / "content-validator.yml"
     local_runner_path = runtime / "tests" / "run_headless_checks.ps1"
     burn_in_path = runtime / "tests" / "run_burn_in.ps1"
     project_path = runtime / "project.godot"
@@ -446,6 +451,7 @@ def validate(repo: Path) -> list[str]:
 
     workflow = workflow_path.read_text(encoding="utf-8")
     python_workflow = python_workflow_path.read_text(encoding="utf-8")
+    content_workflow = content_workflow_path.read_text(encoding="utf-8")
     local_runner = local_runner_path.read_text(encoding="utf-8")
     burn_in = burn_in_path.read_text(encoding="utf-8")
     project = project_path.read_text(encoding="utf-8")
@@ -456,6 +462,7 @@ def validate(repo: Path) -> list[str]:
     workflow_digests = (
         ("runtime", workflow_path, workflow),
         ("python", python_workflow_path, python_workflow),
+        ("content", content_workflow_path, content_workflow),
     )
     for label, workflow_file_path, text in workflow_digests:
         relative = workflow_file_path.relative_to(repo).as_posix()
@@ -469,10 +476,14 @@ def validate(repo: Path) -> list[str]:
         errors.append("runtime workflow must not use YAML anchors or aliases in workflow structure")
     if _workflow_has_structural_anchor_or_alias(python_workflow):
         errors.append("python workflow must not use YAML anchors or aliases in workflow structure")
+    if _workflow_has_structural_anchor_or_alias(content_workflow):
+        errors.append("content workflow must not use YAML anchors or aliases in workflow structure")
     if _workflow_has_run_shell_default(workflow):
         errors.append("runtime workflow must not set defaults.run.shell")
     if _workflow_has_run_shell_default(python_workflow):
         errors.append("python workflow must not set defaults.run.shell")
+    if _workflow_has_run_shell_default(content_workflow):
+        errors.append("content workflow must not set defaults.run.shell")
     if not _workflow_has_only_canonical_top_level_lines(
         workflow, ("name: Runtime smoke", "on:", "env:", "jobs:")
     ):
@@ -481,6 +492,10 @@ def validate(repo: Path) -> list[str]:
         python_workflow, ("name: Python lint", "on:", "jobs:")
     ):
         errors.append("python workflow has non-canonical top-level contract metadata")
+    if not _workflow_has_only_canonical_top_level_lines(
+        content_workflow, ("name: Content Validator", "on:", "jobs:")
+    ):
+        errors.append("content workflow has non-canonical top-level contract metadata")
 
     version_match = re.search(r'^\s*GODOT_VERSION:\s*"([^"]+)"\s*$', workflow, re.MULTILINE)
     release_match = re.search(r'^\s*GODOT_RELEASE:\s*"([^"]+)"\s*$', workflow, re.MULTILINE)
@@ -614,6 +629,27 @@ def validate(repo: Path) -> list[str]:
                 "python workflow does not actively execute required suite: "
                 f"{suite_relative}"
             )
+    required_contract_validation = (
+        "python packages/content-validator/validate_ci_contract.py",
+    )
+    if not _required_step_enforces(
+        content_workflow,
+        "validate-content",
+        "Verify CI/toolchain suite contract",
+        required_contract_validation,
+    ):
+        errors.append(
+            "content workflow does not actively execute CI/toolchain contract validation"
+        )
+    if not _required_step_enforces(
+        python_workflow,
+        "python-lint",
+        "Verify CI/toolchain contract authority (redundant)",
+        required_contract_validation,
+    ):
+        errors.append(
+            "python workflow does not actively execute redundant CI/toolchain contract validation"
+        )
     return errors
 
 
