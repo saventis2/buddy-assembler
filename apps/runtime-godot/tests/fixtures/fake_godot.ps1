@@ -4,7 +4,7 @@ param(
 )
 
 if ($RemainingArgs -contains "--version") {
-    Write-Output "4.2.2.stable.official.test-double"
+    Write-Output "4.2.2.stable.official.15073afe3"
     exit 0
 }
 

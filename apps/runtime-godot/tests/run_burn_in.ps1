@@ -20,13 +20,13 @@ $PSNativeCommandUseErrorActionPreference = $false
 $runtime = Join-Path $PSScriptRoot ".."
 $toolchainPath = Join-Path $runtime "toolchain.json"
 $toolchain = Get-Content -Raw -LiteralPath $toolchainPath | ConvertFrom-Json
-$expectedVersionPrefix = [string]$toolchain.reported_version_prefix
+$expectedVersion = [string]$toolchain.reported_version
 
 $versionOutput = @(& $Godot --version 2>&1)
 $versionExit = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
 $versionText = ($versionOutput -join "`n").Trim()
-if ($versionExit -ne 0 -or -not $versionText.StartsWith($expectedVersionPrefix)) {
-    Write-Error "Godot version mismatch: expected prefix '$expectedVersionPrefix', got exit=$versionExit output='$versionText'"
+if ($versionExit -ne 0 -or $versionText -ne $expectedVersion) {
+    Write-Error "Godot version mismatch: expected exact '$expectedVersion', got exit=$versionExit output='$versionText'"
     exit 2
 }
 Write-Host "idle_profile: verified Godot $versionText"

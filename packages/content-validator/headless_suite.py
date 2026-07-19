@@ -22,15 +22,15 @@ class HeadlessCase:
 
 def load_toolchain(path: Path) -> dict[str, str]:
     data = json.loads(path.read_text(encoding="utf-8"))
-    required = ("godot_version", "godot_release", "reported_version_prefix")
+    required = ("godot_version", "godot_release", "reported_version")
     if not isinstance(data, dict) or any(not str(data.get(key, "")).strip() for key in required):
         raise ValueError("toolchain contract is missing required Godot version fields")
     result = {key: str(data[key]) for key in required}
     version = result["godot_version"]
     if result["godot_release"] != f"{version}-stable":
         raise ValueError("toolchain Godot release does not match its version")
-    if result["reported_version_prefix"] != f"{version}.stable":
-        raise ValueError("toolchain reported-version prefix does not match its version")
+    if not result["reported_version"].startswith(f"{version}.stable.official."):
+        raise ValueError("toolchain reported version is not the official declared Godot version")
     return result
 
 
@@ -80,14 +80,14 @@ def run_suite(
     timeout_seconds: int,
     command_runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
 ) -> int:
-    expected = load_toolchain(toolchain)["reported_version_prefix"]
+    expected = load_toolchain(toolchain)["reported_version"]
     version_result = command_runner(
         [godot, "--version"], capture_output=True, text=True, check=False, timeout=30
     )
     version_output = (version_result.stdout + version_result.stderr).strip()
-    if version_result.returncode != 0 or not version_output.startswith(expected):
+    if version_result.returncode != 0 or version_output != expected:
         print(
-            f"headless_suite: Godot version mismatch; expected prefix {expected!r}, "
+            f"headless_suite: Godot version mismatch; expected exact {expected!r}, "
             f"got exit={version_result.returncode} output={version_output!r}",
             file=sys.stderr,
         )

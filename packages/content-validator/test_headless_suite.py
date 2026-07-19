@@ -58,7 +58,7 @@ class RunnerTests(unittest.TestCase):
                 {
                     "godot_version": "4.2.2",
                     "godot_release": "4.2.2-stable",
-                    "reported_version_prefix": "4.2.2.stable",
+                    "reported_version": "4.2.2.stable.official.test",
                 }
             ),
             encoding="utf-8",
@@ -87,7 +87,9 @@ class RunnerTests(unittest.TestCase):
             contract, toolchain = self._contracts(root)
             runner = mock.Mock(
                 side_effect=[
-                    subprocess.CompletedProcess(["godot", "--version"], 0, "4.2.2.stable.test\n", ""),
+                    subprocess.CompletedProcess(
+                        ["godot", "--version"], 0, "4.2.2.stable.official.test\n", ""
+                    ),
                     subprocess.CompletedProcess(["godot", "--import"], 1, "import warning\n", ""),
                     child,
                 ]

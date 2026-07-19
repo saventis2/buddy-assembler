@@ -27,6 +27,7 @@ on:
 env:
   GODOT_VERSION: "4.2.2"
   GODOT_RELEASE: "4.2.2-stable"
+  GODOT_REPORTED_VERSION: "4.2.2.stable.official.15073afe3"
   RCEDIT_VERSION: "2.0.0"
   RCEDIT_SHA256: "3e7801db1a5edbec91b49a24a094aad776cb4515488ea5a4ca2289c400eade2a"
   RUNTIME_DIR: apps/runtime-godot
@@ -65,10 +66,10 @@ jobs:
           fi
           actual_version="$(godot --version)"
           echo "Godot ${actual_version}"
-          case "${actual_version}" in
-            "${GODOT_VERSION}.stable"*) ;;
-            *) echo "Expected Godot ${GODOT_VERSION}.stable, got ${actual_version}" >&2; exit 1 ;;
-          esac
+          if [ "${actual_version}" != "${GODOT_REPORTED_VERSION}" ]; then
+            echo "Expected exact Godot ${GODOT_REPORTED_VERSION}, got ${actual_version}" >&2
+            exit 1
+          fi
 
       - name: Headless import (populate .godot cache)
         working-directory: ${{ env.RUNTIME_DIR }}
@@ -146,7 +147,9 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: godot-bin
-          key: godot-windows-${{ env.GODOT_RELEASE }}
+          # v1 isolates the console-executable cache from the older GUI-only
+          # cache, whose --version output is not capturable in pwsh.
+          key: godot-windows-console-${{ env.GODOT_RELEASE }}-v1
 
       - name: Cache Godot ${{ env.GODOT_VERSION }} export templates (Windows)
         id: cache-godot-templates-windows
@@ -160,26 +163,29 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $release = $env:GODOT_RELEASE
-          $exe = Get-ChildItem godot-bin -Filter "godot.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $exe) {
+          $godotDir = Join-Path (Get-Location).Path "godot-bin"
+          $godotExe = Join-Path $godotDir "godot-console.exe"
+          if (-not (Test-Path -LiteralPath $godotExe)) {
             $url = "https://github.com/godotengine/godot/releases/download/$release/Godot_v${release}_win64.exe.zip"
             Invoke-WebRequest -Uri $url -OutFile godot.zip
             Expand-Archive -Path godot.zip -DestinationPath godot-bin
-            $downloaded = Get-ChildItem godot-bin -Filter "Godot_v*_win64.exe" | Select-Object -First 1
-            Rename-Item $downloaded.FullName (Join-Path $downloaded.Directory "godot.exe")
+            $downloaded = Get-ChildItem godot-bin -Filter "Godot_v*_win64_console.exe" | Select-Object -First 1
+            if (-not $downloaded) {
+              Write-Error "Godot archive did not contain the Windows console executable"
+              exit 1
+            }
+            Move-Item -LiteralPath $downloaded.FullName -Destination $godotExe
           } else {
-            Write-Host "Godot $release restored from cache."
+            Write-Host "Godot $release console executable restored from cache."
           }
-          $godotDir = Join-Path (Get-Location).Path "godot-bin"
-          $godotExe = Join-Path $godotDir "godot.exe"
           $godotDir | Out-File -FilePath $env:GITHUB_PATH -Append
+          "GODOT_EXE=$godotExe" | Out-File -FilePath $env:GITHUB_ENV -Append
           $versionOutput = @(& $godotExe --version 2>&1)
           $versionExit = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
           $actualVersion = ($versionOutput -join "`n").Trim()
           Write-Host "Godot $actualVersion"
-          $expectedPrefix = "$($env:GODOT_VERSION).stable"
-          if ($versionExit -ne 0 -or -not $actualVersion.StartsWith($expectedPrefix)) {
-            Write-Error "Expected Godot version prefix '$expectedPrefix', got exit=$versionExit output='$actualVersion'"
+          if ($versionExit -ne 0 -or $actualVersion -ne $env:GODOT_REPORTED_VERSION) {
+            Write-Error "Expected exact Godot '$($env:GODOT_REPORTED_VERSION)', got exit=$versionExit output='$actualVersion'"
             exit 1
           }
 
@@ -231,9 +237,9 @@ jobs:
           # display-server cursor warnings). The real gate is the export
           # step below, which checks for the produced .exe.
           $PSNativeCommandUseErrorActionPreference = $false
-          godot.exe --headless --import 2>&1 | Tee-Object -FilePath ..\..\win-import.log
+          & $env:GODOT_EXE --headless --import 2>&1 | Tee-Object -FilePath ..\..\win-import.log
           Write-Host "godot --import exited with $LASTEXITCODE"
-          godot.exe --headless --quit  2>&1 | Tee-Object -FilePath ..\..\win-import.log -Append
+          & $env:GODOT_EXE --headless --quit  2>&1 | Tee-Object -FilePath ..\..\win-import.log -Append
           Write-Host "godot --quit exited with $LASTEXITCODE"
           exit 0
 
@@ -250,7 +256,7 @@ jobs:
           # If the preset is not named "Windows Desktop", the following step
           # will fail loudly and the preset name should be corrected in a
           # follow-up; PR-07 formalizes packaging layout.
-          godot.exe --headless --export-release "Windows Desktop" $exe 2>&1 |
+          & $env:GODOT_EXE --headless --export-release "Windows Desktop" $exe 2>&1 |
             Tee-Object -FilePath ..\..\win-export.log
           $exportExit = $LASTEXITCODE
           if ($exportExit -ne 0) {
