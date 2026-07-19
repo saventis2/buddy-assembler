@@ -6,6 +6,7 @@
     {"id": "save-store", "scene": "res://tests/SaveStoreTest.tscn", "pass_marker": "save_store_test: PASS (8 cases)"},
     {"id": "pack-validation", "scene": "res://tests/PackValidationTest.tscn", "pass_marker": "pack_validation_test: PASS (14 cases)"},
     {"id": "portable-visual-fallback", "scene": "res://tests/PortableVisualFallbackTest.tscn", "pass_marker": "portable_visual_fallback_test: PASS (existing assets only)"},
+    {"id": "chat-balloon-fallback", "scene": "res://tests/ChatBalloonFallbackTest.tscn", "pass_marker": "chat_balloon_fallback_test: PASS (code-drawn bubble and arrow)"},
     {"id": "progression-consistency", "scene": "res://tests/ProgressionConsistencyTest.tscn", "pass_marker": "progression_consistency_test: PASS (4 cases)"},
     {"id": "world-economy-flow", "scene": "res://tests/WorldEconomyFlowTest.tscn", "pass_marker": "world_economy_flow_test: PASS (3 cases)"},
     {"id": "companion-depth", "scene": "res://tests/CompanionDepthTest.tscn", "pass_marker": "companion_depth_test: PASS (5 cases)"},

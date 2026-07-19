@@ -1,61 +1,28 @@
 extends Node2D
 class_name ChatBalloon
 
-# MapleStory-style 9-slice chat balloon assembled from UI.wz/ChatBalloon.img/0
-# (nw/n/ne/w/c/e/sw/s/se + arrow). Draws above the actor's head; text is
-# centered inside the bubble with a small padding.
+signal bubble_drawn(bounds: Rect2, line_count: int)
 
-const TEX_ROOT := "res://content/core_pack/ui/chat_balloon/"
-const CORNER_PX := 6
-const CENTER_UNIT_W := 12   # c, n, s tile width
-const CENTER_UNIT_H := 14   # c, e, w tile height
-const ARROW_SIZE := 13
+# Generic repository-owned chat balloon. The body and pointer are drawn with
+# Godot primitives so packaged speech does not depend on excluded UI artwork.
+
+const EDGE_PX := 6
+const BORDER_PX := 2
+const CORNER_RADIUS_PX := 6
+const ARROW_WIDTH := 14
+const ARROW_HEIGHT := 10
 const PAD_X := 6
 const PAD_Y := 3
 const MIN_INNER_W := 24
 const MIN_INNER_H := 12
 const MAX_INNER_W := 220
 const FONT_SIZE := 10
+const BUBBLE_FILL := Color(0.98, 0.96, 0.88, 0.98)
+const BUBBLE_BORDER := Color(0.14, 0.12, 0.10, 1.0)
+const TEXT_COLOR := Color(0.05, 0.05, 0.05, 1.0)
 
 var _text: String = ""
 var _visible_text: bool = false
-
-var _tex_nw: Texture2D
-var _tex_n: Texture2D
-var _tex_ne: Texture2D
-var _tex_w: Texture2D
-var _tex_c: Texture2D
-var _tex_e: Texture2D
-var _tex_sw: Texture2D
-var _tex_s: Texture2D
-var _tex_se: Texture2D
-var _tex_arrow: Texture2D
-
-
-func _ready() -> void:
-	# Load via Image rather than ResourceLoader — these PNGs are copied
-	# directly from WZ and don't have Godot .import metadata.
-	_tex_nw = _load_tex("nw.png")
-	_tex_n = _load_tex("n.png")
-	_tex_ne = _load_tex("ne.png")
-	_tex_w = _load_tex("w.png")
-	_tex_c = _load_tex("c.png")
-	_tex_e = _load_tex("e.png")
-	_tex_sw = _load_tex("sw.png")
-	_tex_s = _load_tex("s.png")
-	_tex_se = _load_tex("se.png")
-	_tex_arrow = _load_tex("arrow.png")
-
-
-func _load_tex(file_name: String) -> Texture2D:
-	var res_path := TEX_ROOT + file_name
-	var fs_path := ProjectSettings.globalize_path(res_path)
-	if not FileAccess.file_exists(fs_path):
-		return null
-	var img := Image.new()
-	if img.load(fs_path) != OK:
-		return null
-	return ImageTexture.create_from_image(img)
 
 
 func show_text(text: String) -> void:
@@ -71,8 +38,6 @@ func hide_bubble() -> void:
 
 func _draw() -> void:
 	if not _visible_text or _text == "":
-		return
-	if _tex_c == null or _tex_arrow == null:
 		return
 	var font: Font = ThemeDB.fallback_font
 	if font == null:
@@ -90,56 +55,21 @@ func _draw() -> void:
 	var inner_w: int = clampi(max(MIN_INNER_W, int(ceil(max_line_w)) + PAD_X * 2), MIN_INNER_W, MAX_INNER_W)
 	var text_block_h := line_h * wrapped_lines.size()
 	var inner_h: int = max(MIN_INNER_H, int(ceil(text_block_h)) + PAD_Y * 2)
-	var outer_w: int = inner_w + CORNER_PX * 2
-	var outer_h: int = inner_h + CORNER_PX * 2
+	var outer_w: int = inner_w + EDGE_PX * 2
+	var outer_h: int = inner_h + EDGE_PX * 2
 
 	# Bubble sits above the anchor (local origin) with the arrow pointing
-	# down at it. Leave ARROW_SIZE between the bubble bottom and origin.
+	# down at it. Leave ARROW_HEIGHT between the bubble bottom and origin.
 	var top_left_x: int = -int(outer_w / 2)
-	var top_left_y: int = -outer_h - ARROW_SIZE
-
-	# Corners
-	draw_texture(_tex_nw, Vector2(top_left_x, top_left_y))
-	draw_texture(_tex_ne, Vector2(top_left_x + outer_w - CORNER_PX, top_left_y))
-	draw_texture(_tex_sw, Vector2(top_left_x, top_left_y + outer_h - CORNER_PX))
-	draw_texture(_tex_se, Vector2(top_left_x + outer_w - CORNER_PX, top_left_y + outer_h - CORNER_PX))
-
-	# Edges — tiled via draw_texture_rect(tile=true).
-	draw_texture_rect(
-		_tex_n,
-		Rect2(top_left_x + CORNER_PX, top_left_y, inner_w, CORNER_PX),
-		true
-	)
-	draw_texture_rect(
-		_tex_s,
-		Rect2(top_left_x + CORNER_PX, top_left_y + outer_h - CORNER_PX, inner_w, CORNER_PX),
-		true
-	)
-	draw_texture_rect(
-		_tex_w,
-		Rect2(top_left_x, top_left_y + CORNER_PX, CORNER_PX, inner_h),
-		true
-	)
-	draw_texture_rect(
-		_tex_e,
-		Rect2(top_left_x + outer_w - CORNER_PX, top_left_y + CORNER_PX, CORNER_PX, inner_h),
-		true
-	)
-	# Center fill
-	draw_texture_rect(
-		_tex_c,
-		Rect2(top_left_x + CORNER_PX, top_left_y + CORNER_PX, inner_w, inner_h),
-		true
-	)
-
-	# Arrow centered below bubble, pointing at actor head.
-	var arrow_pos := Vector2(-int(ARROW_SIZE / 2), -ARROW_SIZE)
-	draw_texture(_tex_arrow, arrow_pos)
+	var top_left_y: int = -outer_h - ARROW_HEIGHT
+	var bubble_rect := Rect2(top_left_x, top_left_y, outer_w, outer_h)
+	draw_style_box(_bubble_style(), bubble_rect)
+	_draw_arrow(float(top_left_y + outer_h))
 
 	# Text — wrapped inside inner area.
-	var text_x: int = top_left_x + CORNER_PX + PAD_X
+	var text_x: int = top_left_x + EDGE_PX + PAD_X
 	var ascent: float = maxf(1.0, font.get_ascent(FONT_SIZE))
-	var text_y: float = float(top_left_y + CORNER_PX + PAD_Y) + ascent
+	var text_y: float = float(top_left_y + EDGE_PX + PAD_Y) + ascent
 	for i in range(wrapped_lines.size()):
 		draw_string(
 			font,
@@ -148,8 +78,43 @@ func _draw() -> void:
 			HORIZONTAL_ALIGNMENT_LEFT,
 			-1.0,
 			FONT_SIZE,
-			Color(0.05, 0.05, 0.05, 1.0)
+			TEXT_COLOR
 		)
+	bubble_drawn.emit(
+		Rect2(top_left_x, top_left_y, outer_w, outer_h + ARROW_HEIGHT),
+		wrapped_lines.size()
+	)
+
+
+func _bubble_style() -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = BUBBLE_FILL
+	style.border_color = BUBBLE_BORDER
+	style.border_width_left = BORDER_PX
+	style.border_width_top = BORDER_PX
+	style.border_width_right = BORDER_PX
+	style.border_width_bottom = BORDER_PX
+	style.corner_radius_top_left = CORNER_RADIUS_PX
+	style.corner_radius_top_right = CORNER_RADIUS_PX
+	style.corner_radius_bottom_left = CORNER_RADIUS_PX
+	style.corner_radius_bottom_right = CORNER_RADIUS_PX
+	return style
+
+
+func _draw_arrow(bubble_bottom_y: float) -> void:
+	var half_width := float(ARROW_WIDTH) / 2.0
+	var outer := PackedVector2Array([
+		Vector2(-half_width, bubble_bottom_y - BORDER_PX),
+		Vector2(half_width, bubble_bottom_y - BORDER_PX),
+		Vector2.ZERO,
+	])
+	draw_colored_polygon(outer, BUBBLE_BORDER)
+	var inner := PackedVector2Array([
+		Vector2(-half_width + BORDER_PX * 1.5, bubble_bottom_y - BORDER_PX),
+		Vector2(half_width - BORDER_PX * 1.5, bubble_bottom_y - BORDER_PX),
+		Vector2(0.0, -BORDER_PX),
+	])
+	draw_colored_polygon(inner, BUBBLE_FILL)
 
 
 func _wrap_lines(font: Font, text: String, max_line_px: int) -> PackedStringArray:
