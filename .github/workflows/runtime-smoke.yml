@@ -170,12 +170,16 @@ jobs:
           } else {
             Write-Host "Godot $release restored from cache."
           }
-          "$((Get-Location).Path)\godot-bin" | Out-File -FilePath $env:GITHUB_PATH -Append
-          $actualVersion = (& "$((Get-Location).Path)\godot-bin\godot.exe" --version).Trim()
+          $godotDir = Join-Path (Get-Location).Path "godot-bin"
+          $godotExe = Join-Path $godotDir "godot.exe"
+          $godotDir | Out-File -FilePath $env:GITHUB_PATH -Append
+          $versionOutput = @(& $godotExe --version 2>&1)
+          $versionExit = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
+          $actualVersion = ($versionOutput -join "`n").Trim()
           Write-Host "Godot $actualVersion"
           $expectedPrefix = "$($env:GODOT_VERSION).stable"
-          if (-not $actualVersion.StartsWith($expectedPrefix)) {
-            Write-Error "Expected Godot version prefix '$expectedPrefix', got '$actualVersion'"
+          if ($versionExit -ne 0 -or -not $actualVersion.StartsWith($expectedPrefix)) {
+            Write-Error "Expected Godot version prefix '$expectedPrefix', got exit=$versionExit output='$actualVersion'"
             exit 1
           }
 
