@@ -55,6 +55,49 @@ def _block_has_all(blocks: list[list[str]], required: tuple[str, ...]) -> bool:
     return any(all(line in block for line in required) for block in blocks)
 
 
+def _named_workflow_step(workflow: str, name: str) -> str | None:
+    lines = workflow.splitlines()
+    target = f"- name: {name}"
+    for start, line in enumerate(lines):
+        if line.strip() != target:
+            continue
+        indent = len(line) - len(line.lstrip())
+        end = start + 1
+        while end < len(lines):
+            child = lines[end]
+            child_indent = len(child) - len(child.lstrip())
+            if child.strip() and child_indent <= indent:
+                break
+            end += 1
+        return "\n".join(lines[start:end])
+    return None
+
+
+def _step_metadata(step: str, key: str) -> tuple[bool, str]:
+    lines = step.splitlines()
+    indent = len(lines[0]) - len(lines[0].lstrip()) + 2
+    prefix = f"{' ' * indent}{key}:"
+    for line in lines[1:]:
+        if line.startswith(prefix):
+            return True, line.removeprefix(prefix).strip()
+    return False, ""
+
+
+def _required_step_enforces(
+    workflow: str, name: str, required_lines: tuple[str, ...]
+) -> bool:
+    step = _named_workflow_step(workflow, name)
+    if step is None:
+        return False
+    has_condition, _ = _step_metadata(step, "if")
+    has_continue, continue_value = _step_metadata(step, "continue-on-error")
+    if has_condition:
+        return False
+    if has_continue and continue_value.strip("'\"").casefold() != "false":
+        return False
+    return _block_has_all(_workflow_run_blocks(step), required_lines)
+
+
 def validate(repo: Path) -> list[str]:
     errors: list[str] = []
     runtime = repo / "apps" / "runtime-godot"
@@ -98,12 +141,19 @@ def validate(repo: Path) -> list[str]:
         errors.append("project.godot feature version differs from toolchain.json")
 
     required_ci_suite_command = (
+        "set -euo pipefail",
         "python packages/content-validator/headless_suite.py \\",
+        "--godot godot \\",
         "--project \"${RUNTIME_DIR}\" \\",
         "--contract \"${RUNTIME_DIR}/tests/required_headless_scenes.json\" \\",
         "--toolchain \"${RUNTIME_DIR}/toolchain.json\" \\",
+        "--timeout 90 2>&1 | tee headless-suite.log",
     )
-    if not _block_has_all(workflow_blocks, required_ci_suite_command):
+    if not _required_step_enforces(
+        workflow,
+        "Required headless suite (shared local/CI contract)",
+        required_ci_suite_command,
+    ):
         errors.append("runtime workflow does not actively execute the shared headless contract")
 
     required_local_suite_command = (
@@ -131,10 +181,18 @@ def validate(repo: Path) -> list[str]:
             errors.append("project-startup case does not match the exact startup contract")
 
     required_exported_startup = (
+        "$PSNativeCommandUseErrorActionPreference = $false",
         "& $exe --headless -- --ci-startup-smoke 2>&1 |",
+        "Tee-Object -FilePath ..\\..\\win-startup-smoke.log",
+        "if ($LASTEXITCODE -ne 0) {",
         "if (-not (Select-String -Path ..\\..\\win-startup-smoke.log -Pattern '^project_startup_smoke: PASS$' -Quiet)) {",
+        "if (Select-String -Path ..\\..\\win-startup-smoke.log -Pattern '^\\s*(SCRIPT ERROR|ERROR):|\\bParse Error\\b' -Quiet) {",
     )
-    if not _block_has_all(workflow_blocks, required_exported_startup):
+    if not _required_step_enforces(
+        workflow,
+        "Start and cleanly exit exported default runtime",
+        required_exported_startup,
+    ):
         errors.append("Windows workflow does not actively run and verify exported default startup")
 
     if (

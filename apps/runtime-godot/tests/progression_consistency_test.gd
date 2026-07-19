@@ -45,6 +45,38 @@ func _read_json(path: String) -> Variant:
 	return parsed
 
 
+func _validate_tracked_unlock_contract(
+	tiers: Dictionary, runtime_rows: Array, runtime_actions: Array
+) -> Variant:
+	if not tiers.has("unlocks"):
+		return "tracked tiers must define unlocks"
+	var tracked_value: Variant = tiers["unlocks"]
+	if typeof(tracked_value) != TYPE_ARRAY:
+		return "tracked tiers unlocks must be an array"
+	var tracked_rows := tracked_value as Array
+	if tracked_rows.is_empty():
+		return "tracked tiers unlocks must not be empty"
+	for row_value in tracked_rows:
+		if typeof(row_value) != TYPE_DICTIONARY:
+			return "tracked unlock row is not an object"
+	if tracked_rows != runtime_rows:
+		return "tracked unlock rows do not exactly match runtime unlock rows"
+
+	var tracked_action_ids: Array = []
+	for row_value in tracked_rows:
+		var row := row_value as Dictionary
+		if str(row.get("type", "")) == "action":
+			tracked_action_ids.append(str(row.get("value", "")))
+	var runtime_unlock_action_ids: Array = []
+	for action_id_value in runtime_actions:
+		var action_id := str(action_id_value)
+		if not UnlockTable.BASE_ACTIONS.has(action_id):
+			runtime_unlock_action_ids.append(action_id)
+	if tracked_action_ids != runtime_unlock_action_ids:
+		return "tracked unlock actions do not exactly match runtime unlock actions"
+	return null
+
+
 func _test_tracked_config_matches_runtime() -> Variant:
 	var parsed: Variant = _read_json(TIERS_PATH)
 	if typeof(parsed) != TYPE_DICTIONARY:
@@ -58,6 +90,34 @@ func _test_tracked_config_matches_runtime() -> Variant:
 		return "UnlockTable xp_per_level does not match tracked tiers"
 	if UnlockTable.max_level() != configured_max:
 		return "UnlockTable max_level does not match tracked tiers"
+
+	var runtime_rows := UnlockTable.all_unlock_rows()
+	var runtime_actions := UnlockTable.unlocked_action_ids(UnlockTable.max_level())
+	var unlock_error: Variant = _validate_tracked_unlock_contract(tiers, runtime_rows, runtime_actions)
+	if unlock_error != null:
+		return unlock_error
+
+	var missing_unlocks := tiers.duplicate(true)
+	missing_unlocks.erase("unlocks")
+	var wrong_type_unlocks := tiers.duplicate(true)
+	wrong_type_unlocks["unlocks"] = {}
+	var empty_unlocks := tiers.duplicate(true)
+	empty_unlocks["unlocks"] = []
+	var incomplete_unlocks := tiers.duplicate(true)
+	var incomplete_rows := runtime_rows.duplicate(true)
+	incomplete_rows.pop_back()
+	incomplete_unlocks["unlocks"] = incomplete_rows
+	var negative_cases: Array = [
+		{"name": "missing", "config": missing_unlocks},
+		{"name": "wrong-type", "config": wrong_type_unlocks},
+		{"name": "empty", "config": empty_unlocks},
+		{"name": "incomplete", "config": incomplete_unlocks},
+	]
+	for negative_value in negative_cases:
+		var negative := negative_value as Dictionary
+		var candidate := negative["config"] as Dictionary
+		if _validate_tracked_unlock_contract(candidate, runtime_rows, runtime_actions) == null:
+			return "unlock validator accepted %s tracked unlocks" % str(negative["name"])
 	return null
 
 
@@ -99,6 +159,20 @@ func _test_unlock_rows_resolve_to_shipping_actions() -> Variant:
 				return "action %s unlocks before configured level %d" % [action_id, level]
 			if not UnlockTable.unlocked_action_ids(level).has(action_id):
 				return "action %s is missing at configured level %d" % [action_id, level]
+
+	var expected_unlock_actions: Array = []
+	for animation_id_value in (animations as Dictionary).keys():
+		var animation_id := str(animation_id_value)
+		if not UnlockTable.BASE_ACTIONS.has(animation_id):
+			expected_unlock_actions.append(animation_id)
+	expected_unlock_actions.sort()
+	var configured_unlock_actions := seen_actions.keys()
+	configured_unlock_actions.sort()
+	if configured_unlock_actions != expected_unlock_actions:
+		return (
+			"configured action unlocks are incomplete: expected %s, got %s"
+			% [expected_unlock_actions, configured_unlock_actions]
+		)
 	return null
 
 

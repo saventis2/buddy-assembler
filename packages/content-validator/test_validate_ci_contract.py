@@ -90,6 +90,52 @@ class CiContractDriftTests(unittest.TestCase):
         errors = self._errors_after(mutate)
         self.assertTrue(any("actively execute the shared" in error for error in errors), errors)
 
+    def test_disabling_required_ci_runner_step_fails(self) -> None:
+        def mutate(root: Path) -> None:
+            path = root / ".github/workflows/runtime-smoke.yml"
+            self._replace(
+                path,
+                "      - name: Required headless suite (shared local/CI contract)\n        run: |",
+                "      - name: Required headless suite (shared local/CI contract)\n"
+                "        if: false\n"
+                "        run: |",
+            )
+
+        errors = self._errors_after(mutate)
+        self.assertTrue(any("shared headless contract" in error for error in errors), errors)
+
+    def test_allowing_required_ci_runner_failure_fails(self) -> None:
+        def mutate(root: Path) -> None:
+            path = root / ".github/workflows/runtime-smoke.yml"
+            self._replace(
+                path,
+                "      - name: Required headless suite (shared local/CI contract)\n        run: |",
+                "      - name: Required headless suite (shared local/CI contract)\n"
+                "        continue-on-error: true\n"
+                "        run: |",
+            )
+
+        errors = self._errors_after(mutate)
+        self.assertTrue(any("shared headless contract" in error for error in errors), errors)
+
+    def test_required_ci_runner_pipeline_must_propagate_failure(self) -> None:
+        def mutate(root: Path) -> None:
+            path = root / ".github/workflows/runtime-smoke.yml"
+            self._replace(
+                path,
+                "      - name: Required headless suite (shared local/CI contract)\n"
+                "        run: |\n"
+                "          set -euo pipefail\n"
+                "          python packages/content-validator/headless_suite.py \\",
+                "      - name: Required headless suite (shared local/CI contract)\n"
+                "        run: |\n"
+                "          set -eu\n"
+                "          python packages/content-validator/headless_suite.py \\",
+            )
+
+        errors = self._errors_after(mutate)
+        self.assertTrue(any("shared headless contract" in error for error in errors), errors)
+
     def test_commenting_exported_startup_fails(self) -> None:
         def mutate(root: Path) -> None:
             path = root / ".github/workflows/runtime-smoke.yml"
@@ -97,6 +143,61 @@ class CiContractDriftTests(unittest.TestCase):
                 path,
                 "          & $exe --headless -- --ci-startup-smoke 2>&1 |",
                 "          # & $exe --headless -- --ci-startup-smoke 2>&1 |",
+            )
+
+        errors = self._errors_after(mutate)
+        self.assertTrue(any("exported default startup" in error for error in errors), errors)
+
+    def test_disabling_exported_startup_step_fails(self) -> None:
+        def mutate(root: Path) -> None:
+            path = root / ".github/workflows/runtime-smoke.yml"
+            self._replace(
+                path,
+                "      - name: Start and cleanly exit exported default runtime\n        shell: pwsh",
+                "      - name: Start and cleanly exit exported default runtime\n"
+                "        if: false\n"
+                "        shell: pwsh",
+            )
+
+        errors = self._errors_after(mutate)
+        self.assertTrue(any("exported default startup" in error for error in errors), errors)
+
+    def test_allowing_exported_startup_failure_fails(self) -> None:
+        def mutate(root: Path) -> None:
+            path = root / ".github/workflows/runtime-smoke.yml"
+            self._replace(
+                path,
+                "      - name: Start and cleanly exit exported default runtime\n        shell: pwsh",
+                "      - name: Start and cleanly exit exported default runtime\n"
+                "        continue-on-error: true\n"
+                "        shell: pwsh",
+            )
+
+        errors = self._errors_after(mutate)
+        self.assertTrue(any("exported default startup" in error for error in errors), errors)
+
+    def test_exported_startup_must_check_process_exit(self) -> None:
+        def mutate(root: Path) -> None:
+            path = root / ".github/workflows/runtime-smoke.yml"
+            self._replace(
+                path,
+                "          if ($LASTEXITCODE -ne 0) {\n"
+                "            Write-Error \"Exported default-runtime startup failed",
+                "          if ($false) {\n"
+                "            Write-Error \"Exported default-runtime startup failed",
+            )
+
+        errors = self._errors_after(mutate)
+        self.assertTrue(any("exported default startup" in error for error in errors), errors)
+
+    def test_exported_startup_must_reject_error_log(self) -> None:
+        def mutate(root: Path) -> None:
+            path = root / ".github/workflows/runtime-smoke.yml"
+            self._replace(
+                path,
+                "          if (Select-String -Path ..\\..\\win-startup-smoke.log "
+                "-Pattern '^\\s*(SCRIPT ERROR|ERROR):|\\bParse Error\\b' -Quiet) {",
+                "          if ($false) {",
             )
 
         errors = self._errors_after(mutate)

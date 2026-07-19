@@ -121,6 +121,21 @@ class RunnerTests(unittest.TestCase):
         )
         self.assertEqual(result, 1)
 
+    def test_startup_error_diagnostic_is_not_false_green(self) -> None:
+        diagnostics = (
+            "SCRIPT ERROR: Invalid call\n",
+            "Parse Error: Expected expression\n",
+            "ERROR: Failed loading resource\n",
+        )
+        for diagnostic in diagnostics:
+            with self.subTest(diagnostic=diagnostic):
+                result = self._run_with(
+                    subprocess.CompletedProcess(
+                        ["godot"], 0, f"startup: PASS\n{diagnostic}", ""
+                    )
+                )
+                self.assertEqual(result, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

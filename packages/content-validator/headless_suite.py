@@ -5,11 +5,17 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
+
+
+STARTUP_ERROR_PATTERN = re.compile(
+    r"^\s*(?:SCRIPT ERROR|ERROR):|\bParse Error\b", re.IGNORECASE
+)
 
 
 @dataclass(frozen=True)
@@ -69,6 +75,10 @@ def load_contract(path: Path, project: Path) -> list[HeadlessCase]:
         seen.add(case_id)
         cases.append(HeadlessCase(case_id, scene, tuple(args_value), marker))
     return cases
+
+
+def _startup_error_line(output: str) -> str | None:
+    return next((line for line in output.splitlines() if STARTUP_ERROR_PATTERN.search(line)), None)
 
 
 def run_suite(
@@ -147,6 +157,14 @@ def run_suite(
                 file=sys.stderr,
             )
             return 1
+        if case.args == ("--", "--ci-startup-smoke"):
+            error_line = _startup_error_line(output)
+            if error_line is not None:
+                print(
+                    f"headless_suite[{case.case_id}]: startup emitted an error: {error_line}",
+                    file=sys.stderr,
+                )
+                return 1
         if case.pass_marker not in output.splitlines():
             print(
                 f"headless_suite[{case.case_id}]: missing exact marker line {case.pass_marker!r}",

@@ -348,6 +348,10 @@ jobs:
             Write-Error "Exported default-runtime startup failed with exit $LASTEXITCODE"
             exit $LASTEXITCODE
           }
+          if (Select-String -Path ..\..\win-startup-smoke.log -Pattern '^\s*(SCRIPT ERROR|ERROR):|\bParse Error\b' -Quiet) {
+            Write-Error "Exported default runtime emitted an error — see win-startup-smoke.log"
+            exit 1
+          }
           if (-not (Select-String -Path ..\..\win-startup-smoke.log -Pattern '^project_startup_smoke: PASS$' -Quiet)) {
             Write-Error "Exported default runtime did not emit the exact startup PASS marker"
             exit 1
