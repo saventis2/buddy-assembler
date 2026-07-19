@@ -55,6 +55,22 @@ def _block_has_all(blocks: list[list[str]], required: tuple[str, ...]) -> bool:
     return any(all(line in block for line in required) for block in blocks)
 
 
+def _block_enforces_command(
+    blocks: list[list[str]], required: tuple[str, ...], authoritative_line: str
+) -> bool:
+    for block in blocks:
+        if not all(line in block for line in required):
+            continue
+        command_index = block.index(authoritative_line)
+        if any(
+            re.fullmatch(r"exit\s+0\s*;?", line, re.IGNORECASE)
+            for line in block[:command_index]
+        ):
+            continue
+        return True
+    return False
+
+
 def _named_workflow_step(workflow: str, name: str) -> str | None:
     lines = workflow.splitlines()
     target = f"- name: {name}"
@@ -73,29 +89,66 @@ def _named_workflow_step(workflow: str, name: str) -> str | None:
     return None
 
 
-def _step_metadata(step: str, key: str) -> tuple[bool, str]:
-    lines = step.splitlines()
+def _named_workflow_job(workflow: str, job_id: str) -> str | None:
+    lines = workflow.splitlines()
+    target = f"  {job_id}:"
+    for start, line in enumerate(lines):
+        if line != target:
+            continue
+        indent = len(line) - len(line.lstrip())
+        end = start + 1
+        while end < len(lines):
+            child = lines[end]
+            child_indent = len(child) - len(child.lstrip())
+            if child.strip() and child_indent <= indent:
+                break
+            end += 1
+        return "\n".join(lines[start:end])
+    return None
+
+
+def _mapping_metadata_values(mapping: str, key: str) -> list[str]:
+    lines = mapping.splitlines()
     indent = len(lines[0]) - len(lines[0].lstrip()) + 2
-    prefix = f"{' ' * indent}{key}:"
+    key_forms = (key, f"'{key}'", f'"{key}"')
+    key_pattern = "|".join(re.escape(form) for form in key_forms)
+    pattern = re.compile(rf"^{' ' * indent}(?:{key_pattern})\s*:\s*(.*)$")
+    values: list[str] = []
     for line in lines[1:]:
-        if line.startswith(prefix):
-            return True, line.removeprefix(prefix).strip()
-    return False, ""
+        match = pattern.match(line)
+        if match is not None:
+            values.append(match.group(1).strip())
+    return values
+
+
+def _mapping_enforces_failure(mapping: str) -> bool:
+    if _mapping_metadata_values(mapping, "if"):
+        return False
+    if _mapping_metadata_values(mapping, "needs"):
+        return False
+    continue_values = _mapping_metadata_values(mapping, "continue-on-error")
+    return len(continue_values) == 0 or (
+        len(continue_values) == 1
+        and continue_values[0].strip("'\"").casefold() == "false"
+    )
 
 
 def _required_step_enforces(
-    workflow: str, name: str, required_lines: tuple[str, ...]
+    workflow: str,
+    job_id: str,
+    name: str,
+    required_lines: tuple[str, ...],
+    authoritative_line: str,
 ) -> bool:
-    step = _named_workflow_step(workflow, name)
-    if step is None:
+    job = _named_workflow_job(workflow, job_id)
+    if job is None or not _mapping_enforces_failure(job):
         return False
-    has_condition, _ = _step_metadata(step, "if")
-    has_continue, continue_value = _step_metadata(step, "continue-on-error")
-    if has_condition:
+    step = _named_workflow_step(job, name)
+    if step is None or not _mapping_enforces_failure(step):
         return False
-    if has_continue and continue_value.strip("'\"").casefold() != "false":
-        return False
-    return _block_has_all(_workflow_run_blocks(step), required_lines)
+    return _block_enforces_command(
+        _workflow_run_blocks(step), required_lines, authoritative_line
+    )
 
 
 def validate(repo: Path) -> list[str]:
@@ -151,8 +204,10 @@ def validate(repo: Path) -> list[str]:
     )
     if not _required_step_enforces(
         workflow,
+        "parse-and-smoke",
         "Required headless suite (shared local/CI contract)",
         required_ci_suite_command,
+        "python packages/content-validator/headless_suite.py \\",
     ):
         errors.append("runtime workflow does not actively execute the shared headless contract")
 
@@ -190,8 +245,10 @@ def validate(repo: Path) -> list[str]:
     )
     if not _required_step_enforces(
         workflow,
+        "windows-export",
         "Start and cleanly exit exported default runtime",
         required_exported_startup,
+        "& $exe --headless -- --ci-startup-smoke 2>&1 |",
     ):
         errors.append("Windows workflow does not actively run and verify exported default startup")
 

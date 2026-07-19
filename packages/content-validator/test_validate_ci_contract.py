@@ -46,6 +46,46 @@ class CiContractDriftTests(unittest.TestCase):
         self.assertIn(old, original)
         path.write_text(original.replace(old, new, 1), encoding="utf-8")
 
+    def _relocate_step(self, path: Path, name: str, destination_job: str) -> None:
+        lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+        target = f"- name: {name}"
+        starts = [index for index, line in enumerate(lines) if line.strip() == target]
+        self.assertEqual(len(starts), 1)
+        start = starts[0]
+        step_indent = len(lines[start]) - len(lines[start].lstrip())
+        end = start + 1
+        while end < len(lines):
+            indent = len(lines[end]) - len(lines[end].lstrip())
+            if lines[end].strip() and indent <= step_indent:
+                break
+            end += 1
+        step = lines[start:end]
+        del lines[start:end]
+
+        job_line = next(
+            index
+            for index, line in enumerate(lines)
+            if line.strip() == f"{destination_job}:"
+        )
+        job_indent = len(lines[job_line]) - len(lines[job_line].lstrip())
+        steps_line = next(
+            index
+            for index in range(job_line + 1, len(lines))
+            if lines[index].strip() == "steps:"
+            and len(lines[index]) - len(lines[index].lstrip()) == job_indent + 2
+        )
+        lines[steps_line + 1 : steps_line + 1] = step
+        path.write_text("".join(lines), encoding="utf-8")
+
+    def _insert_direct_key(self, path: Path, target: str, rendered_key_value: str) -> None:
+        lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+        matches = [index for index, line in enumerate(lines) if line.rstrip("\r\n") == target]
+        self.assertEqual(len(matches), 1)
+        index = matches[0]
+        indent = len(target) - len(target.lstrip()) + 2
+        lines.insert(index + 1, f"{' ' * indent}{rendered_key_value}\n")
+        path.write_text("".join(lines), encoding="utf-8")
+
     def _errors_after(self, mutation: Callable[[Path], None] | None = None) -> list[str]:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -135,6 +175,199 @@ class CiContractDriftTests(unittest.TestCase):
 
         errors = self._errors_after(mutate)
         self.assertTrue(any("shared headless contract" in error for error in errors), errors)
+
+    def test_required_jobs_cannot_be_disabled(self) -> None:
+        cases = (
+            ("parse-and-smoke", "shared headless contract"),
+            ("windows-export", "exported default startup"),
+        )
+        for job, expected_error in cases:
+            with self.subTest(job=job):
+                def mutate(root: Path, job_id: str = job) -> None:
+                    path = root / ".github/workflows/runtime-smoke.yml"
+                    self._replace(
+                        path,
+                        f"  {job_id}:\n    name:",
+                        f"  {job_id}:\n    if: false\n    name:",
+                    )
+
+                errors = self._errors_after(mutate)
+                self.assertTrue(any(expected_error in error for error in errors), errors)
+
+    def test_required_jobs_cannot_allow_or_dynamically_ignore_failure(self) -> None:
+        cases = (
+            ("parse-and-smoke", "true", "shared headless contract"),
+            (
+                "parse-and-smoke",
+                "${{ github.event_name == 'push' }}",
+                "shared headless contract",
+            ),
+            ("windows-export", "true", "exported default startup"),
+            (
+                "windows-export",
+                "${{ github.event_name == 'push' }}",
+                "exported default startup",
+            ),
+        )
+        for job, value, expected_error in cases:
+            with self.subTest(job=job, value=value):
+                def mutate(root: Path, job_id: str = job, setting: str = value) -> None:
+                    path = root / ".github/workflows/runtime-smoke.yml"
+                    self._replace(
+                        path,
+                        f"  {job_id}:\n    name:",
+                        f"  {job_id}:\n    continue-on-error: {setting}\n    name:",
+                    )
+
+                errors = self._errors_after(mutate)
+                self.assertTrue(any(expected_error in error for error in errors), errors)
+
+    def test_required_steps_must_remain_in_their_required_jobs(self) -> None:
+        cases = (
+            (
+                "Required headless suite (shared local/CI contract)",
+                "windows-export",
+                "shared headless contract",
+            ),
+            (
+                "Start and cleanly exit exported default runtime",
+                "parse-and-smoke",
+                "exported default startup",
+            ),
+        )
+        for step_name, destination_job, expected_error in cases:
+            with self.subTest(step=step_name, destination=destination_job):
+                def mutate(
+                    root: Path,
+                    name: str = step_name,
+                    destination: str = destination_job,
+                ) -> None:
+                    self._relocate_step(
+                        root / ".github/workflows/runtime-smoke.yml",
+                        name,
+                        destination,
+                    )
+
+                errors = self._errors_after(mutate)
+                self.assertTrue(any(expected_error in error for error in errors), errors)
+
+    def test_required_jobs_cannot_depend_on_a_skipped_job(self) -> None:
+        cases = (
+            ("parse-and-smoke", "shared headless contract"),
+            ("windows-export", "exported default startup"),
+        )
+        for job, expected_error in cases:
+            with self.subTest(job=job):
+                def mutate(root: Path, job_id: str = job) -> None:
+                    path = root / ".github/workflows/runtime-smoke.yml"
+                    self._replace(
+                        path,
+                        "jobs:\n",
+                        "jobs:\n"
+                        "  skipped-prerequisite:\n"
+                        "    if: false\n"
+                        "    runs-on: ubuntu-latest\n"
+                        "    steps:\n"
+                        "      - run: exit 1\n\n",
+                    )
+                    self._insert_direct_key(
+                        path,
+                        f"  {job_id}:",
+                        "needs: skipped-prerequisite",
+                    )
+
+                errors = self._errors_after(mutate)
+                self.assertTrue(any(expected_error in error for error in errors), errors)
+
+    def test_required_job_and_step_metadata_keys_cannot_hide_by_yaml_style(self) -> None:
+        scopes = (
+            ("  parse-and-smoke:", "shared headless contract"),
+            ("  windows-export:", "exported default startup"),
+            (
+                "      - name: Required headless suite (shared local/CI contract)",
+                "shared headless contract",
+            ),
+            (
+                "      - name: Start and cleanly exit exported default runtime",
+                "exported default startup",
+            ),
+        )
+        mutations = (
+            ("'if': false", "quoted-if"),
+            ("if : false", "spaced-if"),
+            ('"continue-on-error": true', "quoted-continue"),
+            ("continue-on-error : true", "spaced-continue"),
+        )
+        for target, expected_error in scopes:
+            for rendered_key_value, label in mutations:
+                with self.subTest(target=target, mutation=label):
+                    def mutate(
+                        root: Path,
+                        mapping_target: str = target,
+                        setting: str = rendered_key_value,
+                    ) -> None:
+                        self._insert_direct_key(
+                            root / ".github/workflows/runtime-smoke.yml",
+                            mapping_target,
+                            setting,
+                        )
+
+                    errors = self._errors_after(mutate)
+                    self.assertTrue(any(expected_error in error for error in errors), errors)
+
+    def test_duplicate_continue_on_error_cannot_hide_later_true(self) -> None:
+        scopes = (
+            ("  parse-and-smoke:", "shared headless contract"),
+            ("  windows-export:", "exported default startup"),
+            (
+                "      - name: Required headless suite (shared local/CI contract)",
+                "shared headless contract",
+            ),
+            (
+                "      - name: Start and cleanly exit exported default runtime",
+                "exported default startup",
+            ),
+        )
+        for target, expected_error in scopes:
+            with self.subTest(target=target):
+                def mutate(root: Path, mapping_target: str = target) -> None:
+                    path = root / ".github/workflows/runtime-smoke.yml"
+                    self._insert_direct_key(path, mapping_target, "continue-on-error: true")
+                    self._insert_direct_key(path, mapping_target, "continue-on-error: false")
+
+                errors = self._errors_after(mutate)
+                self.assertTrue(any(expected_error in error for error in errors), errors)
+
+    def test_required_commands_cannot_follow_early_success_exit(self) -> None:
+        cases = (
+            (
+                "          python packages/content-validator/headless_suite.py \\",
+                "          exit 0\n"
+                "          python packages/content-validator/headless_suite.py \\",
+                "shared headless contract",
+            ),
+            (
+                "          & $exe --headless -- --ci-startup-smoke 2>&1 |",
+                "          exit 0\n"
+                "          & $exe --headless -- --ci-startup-smoke 2>&1 |",
+                "exported default startup",
+            ),
+        )
+        for old, new, expected_error in cases:
+            with self.subTest(command=old.strip()):
+                def mutate(
+                    root: Path,
+                    command: str = old,
+                    replacement: str = new,
+                ) -> None:
+                    self._replace(
+                        root / ".github/workflows/runtime-smoke.yml",
+                        command,
+                        replacement,
+                    )
+
+                errors = self._errors_after(mutate)
+                self.assertTrue(any(expected_error in error for error in errors), errors)
 
     def test_commenting_exported_startup_fails(self) -> None:
         def mutate(root: Path) -> None:
