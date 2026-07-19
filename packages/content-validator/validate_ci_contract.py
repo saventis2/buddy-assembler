@@ -51,60 +51,127 @@ def _active_script_lines(script: str) -> list[str]:
     ]
 
 
-def _block_has_all(blocks: list[list[str]], required: tuple[str, ...]) -> bool:
-    return any(all(line in block for line in required) for block in blocks)
-
-
-def _block_enforces_command(
-    blocks: list[list[str]], required: tuple[str, ...], authoritative_line: str
-) -> bool:
-    for block in blocks:
-        if not all(line in block for line in required):
-            continue
-        command_index = block.index(authoritative_line)
-        if any(
-            re.fullmatch(r"exit\s+0\s*;?", line, re.IGNORECASE)
-            for line in block[:command_index]
-        ):
-            continue
-        return True
-    return False
-
-
-def _named_workflow_step(workflow: str, name: str) -> str | None:
-    lines = workflow.splitlines()
-    target = f"- name: {name}"
-    for start, line in enumerate(lines):
-        if line.strip() != target:
-            continue
-        indent = len(line) - len(line.lstrip())
-        end = start + 1
-        while end < len(lines):
-            child = lines[end]
-            child_indent = len(child) - len(child.lstrip())
-            if child.strip() and child_indent <= indent:
-                break
-            end += 1
-        return "\n".join(lines[start:end])
-    return None
-
-
 def _named_workflow_job(workflow: str, job_id: str) -> str | None:
     lines = workflow.splitlines()
+    jobs = [index for index, line in enumerate(lines) if line == "jobs:"]
+    if len(jobs) != 1:
+        return None
+    jobs_start = jobs[0] + 1
+    jobs_end = jobs_start
+    while jobs_end < len(lines):
+        child = lines[jobs_end]
+        child_indent = len(child) - len(child.lstrip())
+        if (
+            child.strip()
+            and not child.lstrip().startswith("#")
+            and child_indent == 0
+        ):
+            break
+        jobs_end += 1
+
     target = f"  {job_id}:"
-    for start, line in enumerate(lines):
-        if line != target:
-            continue
-        indent = len(line) - len(line.lstrip())
-        end = start + 1
-        while end < len(lines):
-            child = lines[end]
-            child_indent = len(child) - len(child.lstrip())
-            if child.strip() and child_indent <= indent:
-                break
-            end += 1
-        return "\n".join(lines[start:end])
-    return None
+    matches = [
+        index
+        for index in range(jobs_start, jobs_end)
+        if lines[index] == target
+    ]
+    if len(matches) != 1:
+        return None
+    start = matches[0]
+    end = start + 1
+    while end < jobs_end:
+        child = lines[end]
+        child_indent = len(child) - len(child.lstrip())
+        if (
+            child.strip()
+            and not child.lstrip().startswith("#")
+            and child_indent <= 2
+        ):
+            break
+        end += 1
+    return "\n".join(lines[start:end])
+
+
+def _direct_named_job_step(job: str, name: str) -> str | None:
+    lines = job.splitlines()
+    if not lines:
+        return None
+    job_indent = len(lines[0]) - len(lines[0].lstrip())
+    steps_indent = job_indent + 2
+    steps_matches = [
+        index
+        for index, line in enumerate(lines[1:], start=1)
+        if line == f"{' ' * steps_indent}steps:"
+    ]
+    if len(steps_matches) != 1:
+        return None
+    steps_start = steps_matches[0] + 1
+    steps_end = steps_start
+    while steps_end < len(lines):
+        child = lines[steps_end]
+        child_indent = len(child) - len(child.lstrip())
+        if (
+            child.strip()
+            and not child.lstrip().startswith("#")
+            and child_indent <= steps_indent
+        ):
+            break
+        steps_end += 1
+
+    item_indent = steps_indent + 2
+    target = f"{' ' * item_indent}- name: {name}"
+    matches = [
+        index
+        for index in range(steps_start, steps_end)
+        if lines[index] == target
+    ]
+    if len(matches) != 1:
+        return None
+    start = matches[0]
+    end = start + 1
+    while end < steps_end:
+        child = lines[end]
+        child_indent = len(child) - len(child.lstrip())
+        if (
+            child.strip()
+            and not child.lstrip().startswith("#")
+            and child_indent <= item_indent
+        ):
+            break
+        end += 1
+    return "\n".join(lines[start:end])
+
+
+def _direct_run_block(step: str) -> list[str] | None:
+    lines = step.splitlines()
+    if not lines:
+        return None
+    item_indent = len(lines[0]) - len(lines[0].lstrip())
+    run_indent = item_indent + 2
+    run_matches = [
+        index
+        for index, line in enumerate(lines[1:], start=1)
+        if line == f"{' ' * run_indent}run: |"
+    ]
+    if len(run_matches) != 1:
+        return None
+    start = run_matches[0] + 1
+    end = start
+    while end < len(lines):
+        child = lines[end]
+        child_indent = len(child) - len(child.lstrip())
+        if (
+            child.strip()
+            and not child.lstrip().startswith("#")
+            and child_indent <= run_indent
+        ):
+            break
+        end += 1
+    return [
+        line.strip()
+        for line in lines[start:end]
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
 
 
 def _mapping_metadata_values(mapping: str, key: str) -> list[str]:
@@ -137,18 +204,15 @@ def _required_step_enforces(
     workflow: str,
     job_id: str,
     name: str,
-    required_lines: tuple[str, ...],
-    authoritative_line: str,
+    exact_run_lines: tuple[str, ...],
 ) -> bool:
     job = _named_workflow_job(workflow, job_id)
     if job is None or not _mapping_enforces_failure(job):
         return False
-    step = _named_workflow_step(job, name)
+    step = _direct_named_job_step(job, name)
     if step is None or not _mapping_enforces_failure(step):
         return False
-    return _block_enforces_command(
-        _workflow_run_blocks(step), required_lines, authoritative_line
-    )
+    return _direct_run_block(step) == list(exact_run_lines)
 
 
 def validate(repo: Path) -> list[str]:
@@ -174,7 +238,6 @@ def validate(repo: Path) -> list[str]:
     burn_in = burn_in_path.read_text(encoding="utf-8")
     project = project_path.read_text(encoding="utf-8")
     workflow_blocks = _workflow_run_blocks(workflow)
-    python_workflow_blocks = _workflow_run_blocks(python_workflow)
     local_runner_lines = _active_script_lines(local_runner)
     burn_in_lines = _active_script_lines(burn_in)
 
@@ -207,7 +270,6 @@ def validate(repo: Path) -> list[str]:
         "parse-and-smoke",
         "Required headless suite (shared local/CI contract)",
         required_ci_suite_command,
-        "python packages/content-validator/headless_suite.py \\",
     ):
         errors.append("runtime workflow does not actively execute the shared headless contract")
 
@@ -236,19 +298,29 @@ def validate(repo: Path) -> list[str]:
             errors.append("project-startup case does not match the exact startup contract")
 
     required_exported_startup = (
+        '$ErrorActionPreference = "Stop"',
         "$PSNativeCommandUseErrorActionPreference = $false",
+        '$exe = Join-Path (Get-Location).Path "BuddyRuntime.exe"',
         "& $exe --headless -- --ci-startup-smoke 2>&1 |",
         "Tee-Object -FilePath ..\\..\\win-startup-smoke.log",
         "if ($LASTEXITCODE -ne 0) {",
-        "if (-not (Select-String -Path ..\\..\\win-startup-smoke.log -Pattern '^project_startup_smoke: PASS$' -Quiet)) {",
+        'Write-Error "Exported default-runtime startup failed with exit $LASTEXITCODE"',
+        "exit $LASTEXITCODE",
+        "}",
         "if (Select-String -Path ..\\..\\win-startup-smoke.log -Pattern '^\\s*(SCRIPT ERROR|ERROR):|\\bParse Error\\b' -Quiet) {",
+        'Write-Error "Exported default runtime emitted an error — see win-startup-smoke.log"',
+        "exit 1",
+        "}",
+        "if (-not (Select-String -Path ..\\..\\win-startup-smoke.log -Pattern '^project_startup_smoke: PASS$' -Quiet)) {",
+        'Write-Error "Exported default runtime did not emit the exact startup PASS marker"',
+        "exit 1",
+        "}",
     )
     if not _required_step_enforces(
         workflow,
         "windows-export",
         "Start and cleanly exit exported default runtime",
         required_exported_startup,
-        "& $exe --headless -- --ci-startup-smoke 2>&1 |",
     ):
         errors.append("Windows workflow does not actively run and verify exported default startup")
 
@@ -276,14 +348,22 @@ def validate(repo: Path) -> list[str]:
     if stale_contract_scenes:
         errors.append(f"contract scenes absent from checkout: {stale_contract_scenes}")
 
-    required_python_paths = (
-        "tools/importers/tests",
-        "apps/runtime-godot/tools/tests",
-        "packages/content-validator",
+    required_python_suites = (
+        ("Importer Python unit suite (zero tests fails)", "tools/importers/tests"),
+        (
+            "Runtime-tool Python unit suite (zero tests fails)",
+            "apps/runtime-godot/tools/tests",
+        ),
+        ("CI-contract Python unit suite (zero tests fails)", "packages/content-validator"),
     )
-    for path in required_python_paths:
+    for step_name, path in required_python_suites:
         expected_command = f"python -m pytest -q {path}"
-        if not any(expected_command in block for block in python_workflow_blocks):
+        if not _required_step_enforces(
+            python_workflow,
+            "python-lint",
+            step_name,
+            (expected_command,),
+        ):
             errors.append(f"python workflow does not actively execute required suite: {path}")
     return errors
 

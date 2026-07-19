@@ -86,6 +86,37 @@ class CiContractDriftTests(unittest.TestCase):
         lines.insert(index + 1, f"{' ' * indent}{rendered_key_value}\n")
         path.write_text("".join(lines), encoding="utf-8")
 
+    def _insert_matrix_step_decoy(self, path: Path, job_id: str, name: str) -> None:
+        lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+        target = f"- name: {name}"
+        starts = [index for index, line in enumerate(lines) if line.strip() == target]
+        self.assertEqual(len(starts), 1)
+        start = starts[0]
+        item_indent = len(lines[start]) - len(lines[start].lstrip())
+        end = start + 1
+        while end < len(lines):
+            child = lines[end]
+            child_indent = len(child) - len(child.lstrip())
+            if child.strip() and child_indent <= item_indent:
+                break
+            end += 1
+        step = [f"    {line}" if line.strip() else line for line in lines[start:end]]
+
+        job_target = f"  {job_id}:"
+        job_matches = [
+            index for index, line in enumerate(lines) if line.rstrip("\r\n") == job_target
+        ]
+        self.assertEqual(len(job_matches), 1)
+        insertion = [
+            "    strategy:\n",
+            "      matrix:\n",
+            "        include:\n",
+            *step,
+        ]
+        job_index = job_matches[0]
+        lines[job_index + 1 : job_index + 1] = insertion
+        path.write_text("".join(lines), encoding="utf-8")
+
     def _errors_after(self, mutation: Callable[[Path], None] | None = None) -> list[str]:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -447,6 +478,215 @@ class CiContractDriftTests(unittest.TestCase):
 
         errors = self._errors_after(mutate)
         self.assertTrue(any("tools/importers/tests" in error for error in errors), errors)
+
+    def test_python_suite_job_cannot_be_disabled_or_nonblocking(self) -> None:
+        for setting in ("if: false", "continue-on-error: true"):
+            with self.subTest(setting=setting):
+                def mutate(root: Path, job_setting: str = setting) -> None:
+                    self._insert_direct_key(
+                        root / ".github/workflows/python-lint.yml",
+                        "  python-lint:",
+                        job_setting,
+                    )
+
+                errors = self._errors_after(mutate)
+                self.assertTrue(any("required suite" in error for error in errors), errors)
+
+    def test_python_suite_job_cannot_depend_on_a_skipped_job(self) -> None:
+        def mutate(root: Path) -> None:
+            path = root / ".github/workflows/python-lint.yml"
+            self._replace(
+                path,
+                "jobs:\n",
+                "jobs:\n"
+                "  skipped-prerequisite:\n"
+                "    if: false\n"
+                "    runs-on: ubuntu-latest\n"
+                "    steps:\n"
+                "      - run: exit 1\n\n",
+            )
+            self._insert_direct_key(path, "  python-lint:", "needs: skipped-prerequisite")
+
+        errors = self._errors_after(mutate)
+        self.assertTrue(any("required suite" in error for error in errors), errors)
+
+    def test_python_suite_steps_cannot_be_disabled_or_nonblocking(self) -> None:
+        step_names = (
+            "Importer Python unit suite (zero tests fails)",
+            "Runtime-tool Python unit suite (zero tests fails)",
+            "CI-contract Python unit suite (zero tests fails)",
+        )
+        for step_name in step_names:
+            for setting in ("if: false", "continue-on-error: true"):
+                with self.subTest(step=step_name, setting=setting):
+                    def mutate(
+                        root: Path,
+                        name: str = step_name,
+                        step_setting: str = setting,
+                    ) -> None:
+                        self._insert_direct_key(
+                            root / ".github/workflows/python-lint.yml",
+                            f"      - name: {name}",
+                            step_setting,
+                        )
+
+                    errors = self._errors_after(mutate)
+                    self.assertTrue(any("required suite" in error for error in errors), errors)
+
+    def test_python_suite_steps_must_remain_in_python_lint_job(self) -> None:
+        step_names = (
+            "Importer Python unit suite (zero tests fails)",
+            "Runtime-tool Python unit suite (zero tests fails)",
+            "CI-contract Python unit suite (zero tests fails)",
+        )
+        for step_name in step_names:
+            with self.subTest(step=step_name):
+                def mutate(root: Path, name: str = step_name) -> None:
+                    path = root / ".github/workflows/python-lint.yml"
+                    self._replace(
+                        path,
+                        "jobs:\n",
+                        "jobs:\n"
+                        "  decoy-python:\n"
+                        "    runs-on: ubuntu-latest\n"
+                        "    steps:\n"
+                        "      - run: echo decoy\n\n",
+                    )
+                    self._relocate_step(path, name, "decoy-python")
+
+                errors = self._errors_after(mutate)
+                self.assertTrue(any("required suite" in error for error in errors), errors)
+
+    def test_python_suite_commands_cannot_follow_early_success_exit(self) -> None:
+        paths = (
+            "tools/importers/tests",
+            "apps/runtime-godot/tools/tests",
+            "packages/content-validator",
+        )
+        for path in paths:
+            with self.subTest(path=path):
+                def mutate(root: Path, suite_path: str = path) -> None:
+                    command = f"          python -m pytest -q {suite_path}"
+                    self._replace(
+                        root / ".github/workflows/python-lint.yml",
+                        command,
+                        f"          exit 0\n{command}",
+                    )
+
+                errors = self._errors_after(mutate)
+                self.assertTrue(any(path in error for error in errors), errors)
+
+    def test_python_suite_explicit_false_continue_on_error_is_allowed(self) -> None:
+        def mutate(root: Path) -> None:
+            path = root / ".github/workflows/python-lint.yml"
+            self._insert_direct_key(path, "  python-lint:", "continue-on-error: false")
+            for step_name in (
+                "Importer Python unit suite (zero tests fails)",
+                "Runtime-tool Python unit suite (zero tests fails)",
+                "CI-contract Python unit suite (zero tests fails)",
+            ):
+                self._insert_direct_key(
+                    path,
+                    f"      - name: {step_name}",
+                    "continue-on-error: false",
+                )
+
+        self.assertEqual(self._errors_after(mutate), [])
+
+    def test_required_steps_cannot_be_satisfied_by_matrix_decoys(self) -> None:
+        cases = (
+            (
+                ".github/workflows/runtime-smoke.yml",
+                "parse-and-smoke",
+                "Required headless suite (shared local/CI contract)",
+                "shared headless contract",
+            ),
+            (
+                ".github/workflows/runtime-smoke.yml",
+                "windows-export",
+                "Start and cleanly exit exported default runtime",
+                "exported default startup",
+            ),
+            (
+                ".github/workflows/python-lint.yml",
+                "python-lint",
+                "CI-contract Python unit suite (zero tests fails)",
+                "packages/content-validator",
+            ),
+        )
+        for relative, job_id, step_name, expected_error in cases:
+            with self.subTest(step=step_name):
+                def mutate(
+                    root: Path,
+                    workflow_path: str = relative,
+                    job: str = job_id,
+                    name: str = step_name,
+                ) -> None:
+                    path = root / workflow_path
+                    self._insert_direct_key(path, f"      - name: {name}", "if: false")
+                    self._insert_matrix_step_decoy(path, job, name)
+
+                errors = self._errors_after(mutate)
+                self.assertTrue(any(expected_error in error for error in errors), errors)
+
+    def test_required_runtime_blocks_reject_conditional_wrappers(self) -> None:
+        def wrap_linux(root: Path) -> None:
+            path = root / ".github/workflows/runtime-smoke.yml"
+            self._replace(
+                path,
+                "          set -euo pipefail\n",
+                "          if false; then\n          set -euo pipefail\n",
+            )
+            self._replace(
+                path,
+                "            --timeout 90 2>&1 | tee headless-suite.log\n",
+                "            --timeout 90 2>&1 | tee headless-suite.log\n          fi\n",
+            )
+
+        linux_errors = self._errors_after(wrap_linux)
+        self.assertTrue(
+            any("shared headless contract" in error for error in linux_errors),
+            linux_errors,
+        )
+
+        def wrap_windows(root: Path) -> None:
+            path = root / ".github/workflows/runtime-smoke.yml"
+            self._replace(
+                path,
+                '          $ErrorActionPreference = "Stop"\n',
+                '          if ($false) {\n          $ErrorActionPreference = "Stop"\n',
+            )
+            self._replace(
+                path,
+                '            Write-Error "Exported default runtime did not emit the exact startup PASS marker"\n'
+                "            exit 1\n"
+                "          }\n",
+                '            Write-Error "Exported default runtime did not emit the exact startup PASS marker"\n'
+                "            exit 1\n"
+                "          }\n"
+                "          }\n",
+            )
+
+        windows_errors = self._errors_after(wrap_windows)
+        self.assertTrue(
+            any("exported default startup" in error for error in windows_errors),
+            windows_errors,
+        )
+
+    def test_exported_startup_rejects_success_exit_before_postconditions(self) -> None:
+        def mutate(root: Path) -> None:
+            path = root / ".github/workflows/runtime-smoke.yml"
+            self._replace(
+                path,
+                "            Tee-Object -FilePath ..\\..\\win-startup-smoke.log\n"
+                "          if ($LASTEXITCODE -ne 0) {\n",
+                "            Tee-Object -FilePath ..\\..\\win-startup-smoke.log\n"
+                "          exit 0\n"
+                "          if ($LASTEXITCODE -ne 0) {\n",
+            )
+
+        errors = self._errors_after(mutate)
+        self.assertTrue(any("exported default startup" in error for error in errors), errors)
 
     def test_commenting_local_runner_invocation_fails(self) -> None:
         def mutate(root: Path) -> None:
