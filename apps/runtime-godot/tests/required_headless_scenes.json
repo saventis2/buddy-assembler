@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "tests": [
+    {"id": "project-startup", "args": ["--", "--ci-startup-smoke"], "pass_marker": "project_startup_smoke: PASS"},
+    {"id": "smoke-floor-lock", "scene": "res://tests/SmokeFloorLockTest.tscn", "pass_marker": "smoke_floor_lock: ALL PASS"},
+    {"id": "save-store", "scene": "res://tests/SaveStoreTest.tscn", "pass_marker": "save_store_test: PASS (8 cases)"},
+    {"id": "pack-validation", "scene": "res://tests/PackValidationTest.tscn", "pass_marker": "pack_validation_test: PASS (14 cases)"},
+    {"id": "portable-visual-fallback", "scene": "res://tests/PortableVisualFallbackTest.tscn", "pass_marker": "portable_visual_fallback_test: PASS (existing assets only)"},
+    {"id": "progression-consistency", "scene": "res://tests/ProgressionConsistencyTest.tscn", "pass_marker": "progression_consistency_test: PASS (4 cases)"},
+    {"id": "world-economy-flow", "scene": "res://tests/WorldEconomyFlowTest.tscn", "pass_marker": "world_economy_flow_test: PASS (3 cases)"},
+    {"id": "companion-depth", "scene": "res://tests/CompanionDepthTest.tscn", "pass_marker": "companion_depth_test: PASS (5 cases)"},
+    {"id": "economy-tuning", "scene": "res://tests/EconomyTuningTest.tscn", "pass_marker": "economy_tuning_test: PASS (3 cases)"},
+    {"id": "world-variety", "scene": "res://tests/WorldVarietyTest.tscn", "pass_marker": "world_variety_test: PASS (2 cases)"},
+    {"id": "prompt-cadence", "scene": "res://tests/PromptCadenceTest.tscn", "pass_marker": "prompt_cadence_test: PASS (3 cases)"},
+    {"id": "chat-command-router", "scene": "res://tests/ChatCommandRouterTest.tscn", "pass_marker": "chat_command_router_test: PASS (10 cases)"},
+    {"id": "manual-verification-report", "scene": "res://tests/ManualVerificationReportTest.tscn", "pass_marker": "manual_verification_report_test: PASS (2 cases)"}
+  ]
+}

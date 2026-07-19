@@ -17,6 +17,9 @@ This folder is the Windows-first desktop buddy runtime track.
 
 ## Start From Terminal (Windows)
 
+The v0.1 runtime and gate scripts require exact Godot 4.2.2-stable; the
+machine-readable pin is `toolchain.json`.
+
 1. Open PowerShell.
 2. Run:
    `cd C:\Users\GGPC\buddy-assembler`
@@ -25,8 +28,14 @@ This folder is the Windows-first desktop buddy runtime track.
 4. Start vertical-slice mode:
    `godot --path apps/runtime-godot -- --vertical-slice`
 
-If `godot` is not found, use:
-`& "C:\Users\GGPC\AppData\Local\Microsoft\WinGet\Links\godot.exe" --path apps/runtime-godot`
+If `godot` is not on PATH, pass the exact 4.2.2 console executable to the
+gate script with `-Godot "C:\path\to\Godot_v4.2.2-stable_win64_console.exe"`.
+
+Run the complete local/CI-parity gate with:
+
+```powershell
+pwsh ./apps/runtime-godot/tests/run_headless_checks.ps1
+```
 
 The current implementation is intentionally minimal and is a vertical-slice
 scaffold, not final production content.

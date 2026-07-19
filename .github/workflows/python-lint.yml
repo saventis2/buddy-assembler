@@ -7,8 +7,8 @@ on:
       - main
 
 # Scope: tools/importers/ importer/analysis scripts, packages/content-validator/,
-# and apps/runtime-godot/tools/. This is the first time this Python tooling
-# has been linted or type-checked in CI (backlog #54).
+# and apps/runtime-godot/tools/. Tool and test dependencies come from the
+# repository's pinned requirements files.
 #
 # ruff: blocking. Rule selection is ruff's default set (E4, E7, E9, F -
 # pyflakes correctness rules + a handful of pycodestyle error checks), not
@@ -43,9 +43,9 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install ruff and mypy
+      - name: Install pinned Python tooling and test dependencies
         run: |
-          pip install ruff==0.15.20 mypy==2.3.0
+          python -m pip install -r requirements.txt -r requirements-dev.txt
 
       - name: ruff check (blocking)
         run: |
@@ -59,3 +59,18 @@ jobs:
         continue-on-error: true
         run: |
           mypy tools/importers --ignore-missing-imports
+
+      # Pytest exits 5 when a selected suite collects zero tests. Keeping the
+      # logical suites separate prevents one populated path from hiding an
+      # accidentally empty required path.
+      - name: Importer Python unit suite (zero tests fails)
+        run: |
+          python -m pytest -q tools/importers/tests
+
+      - name: Runtime-tool Python unit suite (zero tests fails)
+        run: |
+          python -m pytest -q apps/runtime-godot/tools/tests
+
+      - name: CI-contract Python unit suite (zero tests fails)
+        run: |
+          python -m pytest -q packages/content-validator

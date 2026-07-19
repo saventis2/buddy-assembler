@@ -10,6 +10,9 @@ func _ready() -> void:
 	if args.has("--verify-export-closure"):
 		call_deferred("_verify_export_closure")
 		return
+	if args.has("--ci-startup-smoke"):
+		call_deferred("_run_ci_startup_smoke")
+		return
 	var target_scene := _target_scene_from_args(args)
 	call_deferred("_switch_to_scene", target_scene)
 
@@ -30,6 +33,30 @@ func _switch_to_scene(path: String) -> void:
 	var err := get_tree().change_scene_to_file(path)
 	if err != OK:
 		push_error("Failed to load launch target scene: %s" % path)
+
+
+func _run_ci_startup_smoke() -> void:
+	var resource := load(DEFAULT_SCENE)
+	if not resource is PackedScene:
+		push_error("project_startup_smoke: default scene did not load as PackedScene")
+		get_tree().quit(1)
+		return
+	var instance := (resource as PackedScene).instantiate()
+	if instance == null:
+		push_error("project_startup_smoke: default scene did not instantiate")
+		get_tree().quit(1)
+		return
+	add_child(instance)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	if not is_instance_valid(instance) or not instance.is_inside_tree():
+		push_error("project_startup_smoke: default scene did not enter the scene tree")
+		get_tree().quit(1)
+		return
+	print("project_startup_smoke: PASS")
+	instance.queue_free()
+	await get_tree().process_frame
+	get_tree().quit(0)
 
 
 func _verify_export_closure() -> void:

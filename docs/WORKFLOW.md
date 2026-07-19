@@ -163,7 +163,9 @@ godot_console.exe --path apps/runtime-godot -- --vertical-slice
 
 ### Headless parse check
 
-Verifies the project loads cleanly and runs the smoke floor-lock test.
+Requires Godot 4.2.2-stable and consumes the same checked-in required-suite
+contract as CI. It starts the real default project path, then runs every
+required test scene with a timeout and exact PASS marker.
 
 ```powershell
 pwsh ./apps/runtime-godot/tests/run_headless_checks.ps1
@@ -174,7 +176,7 @@ pwsh ./apps/runtime-godot/tests/run_headless_checks.ps1
 Runs the 20-actor frame-time profiling scene and prints a timing report.
 
 ```powershell
-pwsh ./apps/runtime-godot/tests/run_headless_checks.ps1 --profile
+pwsh ./apps/runtime-godot/tests/run_headless_checks.ps1 -Profile
 ```
 
 ### Stable branch checkpoints
