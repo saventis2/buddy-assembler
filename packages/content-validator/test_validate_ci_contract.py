@@ -86,6 +86,24 @@ class CiContractDriftTests(unittest.TestCase):
         lines.insert(index + 1, f"{' ' * indent}{rendered_key_value}\n")
         path.write_text("".join(lines), encoding="utf-8")
 
+    def _insert_run_shell_default(self, path: Path, target: str | None) -> None:
+        lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+        default = 'defaults:\n  run:\n    shell: python -c "raise SystemExit(0)" {0}\n'
+        if target is None:
+            lines[0:0] = default.splitlines(keepends=True)
+        else:
+            matches = [
+                index for index, line in enumerate(lines) if line.rstrip("\r\n") == target
+            ]
+            self.assertEqual(len(matches), 1)
+            indent = len(target) - len(target.lstrip()) + 2
+            lines[matches[0] + 1 : matches[0] + 1] = [
+                f"{' ' * indent}defaults:\n",
+                f"{' ' * (indent + 2)}run:\n",
+                f"{' ' * (indent + 4)}shell: python -c \"raise SystemExit(0)\" {{0}}\n",
+            ]
+        path.write_text("".join(lines), encoding="utf-8")
+
     def _insert_matrix_step_decoy(self, path: Path, job_id: str, name: str) -> None:
         lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
         target = f"- name: {name}"
@@ -472,8 +490,8 @@ class CiContractDriftTests(unittest.TestCase):
             path = root / ".github/workflows/python-lint.yml"
             self._replace(
                 path,
-                "          python -m pytest -q tools/importers/tests",
-                "          # python -m pytest -q tools/importers/tests",
+                "          env -u PYTEST_ADDOPTS python -m pytest -q -o addopts= tools/importers/tests",
+                "          # env -u PYTEST_ADDOPTS python -m pytest -q -o addopts= tools/importers/tests",
             )
 
         errors = self._errors_after(mutate)
@@ -566,7 +584,10 @@ class CiContractDriftTests(unittest.TestCase):
         for path in paths:
             with self.subTest(path=path):
                 def mutate(root: Path, suite_path: str = path) -> None:
-                    command = f"          python -m pytest -q {suite_path}"
+                    command = (
+                        "          env -u PYTEST_ADDOPTS python -m pytest -q -o addopts= "
+                        f"{suite_path}"
+                    )
                     self._replace(
                         root / ".github/workflows/python-lint.yml",
                         command,
@@ -592,6 +613,197 @@ class CiContractDriftTests(unittest.TestCase):
                 )
 
         self.assertEqual(self._errors_after(mutate), [])
+
+    def test_required_steps_reject_custom_direct_shells(self) -> None:
+        cases = (
+            (
+                ".github/workflows/runtime-smoke.yml",
+                "      - name: Required headless suite (shared local/CI contract)",
+                "shared headless contract",
+            ),
+            (
+                ".github/workflows/runtime-smoke.yml",
+                "        shell: pwsh",
+                "exported default startup",
+            ),
+            *(
+                (
+                    ".github/workflows/python-lint.yml",
+                    f"      - name: {step_name}",
+                    path,
+                )
+                for step_name, path in (
+                    ("Importer Python unit suite (zero tests fails)", "tools/importers/tests"),
+                    (
+                        "Runtime-tool Python unit suite (zero tests fails)",
+                        "apps/runtime-godot/tools/tests",
+                    ),
+                    (
+                        "CI-contract Python unit suite (zero tests fails)",
+                        "packages/content-validator",
+                    ),
+                )
+            ),
+        )
+        for relative, target, expected_error in cases:
+            with self.subTest(target=target):
+                def mutate(
+                    root: Path,
+                    workflow: str = relative,
+                    mutation_target: str = target,
+                ) -> None:
+                    path = root / workflow
+                    custom_shell = 'shell: python -c "raise SystemExit(0)" {0}'
+                    if mutation_target == "        shell: pwsh":
+                        self._replace(
+                            path,
+                            "      - name: Start and cleanly exit exported default runtime\n"
+                            "        shell: pwsh",
+                            "      - name: Start and cleanly exit exported default runtime\n"
+                            f"        {custom_shell}",
+                        )
+                    else:
+                        self._insert_direct_key(path, mutation_target, custom_shell)
+
+                errors = self._errors_after(mutate)
+                self.assertTrue(any(expected_error in error for error in errors), errors)
+
+    def test_required_jobs_reject_defaults_run_shell(self) -> None:
+        cases = (
+            (".github/workflows/runtime-smoke.yml", "  parse-and-smoke:", "shared headless contract"),
+            (".github/workflows/runtime-smoke.yml", "  windows-export:", "exported default startup"),
+            (".github/workflows/python-lint.yml", "  python-lint:", "required suite"),
+        )
+        for relative, target, expected_error in cases:
+            with self.subTest(target=target):
+                def mutate(
+                    root: Path,
+                    workflow: str = relative,
+                    job: str = target,
+                ) -> None:
+                    self._insert_run_shell_default(root / workflow, job)
+
+                errors = self._errors_after(mutate)
+                self.assertTrue(any(expected_error in error for error in errors), errors)
+
+    def test_workflow_defaults_run_shell_fails(self) -> None:
+        cases = (
+            (".github/workflows/runtime-smoke.yml", "runtime workflow must not set defaults.run.shell"),
+            (".github/workflows/python-lint.yml", "python workflow must not set defaults.run.shell"),
+        )
+        for relative, expected_error in cases:
+            with self.subTest(workflow=relative):
+                def mutate(root: Path, workflow: str = relative) -> None:
+                    self._insert_run_shell_default(root / workflow, None)
+
+                errors = self._errors_after(mutate)
+                self.assertTrue(any(expected_error in error for error in errors), errors)
+
+    def test_required_steps_reject_yaml_alias_keys(self) -> None:
+        cases = (
+            (
+                ".github/workflows/runtime-smoke.yml",
+                "      - name: Required headless suite (shared local/CI contract)",
+                "runtime workflow must not use YAML anchors or aliases",
+            ),
+            (
+                ".github/workflows/runtime-smoke.yml",
+                "      - name: Start and cleanly exit exported default runtime",
+                "runtime workflow must not use YAML anchors or aliases",
+            ),
+            (
+                ".github/workflows/python-lint.yml",
+                "      - name: Importer Python unit suite (zero tests fails)",
+                "python workflow must not use YAML anchors or aliases",
+            ),
+        )
+        for relative, target, expected_error in cases:
+            with self.subTest(target=target):
+                def mutate(
+                    root: Path,
+                    workflow: str = relative,
+                    mutation_target: str = target,
+                ) -> None:
+                    path = root / workflow
+                    self._replace(path, "name:", "name: &authority_key if #",)
+                    self._insert_direct_key(path, mutation_target, "*authority_key: false")
+
+                errors = self._errors_after(mutate)
+                self.assertTrue(any(expected_error in error for error in errors), errors)
+
+    def test_yaml_anchor_alias_tokens_in_run_bodies_are_allowed(self) -> None:
+        def mutate(root: Path) -> None:
+            path = root / ".github/workflows/runtime-smoke.yml"
+            self._replace(
+                path,
+                '          $ErrorActionPreference = "Stop"\n'
+                "          pwsh -NoProfile -File apps/runtime-godot/tests/test_run_burn_in.ps1",
+                '          $ErrorActionPreference = "Stop"\n'
+                '          Write-Host "&authority_key *authority_key"\n'
+                "          pwsh -NoProfile -File apps/runtime-godot/tests/test_run_burn_in.ps1",
+            )
+
+        self.assertEqual(self._errors_after(mutate), [])
+
+    def test_escaped_required_step_key_fails_closed(self) -> None:
+        def mutate(root: Path) -> None:
+            self._insert_direct_key(
+                root / ".github/workflows/runtime-smoke.yml",
+                "      - name: Required headless suite (shared local/CI contract)",
+                '"\\x69f": false',
+            )
+
+        errors = self._errors_after(mutate)
+        self.assertTrue(any("shared headless contract" in error for error in errors), errors)
+
+    def test_python_workflow_authority_mappings_reject_env(self) -> None:
+        cases = (
+            ("top-level", None, "python workflow has non-canonical top-level contract metadata"),
+            ("job", "  python-lint:", "required suite"),
+            ("step", "      - name: Importer Python unit suite (zero tests fails)", "required suite"),
+        )
+        for scope, target, expected_error in cases:
+            with self.subTest(scope=scope):
+                def mutate(root: Path, mapping_target: str | None = target) -> None:
+                    path = root / ".github/workflows/python-lint.yml"
+                    if mapping_target is None:
+                        original = path.read_text(encoding="utf-8")
+                        path.write_text(
+                            "env:\n  PYTEST_ADDOPTS: --collect-only\n" + original,
+                            encoding="utf-8",
+                        )
+                    else:
+                        self._insert_direct_key(
+                            path,
+                            mapping_target,
+                            "env: {PYTEST_ADDOPTS: --collect-only}",
+                        )
+
+                errors = self._errors_after(mutate)
+                self.assertTrue(any(expected_error in error for error in errors), errors)
+
+    def test_python_suite_collect_only_environment_cannot_bypass_execution(self) -> None:
+        def mutate(root: Path) -> None:
+            self._insert_direct_key(
+                root / ".github/workflows/python-lint.yml",
+                "  python-lint:",
+                "env: {PYTEST_ADDOPTS: --collect-only}",
+            )
+
+        errors = self._errors_after(mutate)
+        self.assertTrue(any("required suite" in error for error in errors), errors)
+
+    def test_python_suite_command_must_clear_pytest_options(self) -> None:
+        def mutate(root: Path) -> None:
+            path = root / ".github/workflows/python-lint.yml"
+            self._replace(
+                path,
+                "          env -u PYTEST_ADDOPTS python -m pytest -q -o addopts= tools/importers/tests",
+                "          python -m pytest -q tools/importers/tests",
+            )
+
+        errors = self._errors_after(mutate)
+        self.assertTrue(any("tools/importers/tests" in error for error in errors), errors)
 
     def test_required_steps_cannot_be_satisfied_by_matrix_decoys(self) -> None:
         cases = (

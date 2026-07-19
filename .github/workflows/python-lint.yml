@@ -65,12 +65,12 @@ jobs:
       # accidentally empty required path.
       - name: Importer Python unit suite (zero tests fails)
         run: |
-          python -m pytest -q tools/importers/tests
+          env -u PYTEST_ADDOPTS python -m pytest -q -o addopts= tools/importers/tests
 
       - name: Runtime-tool Python unit suite (zero tests fails)
         run: |
-          python -m pytest -q apps/runtime-godot/tools/tests
+          env -u PYTEST_ADDOPTS python -m pytest -q -o addopts= apps/runtime-godot/tools/tests
 
       - name: CI-contract Python unit suite (zero tests fails)
         run: |
-          python -m pytest -q packages/content-validator
+          env -u PYTEST_ADDOPTS python -m pytest -q -o addopts= packages/content-validator

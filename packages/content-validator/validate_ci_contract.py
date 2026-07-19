@@ -11,6 +11,38 @@ from pathlib import Path
 from headless_suite import load_contract, load_toolchain
 
 
+_STRUCTURAL_ANCHOR_OR_ALIAS = re.compile(r"(?<!\S)[&*][^\s\[\]{},]+")
+
+
+def _workflow_has_structural_anchor_or_alias(workflow: str) -> bool:
+    """Reject YAML indirection outside literal run blocks.
+
+    The contract validator intentionally inspects the narrow workflow shape
+    without a YAML dependency. YAML aliases can otherwise turn a syntactically
+    unrelated key into ``if`` or ``continue-on-error`` after parsing. Literal
+    run bodies are commands rather than workflow structure, so skip them.
+    """
+    lines = workflow.splitlines()
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        indent = len(line) - len(line.lstrip())
+        if line.strip() in ("run: |", "run: >"):
+            index += 1
+            while index < len(lines):
+                child = lines[index]
+                child_indent = len(child) - len(child.lstrip())
+                if child.strip() and child_indent <= indent:
+                    break
+                index += 1
+            continue
+        stripped = line.lstrip()
+        if not stripped.startswith("#") and _STRUCTURAL_ANCHOR_OR_ALIAS.search(line):
+            return True
+        index += 1
+    return False
+
+
 def _workflow_run_blocks(workflow: str) -> list[list[str]]:
     """Return active shell lines from YAML literal run blocks.
 
@@ -200,17 +232,174 @@ def _mapping_enforces_failure(mapping: str) -> bool:
     )
 
 
+def _mapping_has_run_shell_default(mapping: str) -> bool:
+    """Return whether this mapping defines ``defaults.run.shell`` directly."""
+    lines = mapping.splitlines()
+    if not lines:
+        return False
+    mapping_indent = len(lines[0]) - len(lines[0].lstrip())
+    defaults = f"{' ' * (mapping_indent + 2)}defaults:"
+    runs = f"{' ' * (mapping_indent + 4)}run:"
+    shell_prefix = f"{' ' * (mapping_indent + 6)}shell:"
+    for index, line in enumerate(lines):
+        if line != defaults:
+            continue
+        end = index + 1
+        while end < len(lines):
+            child = lines[end]
+            child_indent = len(child) - len(child.lstrip())
+            if child.strip() and child_indent <= mapping_indent + 2:
+                break
+            end += 1
+        for run_index in range(index + 1, end):
+            if lines[run_index] != runs:
+                continue
+            run_end = run_index + 1
+            while run_end < end:
+                child = lines[run_end]
+                child_indent = len(child) - len(child.lstrip())
+                if child.strip() and child_indent <= mapping_indent + 4:
+                    break
+                run_end += 1
+            if any(line.startswith(shell_prefix) for line in lines[run_index + 1 : run_end]):
+                return True
+    return False
+
+
+def _workflow_has_run_shell_default(workflow: str) -> bool:
+    """Return whether a workflow-level ``defaults.run.shell`` is present."""
+    lines = workflow.splitlines()
+    for index, line in enumerate(lines):
+        if line != "defaults:":
+            continue
+        end = index + 1
+        while end < len(lines):
+            child = lines[end]
+            child_indent = len(child) - len(child.lstrip())
+            if child.strip() and child_indent <= 0:
+                break
+            end += 1
+        for run_index in range(index + 1, end):
+            if lines[run_index] != "  run:":
+                continue
+            if any(line.startswith("    shell:") for line in lines[run_index + 1 : end]):
+                return True
+    return False
+
+
+def _workflow_has_only_canonical_top_level_lines(
+    workflow: str, canonical_lines: tuple[str, ...]
+) -> bool:
+    """Reject unexpected top-level workflow metadata before YAML can resolve it."""
+    found: list[str] = []
+    for line in workflow.splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if len(line) - len(line.lstrip()) == 0:
+            if line not in canonical_lines:
+                return False
+            found.append(line)
+    return sorted(found) == sorted(canonical_lines)
+
+
+def _mapping_has_only_canonical_direct_lines(
+    mapping: str, canonical_lines: tuple[str, ...]
+) -> bool:
+    """Require canonical direct mapping metadata, allowing one explicit false."""
+    lines = mapping.splitlines()
+    if not lines:
+        return False
+    mapping_indent = len(lines[0]) - len(lines[0].lstrip())
+    found: list[str] = []
+    explicit_false = 0
+    for line in lines[1:]:
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if len(line) - len(line.lstrip()) != mapping_indent + 2:
+            continue
+        if line == f"{' ' * (mapping_indent + 2)}continue-on-error: false":
+            explicit_false += 1
+            continue
+        if line not in canonical_lines:
+            return False
+        found.append(line)
+    return explicit_false <= 1 and sorted(found) == sorted(canonical_lines)
+
+
+def _required_step_has_only_canonical_direct_lines(
+    step: str,
+    name: str,
+    canonical_lines: tuple[str, ...],
+) -> bool:
+    """Require a named step's direct metadata to be exactly authoritative."""
+    lines = step.splitlines()
+    if not lines:
+        return False
+    item_indent = len(lines[0]) - len(lines[0].lstrip())
+    if lines[0] != f"{' ' * item_indent}- name: {name}":
+        return False
+    found: list[str] = []
+    explicit_false = 0
+    for line in lines[1:]:
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if len(line) - len(line.lstrip()) != item_indent + 2:
+            continue
+        if line == f"{' ' * (item_indent + 2)}continue-on-error: false":
+            explicit_false += 1
+            continue
+        if line not in canonical_lines:
+            return False
+        found.append(line)
+    return explicit_false <= 1 and sorted(found) == sorted(canonical_lines)
+
+
 def _required_step_enforces(
     workflow: str,
     job_id: str,
     name: str,
     exact_run_lines: tuple[str, ...],
+    required_shell: str | None = None,
+    required_working_directory: str | None = None,
 ) -> bool:
     job = _named_workflow_job(workflow, job_id)
-    if job is None or not _mapping_enforces_failure(job):
+    canonical_job_lines = {
+        "parse-and-smoke": (
+            "    name: Parse + headless smoke (Linux)",
+            "    runs-on: ubuntu-latest",
+            "    timeout-minutes: 15",
+            "    steps:",
+        ),
+        "windows-export": (
+            "    name: Windows export (release-truth artifact)",
+            "    runs-on: windows-latest",
+            "    timeout-minutes: 30",
+            "    steps:",
+        ),
+        "python-lint": ("    runs-on: ubuntu-latest", "    steps:"),
+    }
+    if job is None or not _mapping_has_only_canonical_direct_lines(
+        job, canonical_job_lines[job_id]
+    ):
         return False
     step = _direct_named_job_step(job, name)
-    if step is None or not _mapping_enforces_failure(step):
+    if step is None:
+        return False
+    canonical_step_lines: tuple[str, ...] = ("        run: |",)
+    if required_shell is None:
+        if required_working_directory is not None:
+            return False
+    else:
+        if required_working_directory is None:
+            return False
+        canonical_step_lines = (
+            f"        shell: {required_shell}",
+            f"        working-directory: {required_working_directory}",
+            "        run: |",
+        )
+    if not _required_step_has_only_canonical_direct_lines(
+        step, name, canonical_step_lines
+    ):
         return False
     return _direct_run_block(step) == list(exact_run_lines)
 
@@ -240,6 +429,23 @@ def validate(repo: Path) -> list[str]:
     workflow_blocks = _workflow_run_blocks(workflow)
     local_runner_lines = _active_script_lines(local_runner)
     burn_in_lines = _active_script_lines(burn_in)
+
+    if _workflow_has_structural_anchor_or_alias(workflow):
+        errors.append("runtime workflow must not use YAML anchors or aliases in workflow structure")
+    if _workflow_has_structural_anchor_or_alias(python_workflow):
+        errors.append("python workflow must not use YAML anchors or aliases in workflow structure")
+    if _workflow_has_run_shell_default(workflow):
+        errors.append("runtime workflow must not set defaults.run.shell")
+    if _workflow_has_run_shell_default(python_workflow):
+        errors.append("python workflow must not set defaults.run.shell")
+    if not _workflow_has_only_canonical_top_level_lines(
+        workflow, ("name: Runtime smoke", "on:", "env:", "jobs:")
+    ):
+        errors.append("runtime workflow has non-canonical top-level contract metadata")
+    if not _workflow_has_only_canonical_top_level_lines(
+        python_workflow, ("name: Python lint", "on:", "jobs:")
+    ):
+        errors.append("python workflow has non-canonical top-level contract metadata")
 
     version_match = re.search(r'^\s*GODOT_VERSION:\s*"([^"]+)"\s*$', workflow, re.MULTILINE)
     release_match = re.search(r'^\s*GODOT_RELEASE:\s*"([^"]+)"\s*$', workflow, re.MULTILINE)
@@ -321,6 +527,8 @@ def validate(repo: Path) -> list[str]:
         "windows-export",
         "Start and cleanly exit exported default runtime",
         required_exported_startup,
+        required_shell="pwsh",
+        required_working_directory="build/windows",
     ):
         errors.append("Windows workflow does not actively run and verify exported default startup")
 
@@ -357,7 +565,7 @@ def validate(repo: Path) -> list[str]:
         ("CI-contract Python unit suite (zero tests fails)", "packages/content-validator"),
     )
     for step_name, path in required_python_suites:
-        expected_command = f"python -m pytest -q {path}"
+        expected_command = f"env -u PYTEST_ADDOPTS python -m pytest -q -o addopts= {path}"
         if not _required_step_enforces(
             python_workflow,
             "python-lint",
