@@ -30,4 +30,4 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          python packages/content-validator/validate_pr_gate_authority.py --event "$GITHUB_EVENT_PATH"
+          python -I packages/content-validator/validate_pr_gate_authority.py --event "$GITHUB_EVENT_PATH"

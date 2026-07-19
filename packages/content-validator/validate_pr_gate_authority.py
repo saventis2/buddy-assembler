@@ -9,6 +9,12 @@ into a command.
 
 from __future__ import annotations
 
+import sys
+
+if __name__ == "__main__" and sys.flags.isolated != 1:
+    print("gate_authority: FAIL: isolated Python execution is required", file=sys.stderr)
+    raise SystemExit(2)
+
 import argparse
 import base64
 import binascii
@@ -16,7 +22,6 @@ import json
 import os
 import re
 import subprocess
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable

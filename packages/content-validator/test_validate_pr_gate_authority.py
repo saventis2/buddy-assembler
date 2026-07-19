@@ -4,6 +4,8 @@ import base64
 import hashlib
 import importlib.util
 import json
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -362,6 +364,47 @@ class GateAuthorityTests(unittest.TestCase):
             ),
         )
 
+    def test_cli_requires_isolation_before_shadowable_imports(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            script = root / "validate_pr_gate_authority.py"
+            shutil.copy2(MODULE_PATH, script)
+            urllib_marker = root / "urllib-marker"
+            site_marker = root / "site-marker"
+            decoy_urllib = root / "urllib"
+            decoy_urllib.mkdir()
+            (decoy_urllib / "__init__.py").write_text(
+                f"from pathlib import Path\nPath({str(urllib_marker)!r}).write_text('ran')\n",
+                encoding="utf-8",
+            )
+            (root / "sitecustomize.py").write_text(
+                f"from pathlib import Path\nPath({str(site_marker)!r}).write_text('ran')\n",
+                encoding="utf-8",
+            )
+
+            direct = subprocess.run(
+                [sys.executable, str(script)],
+                cwd=root,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(direct.returncode, 2)
+            self.assertIn("isolated Python execution is required", direct.stderr)
+            self.assertFalse(urllib_marker.exists())
+            site_marker.unlink(missing_ok=True)
+            isolated = subprocess.run(
+                [sys.executable, "-I", str(script)],
+                cwd=root,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(isolated.returncode, 2)
+            self.assertFalse(urllib_marker.exists())
+            self.assertFalse(site_marker.exists())
+
     def test_workflow_contract_is_base_owned_and_read_only(self) -> None:
         workflow = (REPO_ROOT / ".github/workflows/gate-authority.yml").read_text(
             encoding="utf-8"
@@ -384,7 +427,7 @@ class GateAuthorityTests(unittest.TestCase):
             workflow,
         )
         self.assertIn(
-            'python packages/content-validator/validate_pr_gate_authority.py --event "$GITHUB_EVENT_PATH"',
+            'python -I packages/content-validator/validate_pr_gate_authority.py --event "$GITHUB_EVENT_PATH"',
             workflow,
         )
         self.assertNotIn("paths:", workflow)
