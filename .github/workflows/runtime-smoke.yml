@@ -147,9 +147,9 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: godot-bin
-          # v1 isolates the console-executable cache from the older GUI-only
-          # cache, whose --version output is not capturable in pwsh.
-          key: godot-windows-console-${{ env.GODOT_RELEASE }}-v1
+          # v2 preserves the release archive's console/main executable pair.
+          # Renaming either binary breaks the console wrapper's sibling lookup.
+          key: godot-windows-console-pair-${{ env.GODOT_RELEASE }}-v2
 
       - name: Cache Godot ${{ env.GODOT_VERSION }} export templates (Windows)
         id: cache-godot-templates-windows
@@ -164,19 +164,24 @@ jobs:
           $ErrorActionPreference = "Stop"
           $release = $env:GODOT_RELEASE
           $godotDir = Join-Path (Get-Location).Path "godot-bin"
-          $godotExe = Join-Path $godotDir "godot-console.exe"
-          if (-not (Test-Path -LiteralPath $godotExe)) {
+          $godotConsole = Get-ChildItem $godotDir -Filter "Godot_v*_win64_console.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $godotConsole) {
             $url = "https://github.com/godotengine/godot/releases/download/$release/Godot_v${release}_win64.exe.zip"
             Invoke-WebRequest -Uri $url -OutFile godot.zip
             Expand-Archive -Path godot.zip -DestinationPath godot-bin
-            $downloaded = Get-ChildItem godot-bin -Filter "Godot_v*_win64_console.exe" | Select-Object -First 1
-            if (-not $downloaded) {
+            $godotConsole = Get-ChildItem $godotDir -Filter "Godot_v*_win64_console.exe" | Select-Object -First 1
+            if (-not $godotConsole) {
               Write-Error "Godot archive did not contain the Windows console executable"
               exit 1
             }
-            Move-Item -LiteralPath $downloaded.FullName -Destination $godotExe
           } else {
-            Write-Host "Godot $release console executable restored from cache."
+            Write-Host "Godot $release console/main executable pair restored from cache."
+          }
+          $godotExe = $godotConsole.FullName
+          $godotMainExe = $godotExe -replace '_console\.exe$', '.exe'
+          if (-not (Test-Path -LiteralPath $godotMainExe)) {
+            Write-Error "Godot console companion executable is missing: $godotMainExe"
+            exit 1
           }
           $godotDir | Out-File -FilePath $env:GITHUB_PATH -Append
           "GODOT_EXE=$godotExe" | Out-File -FilePath $env:GITHUB_ENV -Append

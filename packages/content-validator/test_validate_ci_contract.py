@@ -127,12 +127,12 @@ class CiContractDriftTests(unittest.TestCase):
             path = root / ".github/workflows/runtime-smoke.yml"
             self._replace(
                 path,
-                "godot-windows-console-${{ env.GODOT_RELEASE }}-v1",
+                "godot-windows-console-pair-${{ env.GODOT_RELEASE }}-v2",
                 "godot-windows-${{ env.GODOT_RELEASE }}",
             )
 
         errors = self._errors_after(mutate)
-        self.assertTrue(any("console executable" in error for error in errors), errors)
+        self.assertTrue(any("console/main pair" in error for error in errors), errors)
 
 
 if __name__ == "__main__":

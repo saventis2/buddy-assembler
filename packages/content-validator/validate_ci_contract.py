@@ -138,13 +138,17 @@ def validate(repo: Path) -> list[str]:
         errors.append("Windows workflow does not actively run and verify exported default startup")
 
     if (
-        "godot-windows-console-${{ env.GODOT_RELEASE }}-v1" not in workflow
-        or '$godotExe = Join-Path $godotDir "godot-console.exe"'
+        "godot-windows-console-pair-${{ env.GODOT_RELEASE }}-v2" not in workflow
+        or not any(
+            'Get-ChildItem $godotDir -Filter "Godot_v*_win64_console.exe"' in line
+            for line in _active_script_lines(workflow)
+        )
+        or "$godotMainExe = $godotExe -replace '_console\\.exe$', '.exe'"
         not in _active_script_lines(workflow)
         or not any("& $env:GODOT_EXE --headless --import" in line for block in workflow_blocks for line in block)
         or not any("& $env:GODOT_EXE --headless --export-release" in line for block in workflow_blocks for line in block)
     ):
-        errors.append("Windows workflow does not use the cache-isolated Godot console executable")
+        errors.append("Windows workflow does not use the cache-isolated Godot console/main pair")
 
     contract_scenes = {case.scene for case in cases if case.scene is not None}
     tracked_test_scenes = {
