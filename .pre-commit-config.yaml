@@ -7,14 +7,18 @@
 #
 # Versions are pinned to match items #53 (requirements-dev.txt) and #54
 # (ruff+mypy CI job) so all three converge on the same tool versions:
-#   ruff==0.15.20
+#   ruff==0.16.8
 #   mypy==2.3.1
+#
+# ruff's own lint rule selection is pinned separately in .ruff.toml
+# (repo root) so a ruff upgrade cannot silently change which rules this
+# hook (and CI's `ruff check`) gate on.
 
 repos:
   # Python linting/formatting for tools/importers/, packages/content-validator/,
   # and apps/runtime-godot/tools/ (the only locations that contain .py files).
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.20  # matches ruff==0.15.20
+    rev: v0.16.8  # matches ruff==0.16.8
     hooks:
       - id: ruff
         name: ruff (lint)
