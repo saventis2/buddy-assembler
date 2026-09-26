@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
-  "schemaSemver": "1.0.0",
-  "id": "broken-pack",
-  "name": "Broken Pack",
+  "schemaSemver": "1.9.0",
+  "id": "future-minor-pack",
+  "name": "Future Minor Pack",
   "version": "0.0.1",
   "companion": {
-    "id": "broken",
-    "displayName": "Broken Buddy",
+    "id": "semver-buddy",
+    "displayName": "Semver Buddy",
     "traits": [
-      "broken"
+      "calm"
     ]
   },
   "idleActions": [
@@ -17,15 +17,13 @@
   "reactionActions": [
     "happy"
   ],
-  "encounterActions": [
-    "visitor"
-  ],
+  "encounterActions": [],
   "eventRules": [
     {
-      "id": "broken-event",
+      "id": "wave",
+      "action": "happy",
       "weight": 1.0,
       "cooldownSeconds": 30
     }
   ]
 }
-

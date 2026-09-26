@@ -6,6 +6,7 @@
   "type": "object",
   "required": [
     "schemaVersion",
+    "schemaSemver",
     "id",
     "name",
     "version",
@@ -17,8 +18,15 @@
   ],
   "properties": {
     "schemaVersion": {
+      "description": "Integer schema MAJOR version; must equal the major of schemaSemver. Enforced by the runtime (ContentLoader.CONTENT_SCHEMA_VERSION) and the validator.",
       "type": "integer",
-      "minimum": 1
+      "minimum": 1,
+      "maximum": 1
+    },
+    "schemaSemver": {
+      "description": "Full MAJOR.MINOR.PATCH schema revision the pack was authored against (current: 1.0.0). Policy: see docs/product/CONTENT_SCHEMA.md, Schema versioning; per-bump notes in docs/product/CONTENT_SCHEMA_MIGRATIONS.md.",
+      "type": "string",
+      "pattern": "^1\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
     },
     "runtimeAudience": {
       "type": "string",

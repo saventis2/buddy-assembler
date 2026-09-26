@@ -1,7 +1,8 @@
 # Content Pack Schema — V1
 
-**Schema version:** 1  
-**Runtime constant:** `ContentLoader.CONTENT_SCHEMA_VERSION`
+**Schema version:** 1.0.0 (`schemaSemver`; major 1 = `schemaVersion`)  
+**Runtime constant:** `ContentLoader.CONTENT_SCHEMA_VERSION` (major only)  
+**Migration notes:** [`CONTENT_SCHEMA_MIGRATIONS.md`](CONTENT_SCHEMA_MIGRATIONS.md)
 
 The runtime only speaks the internal pack format described here. WZ/NX and all
 MapleStory-specific formats are handled exclusively by importer tooling
@@ -31,6 +32,7 @@ content/<pack_id>/
 ```json
 {
   "schemaVersion": 1,
+  "schemaSemver": "1.0.0",
   "runtimeAudience": "user",
   "id": "<pack_id>",
   "name": "<display name>",
@@ -84,7 +86,8 @@ content/<pack_id>/
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `schemaVersion` | integer | Must equal `CONTENT_SCHEMA_VERSION` (currently 1) |
+| `schemaVersion` | integer | Schema major; must equal `CONTENT_SCHEMA_VERSION` (currently 1) |
+| `schemaSemver` | string | Full `MAJOR.MINOR.PATCH` schema revision (currently `1.0.0`); major must equal `schemaVersion`. See *Schema versioning* |
 | `runtimeAudience` | string | Optional; `user` (default) or `development` |
 | `id` | string | Matches directory name |
 | `name` | string | Display name |
@@ -128,6 +131,63 @@ Developers can exercise them from a source checkout with
 
 ---
 
+## Schema versioning (semver contract)
+
+The manifest schema is versioned with [semver](https://semver.org/)
+`MAJOR.MINOR.PATCH`. A manifest declares two fields that must agree:
+
+- `schemaSemver` (string): the full schema revision the pack was authored
+  against, e.g. `"1.0.0"`. Digits only; no `v` prefix, leading zeros, or
+  pre-release/build suffix.
+- `schemaVersion` (integer): the major of `schemaSemver`. This is the only
+  part the runtime reads (`ContentLoader.CONTENT_SCHEMA_VERSION`).
+
+The newest revision the tooling knows is `CURRENT_SCHEMA_SEMVER` in
+`packages/content-validator/validate_pack.py` (currently `1.0.0`).
+`SUPPORTED_SCHEMA_MAJOR` in the same file must equal the runtime's
+`CONTENT_SCHEMA_VERSION`; a unit test fails if the two drift.
+
+### What each kind of bump means
+
+| Bump | Allowed changes | Examples |
+|------|-----------------|----------|
+| **Patch** (`1.0.x`) | No change to what is valid. Documentation, clarified wording, and hint text only. | Fixing a typo in this doc; improving a validator error hint. |
+| **Minor** (`1.x.0`) | Additive and backward-compatible only: **new optional fields**, or new values accepted where older packs stay valid. Every pack valid under `1.N` stays valid under `1.N+1`, and a runtime that ignores the new field still loads the pack correctly. | A new optional manifest field (e.g. an optional `minimum_runtime_version`, an optional string table) that the runtime treats as absent when missing. |
+| **Major** (`x.0.0`) | Any **breaking** change: a new required field; a removed or renamed field; a narrowed type, range, or enum; or changed meaning of an existing field. Requires bumping `CONTENT_SCHEMA_VERSION` in the runtime and `SUPPORTED_SCHEMA_MAJOR` in the validator in the same PR, plus migrating every shipped pack. | Making author/license fields required; changing an asset path format. |
+
+When unsure, treat the change as major. A field that starts optional and
+later becomes required needs a minor bump to add it, then a major bump to
+require it.
+
+### What the validator and runtime do
+
+| Pack declares | Validator (`validate_pack.py`) | Runtime (`content_loader.gd`) |
+|---------------|--------------------------------|-------------------------------|
+| Same major, minor/patch ≤ current | Accept | Accept |
+| Same major, **newer patch** | Accept silently | Accept (reads major only) |
+| Same major, **newer minor** | **Accept with a warning** (`WARNING:` line, exit 0). Fields added after the known minor are not checked. | Accept. Unknown optional fields are ignored. |
+| **Unsupported major** (either field) | **Reject** with a clear "unsupported schema major version" error | `schemaVersion` above `CONTENT_SCHEMA_VERSION`: reject the pack and fall back to `core_pack` |
+| `schemaSemver` missing or malformed, or its major ≠ `schemaVersion` | Reject | Not checked (the runtime reads only `schemaVersion`) |
+
+Shipped packs under `apps/runtime-godot/content/` must never trigger the
+newer-minor warning. Their `schemaSemver` must be at or below
+`CURRENT_SCHEMA_SEMVER`, and a unit test enforces this.
+
+### Bump procedure (required for every version bump)
+
+1. Classify the change as patch, minor, or major using the table above.
+2. Update `buddy-pack.schema.json`, and update `validate_pack.py` in the
+   same PR, including `CURRENT_SCHEMA_SEMVER` (and `SUPPORTED_SCHEMA_MAJOR`
+   plus the runtime's `CONTENT_SCHEMA_VERSION` for a major bump).
+3. **Add a migration-notes entry** for the new version to
+   [`CONTENT_SCHEMA_MIGRATIONS.md`](CONTENT_SCHEMA_MIGRATIONS.md). This is
+   required for every bump, including patches. A unit test fails if
+   `CURRENT_SCHEMA_SEMVER` has no entry there.
+4. Update the version at the top of this document (test-enforced), and
+   update shipped packs' `schemaSemver` if they adopt the new revision.
+
+---
+
 ## Animation JSON format
 
 ```json
@@ -151,3 +211,20 @@ Developers can exercise them from a source checkout with
 - Any WZ/NX → internal conversion belongs in `tools/importers/`.
 - A content pack that references a `schemaVersion > CONTENT_SCHEMA_VERSION`
   will be rejected with a clear error; the runtime falls back to `core_pack`.
+
+---
+
+## Dynamic speech content
+
+Any dynamically generated text rendered in Buddy's speech or thought
+bubbles MUST be redacted locally before display. This covers agent status,
+activity snippets, model-generated lines, and any other text not authored
+verbatim in a content pack. Redaction MUST remove or mask file-system paths,
+URLs, secrets and tokens (API keys, credentials, bearer or session tokens),
+and multiline code. It MUST run on-device before the text reaches the
+renderer, and it MUST NOT depend on a network service. Text that cannot be
+safely redacted MUST NOT be shown; the runtime falls back to a canned line.
+Static, pack-authored dialogue (for example `npcs[].dialoguePool`) is
+reviewed content and is outside this rule. This rule follows OpenPets'
+pattern (see `COMPANION_PET_LANDSCAPE_2026-07-14.md`, B3) and applies from
+the first feature that routes dynamic text into a bubble.

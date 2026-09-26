@@ -1,5 +1,6 @@
 {
   "schemaVersion": 1,
+  "schemaSemver": "1.0.0",
   "runtimeAudience": "user",
   "id": "night-pack",
   "name": "Night Companion Pack",
