@@ -1,5 +1,6 @@
 {
   "schemaVersion": 1,
+  "schemaSemver": "1.0.0",
   "runtimeAudience": "development",
   "id": "sample_pack",
   "name": "Sample Pack (non-Maple proof)",

@@ -49,6 +49,10 @@ def main() -> int:
         (content_dir / "night_pack" / "manifest.json", True),
         (content_dir / "sample_pack" / "manifest.json", True),
         (fixtures_dir / "invalid_missing_action.json", False),
+        # Schema semver contract: unsupported major rejects; a newer minor
+        # within the supported major is accepted (the CLI prints a warning).
+        (fixtures_dir / "invalid_unsupported_schema_major.json", False),
+        (fixtures_dir / "valid_future_schema_minor.json", True),
     ]
 
     # Schema fixtures live under fixtures/schema/, kept separate from the

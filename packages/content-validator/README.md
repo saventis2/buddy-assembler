@@ -28,6 +28,15 @@ animation sheets and other declared visual dependencies, and rejects missing,
 ignored, untracked, drive-letter, absolute, traversal, and workstation-local
 paths.
 
+Manifests must declare the schema semver contract: `schemaSemver`
+(`MAJOR.MINOR.PATCH`) whose major equals the integer `schemaVersion`. An
+unsupported major is rejected. A newer minor within the supported major is
+accepted with a `WARNING:` line (exit 0). A newer patch is accepted
+silently. Policy and bump procedure: `docs/product/CONTENT_SCHEMA.md`
+("Schema versioning"). Per-version notes:
+`docs/product/CONTENT_SCHEMA_MIGRATIONS.md`. Run
+`python -m pytest test_validate_pack.py` for the contract tests.
+
 Run `python validate_shipping_closure.py` from any directory to verify the
 two user packs, the development-pack boundary, and the reviewed Windows
 positive export declaration in `shipping_inventory.json`.
