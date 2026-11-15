@@ -109,6 +109,25 @@ static func model_name(configured: String) -> String:
 
 # Builds the JSON request body for one decision. `event` is the mind
 # service's journal event; `recent` is a list of earlier journal texts.
+# What each intent is for, so the voiced thought can say why it went. The
+# intent alone is misleading in town: "tend_home" can mean tea at the cafe.
+const INTENT_REASONS := {
+	"rest": "you were tired",
+	"visit": "you wanted company",
+	"explore": "you were curious",
+	"tend_home": "you wanted to feel cosy",
+	"reflect": "you wanted time to think",
+}
+# Used only when an event carries no activity (no town data).
+const INTENT_DESCRIPTIONS := {
+	"rest": "rested",
+	"visit": "visited someone",
+	"explore": "went exploring",
+	"tend_home": "made yourself comfortable",
+	"reflect": "sat and thought",
+}
+
+
 static func build_request(model: String, event: Dictionary, recent: Array, favourite: String) -> String:
 	var valence := float(event.get("valence", 0.0))
 	var felt := "fine"
@@ -119,9 +138,19 @@ static func build_request(model: String, event: Dictionary, recent: Array, favou
 	var earlier: Array = []
 	for line in recent:
 		earlier.append(_clip(str(line), MAX_THOUGHT_CHARS))
+	var intent := str(event.get("intent", ""))
+	var activity := _clip(str(event.get("activity_label", "")), 60)
+	if activity == "":
+		activity = str(INTENT_DESCRIPTIONS.get(intent, "spent some time"))
+	var place := _clip(str(event.get("place_name", "")), 60)
+	if place == "":
+		place = _clip(str(event.get("subject_name", "")), 60)
+	var companion := _clip(str(event.get("companion_name", "")), 40)
 	var facts := {
-		"just_did": str(event.get("intent", "")),
-		"with_or_at": _clip(str(event.get("subject_name", "")), 60),
+		"what_you_did": activity,
+		"where": place,
+		"with": companion if companion != "" else "on your own",
+		"why": str(INTENT_REASONS.get(intent, "")),
 		"how_it_felt": felt,
 		"favourite_so_far": _clip(favourite, 60),
 		"earlier_today": earlier,
