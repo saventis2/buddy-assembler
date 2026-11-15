@@ -5,6 +5,7 @@ const BASE_ACTIONS := ["idle", "sit", "sleep"]
 
 const _FALLBACK_XP_PER_LEVEL := 10
 const _FALLBACK_MAX_LEVEL := 10
+const _FALLBACK_XP_CURVE: Array = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90]
 const _FALLBACK_UNLOCKS: Array = [
     {"level": 2, "id": "unlock-wander",  "type": "action", "value": "wander"},
     {"level": 2, "id": "unlock-happy",   "type": "action", "value": "happy"},
@@ -45,7 +46,31 @@ static func xp_per_level() -> int:
 static func max_level() -> int:
     _load()
     var v: Variant = _cache.get("max_level", _FALLBACK_MAX_LEVEL)
-    return max(1, int(v) if (typeof(v) == TYPE_INT or typeof(v) == TYPE_FLOAT) else _FALLBACK_MAX_LEVEL)
+    var v_int: int = _FALLBACK_MAX_LEVEL
+    if typeof(v) == TYPE_INT or typeof(v) == TYPE_FLOAT:
+        v_int = int(v)
+    var configured: int = maxi(1, v_int)
+    var curve := xp_curve()
+    if curve.is_empty():
+        return configured
+    return min(configured, curve.size())
+
+
+static func xp_curve() -> Array:
+    _load()
+    var rows: Variant = _cache.get("xp_curve", null)
+    if typeof(rows) != TYPE_ARRAY or (rows as Array).is_empty():
+        return _FALLBACK_XP_CURVE.duplicate(true)
+    var out: Array = []
+    var last: int = -1
+    for row in (rows as Array):
+        var raw: int = int(row)
+        var safe: int = maxi(raw, last + 1)
+        out.append(safe)
+        last = safe
+    if out.is_empty() or int(out[0]) != 0:
+        out.insert(0, 0)
+    return out
 
 
 static func all_unlock_rows() -> Array:

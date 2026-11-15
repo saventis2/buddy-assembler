@@ -1,6 +1,6 @@
 # Buddy TODO Execution Queue
 
-Updated: 2026-04-21 (Plan 5 gate passed)
+Updated: 2026-04-23 (Plan 10 saturation complete; Plan 11 started)
 Source of truth: `BUDDY_V1_BUILD_PLAN_MILESTONE_EXECUTION_2026-04-20.md`
 
 ## How We Use This
@@ -97,6 +97,168 @@ Done gate:
 Verification:
 - [x] Added `WorldVarietyTest` and wired it into `run_headless_checks.ps1`
 
+### Plan 9A: WZ Equipment Data Spine
+
+Status: `done`
+
+Tasks:
+- [x] Extend canonical WZ bindings build to ingest Character equipment rows
+- [x] Add gear slot mapping in canonical ingest output
+- [x] Regenerate `item_bindings_full.csv/json` with gear rows included
+- [x] Sync manifest from full bindings with add-missing path
+- [x] Import item icons for full catalog rows (including gear)
+
+Done gate:
+- [x] `gear` category exists in canonical bindings with non-empty slot coverage
+- [x] Manifest rows include the newly ingested gear catalog
+- [x] Icon import reports `missing=0` for catalog-backed rows
+
+### Plan 9C: Level/XP Consistency and Stat Allocation Integrity
+
+Status: `done`
+
+Tasks:
+- [x] Add load-time progression reconciliation from XP -> level
+- [x] Add stat-point reconciliation floor from earned-vs-spent points
+- [x] Add XP progress fields (`into/need/max`) to telemetry + stats snapshot
+- [x] Improve `/status` and Stats popout with next unlock + XP progress
+- [x] Add/expand regression checks for progression reconciliation edge cases
+
+Done gate:
+- [x] Restart preserves coherent level/XP display without stale level lock
+- [x] Manual + idle auto-assign modes remain deterministic
+- [x] Headless checks pass with progression regression coverage
+
+### Plan 9B: Inventory/Paper-Doll Expansion
+
+Status: `done`
+
+Tasks:
+- [x] Expand paper-doll readout to grouped Maple-style slot families
+- [x] Add group-level unequip actions for combat/style/accessory slots
+- [x] Preserve item actions (use/equip/unequip) while improving slot visibility
+
+Done gate:
+- [x] Inventory window exposes broad equipped-slot state without switching scenes
+- [x] Group controls can unequip currently equipped items safely
+- [x] Headless checks pass after UI/equipment changes
+
+### Plan 9D: Job/Drop Coupling Upgrade
+
+Status: `done`
+
+Tasks:
+- [x] Carry `job_drop_bias` from progression manifest into profile state
+- [x] Pass job context (`job_id`, `job_primary_stat`, `job_drop_bias`) into encounter drop rolls
+- [x] Upgrade drop-pool weighting for job affinity, stat affinity, slot affinity, and category bias
+- [x] Add regression coverage proving context-sensitive drop bias
+
+Done gate:
+- [x] Drop outcomes respond to job context beyond simple one-field affinity
+- [x] Job/stat/category hints are integrated without breaking legacy drop tables
+- [x] Headless checks pass with new economy regression case
+
+### Plan 10A: Controlled WZ Ingest Pipeline
+
+Status: `done`
+
+Tasks:
+- [x] Add category-scoped manifest sync (`--categories`) for incremental ingest
+- [x] Upgrade batch runner with machine-readable run report output
+- [x] Document one-command batch flow and review protocol
+
+Done gate:
+- [x] Ingest can be run in narrow category slices (e.g. `gear` only)
+- [x] Batch run emits structured summary in `WZ_INGEST_LAST_RUN.json`
+- [x] Workflow is documented for repeatable future batches
+
+### Plan 10B: Content Expansion Batches (Execution)
+
+Status: `done`
+
+Tasks:
+- [x] Run first controlled category ingest batch and review output (`gear`, dry-run, delta=0)
+- [x] Run first non-dry-run bounded ingest with checks (`food,materials`, delta=0, checks pass)
+- [x] Validate no regressions in inventory/equip/drop loops (headless gate pass)
+- [x] Record structured run output in `WZ_INGEST_LAST_RUN.json`
+
+Done gate:
+- [x] First post-Plan-9 ingest batch lands clean with passing checks
+- [x] No regressions in inventory/equip/drop loops
+
+### Plan 10C: Next Expansion Source Pass
+
+Status: `done`
+
+Tasks:
+- [x] Re-run canonical binding generation from current local WZ source set (`rows=11122`)
+- [x] Confirm current source set saturation (`added_items=0` on dry-run sync)
+- [x] Add multi-root canonical ingest support (ready for additional source bundles)
+- [x] Validate source layout assumption (`Base.wz` acts as extracted super-root)
+- [x] De-scope duplicate extraction path from active execution
+
+Done gate:
+- [x] Canonical ingest path is stable and repeatable for current local source scope
+- [x] Active plan no longer depends on duplicate extraction assumptions
+
+### Plan 11A: Runtime Depth from Existing Dataset
+
+Status: `done`
+
+Tasks:
+- [x] Expand interactive event visibility so cadence/settings effects are obvious in TO
+- [x] Add clearer progression surface (stat growth and unlock deltas) in runtime UI
+- [x] Add inventory/equipment affordances for faster build iteration (filter/sort/quick actions)
+
+Done gate:
+- [x] Manual TO verification can clearly observe event/prompt cadence changes
+- [x] Progression changes are readable without telemetry-only dependency
+- [x] Headless checks pass after UI/runtime updates
+
+### Plan 11B: TO Manual UX Verification Sweep
+
+Status: `in_progress`
+
+Tasks:
+- [ ] Re-run Plan 5 gate with focus on new TO cadence/progression/inventory UX
+- [ ] Capture operator notes on quick-action usability and sort cycling
+- [ ] Log any polish defects as follow-up backlog items
+
+Done gate:
+- [ ] Manual gate passes with no blocker regressions
+- [ ] Follow-up list is recorded and prioritized
+
+### Plan 12A: Autonomous Mind (offline)
+
+Status: `done`
+
+Tasks:
+- [x] Self-directed decision loop driven by mood modifiers
+- [x] Learned per-subject feelings and preference-weighted choices
+- [x] Journal, `/journal`, spoken thought, catch-up while closed
+- [x] `MindServiceTest` wired into the required headless suite
+
+Done gate:
+- [x] Headless suite passes (14 tests)
+- [ ] Manual desktop confirmation that thoughts and animations feel right
+
+### Plan 12B: Thinking model via local Ollama
+
+Status: `done` (pending a run against a real Ollama server)
+
+Tasks:
+- [x] Request builder, reply parser and sanitiser (`mind_thinker.gd`)
+- [x] Async call from the overlay with silent fallback
+- [x] Model `want` nudges the next decision
+- [x] `MindThinkerTest` wired into the required headless suite
+- [ ] Confirm wording and latency with `gemma3:4b` on a real Ollama server
+
+### Plan 12C: Things left for the buddy, visible places
+
+Status: `not started`
+
+See `PLAN12_AUTONOMOUS_MIND.md` ("Not yet built").
+
 ## Follow-Up Backlog (Populate During Testing)
 
 - [x] Fix Plan 5 gate runner to auto-launch runtime + vertical-slice sessions
@@ -125,4 +287,5 @@ Must pass:
 - CompanionDepthTest
 - EconomyTuningTest
 - PromptCadenceTest
+- ProgressionConsistencyTest
 - ManualVerificationReportTest

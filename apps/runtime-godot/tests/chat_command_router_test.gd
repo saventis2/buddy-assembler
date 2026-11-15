@@ -26,7 +26,11 @@ func _run_all() -> void:
 	_case("preset_accepts_known_values", func(): return _test_preset_accepts_known_values())
 	_case("settings_reset_confirm_and_undo", func(): return _test_settings_reset_confirm_and_undo())
 	_case("debug_only_chat_area", func(): return _test_debug_only_chat_area())
+	_case("dnd_minutes_and_off", func(): return _test_dnd_minutes_and_off())
+	_case("snapshot_no_args", func(): return _test_snapshot_no_args())
+	_case("failure_matrix", func(): return _test_failure_matrix())
 	_case("unknown_command_rejected", func(): return _test_unknown_command_rejected())
+	_case("journal_command_takes_no_args", func(): return _test_journal_command_takes_no_args())
 
 
 func _case(name: String, body: Callable) -> void:
@@ -110,6 +114,9 @@ func _test_preset_accepts_known_values() -> Variant:
 	var result := router.resolve("/preset cozy")
 	if not bool(result.get("ok", false)):
 		return "expected /preset cozy to pass"
+	var idle := router.resolve("/preset idle")
+	if not bool(idle.get("ok", false)):
+		return "expected /preset idle to pass"
 	var bad := router.resolve("/preset turbo")
 	if bool(bad.get("ok", false)):
 		return "expected /preset turbo to fail"
@@ -150,6 +157,68 @@ func _test_debug_only_chat_area() -> Variant:
 	return null
 
 
+func _test_dnd_minutes_and_off() -> Variant:
+	var router := ChatCommandRouter.new()
+	var ok_minutes := router.resolve("/dnd 30")
+	if not bool(ok_minutes.get("ok", false)):
+		return "expected /dnd 30 to pass"
+	var params_variant = ok_minutes.get("params", {})
+	if typeof(params_variant) != TYPE_DICTIONARY:
+		return "params missing"
+	var params: Dictionary = params_variant
+	if int(params.get("minutes", 0)) != 30:
+		return "expected minutes=30"
+	var ok_off := router.resolve("/dnd off")
+	if not bool(ok_off.get("ok", false)):
+		return "expected /dnd off to pass"
+	var bad := router.resolve("/dnd 999")
+	if bool(bad.get("ok", false)):
+		return "expected /dnd 999 to fail"
+	if str(bad.get("reason_code", "")) != "invalid_arg":
+		return "expected reason_code=invalid_arg"
+	return null
+
+
+func _test_snapshot_no_args() -> Variant:
+	var router := ChatCommandRouter.new()
+	var ok := router.resolve("/snapshot")
+	if not bool(ok.get("ok", false)):
+		return "expected /snapshot to pass"
+	if str(ok.get("action_id", "")) != "snapshot":
+		return "expected action_id=snapshot"
+	var bad := router.resolve("/snapshot now")
+	if bool(bad.get("ok", false)):
+		return "expected /snapshot now to fail"
+	if str(bad.get("reason_code", "")) != "unexpected_args":
+		return "expected reason_code=unexpected_args"
+	return null
+
+
+func _test_failure_matrix() -> Variant:
+	var router := ChatCommandRouter.new()
+	var cases := [
+		{"input": "/chat text", "reason": "missing_arg"},
+		{"input": "/chat text xl", "reason": "invalid_arg"},
+		{"input": "/settings", "reason": "missing_arg"},
+		{"input": "/settings reset nope extra", "reason": "unexpected_args"},
+		{"input": "/dnd", "reason": "missing_arg"},
+		{"input": "/dnd zero", "reason": "invalid_arg"},
+		{"input": "/world", "reason": "missing_arg"},
+		{"input": "/quiet loud", "reason": "invalid_arg"},
+	]
+	for case_variant in cases:
+		var case: Dictionary = case_variant
+		var input := str(case.get("input", ""))
+		var expected := str(case.get("reason", ""))
+		var result := router.resolve(input)
+		if bool(result.get("ok", false)):
+			return "expected failure for %s" % input
+		var got := str(result.get("reason_code", ""))
+		if got != expected:
+			return "expected reason_code=%s for %s, got=%s" % [expected, input, got]
+	return null
+
+
 func _test_unknown_command_rejected() -> Variant:
 	var router := ChatCommandRouter.new()
 	var result := router.resolve("/not-real")
@@ -157,4 +226,15 @@ func _test_unknown_command_rejected() -> Variant:
 		return "expected unknown command to fail"
 	if str(result.get("reason_code", "")) != "unknown_command":
 		return "expected reason_code=unknown_command"
+	return null
+
+
+func _test_journal_command_takes_no_args() -> Variant:
+	var router := ChatCommandRouter.new()
+	var ok := router.resolve("/journal")
+	if not bool(ok.get("ok", false)) or str(ok.get("action_id", "")) != "journal":
+		return "expected /journal to resolve, got %s" % [ok]
+	var bad := router.resolve("/journal extra")
+	if bool(bad.get("ok", false)) or str(bad.get("reason_code", "")) != "unexpected_args":
+		return "expected /journal extra to be rejected as unexpected_args, got %s" % [bad]
 	return null

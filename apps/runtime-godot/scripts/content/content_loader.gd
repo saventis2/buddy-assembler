@@ -74,6 +74,11 @@ static func list_cycleable_pack_ids(root_override: String = "", include_developm
         var manifest: Dictionary = manifest_variant
         if not _is_manifest_visible(manifest, include_development):
             continue
+        # Development packs are opt-in fixtures and may be visual-less; only
+        # user-facing packs must have something to draw before they cycle.
+        var is_development := str(manifest.get("runtimeAudience", "user")) == "development"
+        if not is_development and not _is_user_cycle_ready_manifest(manifest):
+            continue
         var signature := _manifest_visual_signature(manifest)
         if seen_visual_signatures.has(signature):
             continue
@@ -95,6 +100,20 @@ static func _manifest_visual_signature(manifest: Dictionary) -> String:
         "anchor": visual.get("anchor", []),
     }
     return JSON.stringify(key_map)
+
+
+static func _is_user_cycle_ready_manifest(manifest: Dictionary) -> bool:
+    var visual_variant = manifest.get("visual", null)
+    if typeof(visual_variant) != TYPE_DICTIONARY:
+        return false
+    var visual: Dictionary = visual_variant
+    var animations_variant = visual.get("animations", null)
+    if typeof(animations_variant) == TYPE_DICTIONARY and not (animations_variant as Dictionary).is_empty():
+        return true
+    var sprites_variant = visual.get("sprites", null)
+    if typeof(sprites_variant) == TYPE_DICTIONARY and not (sprites_variant as Dictionary).is_empty():
+        return true
+    return false
 
 
 static func _is_manifest_visible(manifest: Dictionary, include_development: bool) -> bool:
@@ -429,6 +448,64 @@ static func validate_manifest(manifest: Dictionary) -> Array:
                     errors.append("encounters.id must be non-empty string")
                 if _is_blank(encounter.get("action", "")):
                     errors.append("encounters.action must be non-empty string")
+
+    var progression_variant = manifest.get("progression", null)
+    if progression_variant != null:
+        if typeof(progression_variant) != TYPE_DICTIONARY:
+            errors.append("progression must be object when set")
+        else:
+            var progression: Dictionary = progression_variant
+            if progression.has("maxLevel"):
+                var ml = progression.get("maxLevel")
+                if typeof(ml) != TYPE_INT and typeof(ml) != TYPE_FLOAT:
+                    errors.append("progression.maxLevel must be numeric when set")
+                elif int(ml) <= 0:
+                    errors.append("progression.maxLevel must be > 0")
+            if progression.has("xpCurve"):
+                if typeof(progression.get("xpCurve")) != TYPE_ARRAY:
+                    errors.append("progression.xpCurve must be array when set")
+            if progression.has("jobs"):
+                var jobs_variant = progression.get("jobs")
+                if typeof(jobs_variant) != TYPE_ARRAY:
+                    errors.append("progression.jobs must be array when set")
+                else:
+                    for job_variant in (jobs_variant as Array):
+                        if typeof(job_variant) != TYPE_DICTIONARY:
+                            errors.append("progression.jobs entries must be objects")
+                            continue
+                        var job: Dictionary = job_variant
+                        if _is_blank(job.get("id", "")):
+                            errors.append("progression.jobs.id must be non-empty string")
+                        if _is_blank(job.get("name", "")):
+                            errors.append("progression.jobs.name must be non-empty string")
+
+    var drop_tables_variant = manifest.get("dropTables", null)
+    if drop_tables_variant != null:
+        if typeof(drop_tables_variant) != TYPE_ARRAY:
+            errors.append("dropTables must be array when set")
+        else:
+            for table_variant in (drop_tables_variant as Array):
+                if typeof(table_variant) != TYPE_DICTIONARY:
+                    errors.append("dropTables entries must be objects")
+                    continue
+                var table: Dictionary = table_variant
+                if _is_blank(table.get("id", "")):
+                    errors.append("dropTables.id must be non-empty string")
+                var entries_variant = table.get("entries", [])
+                if typeof(entries_variant) != TYPE_ARRAY:
+                    errors.append("dropTables.entries must be array")
+                    continue
+                for entry_variant in (entries_variant as Array):
+                    if typeof(entry_variant) != TYPE_DICTIONARY:
+                        errors.append("dropTables.entries rows must be objects")
+                        continue
+                    var entry: Dictionary = entry_variant
+                    if _is_blank(entry.get("itemId", "")):
+                        errors.append("dropTables.entries.itemId must be non-empty string")
+                    if entry.has("weight"):
+                        var w = entry.get("weight")
+                        if typeof(w) != TYPE_INT and typeof(w) != TYPE_FLOAT:
+                            errors.append("dropTables.entries.weight must be numeric when set")
 
     var home_variant = manifest.get("home", null)
     if home_variant != null and typeof(home_variant) != TYPE_DICTIONARY:

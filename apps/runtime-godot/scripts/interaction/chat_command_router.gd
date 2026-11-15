@@ -11,6 +11,7 @@ const SUPPORTED_COMMANDS := [
 	"freq",
 	"chat",
 	"memory",
+	"journal",
 	"remember",
 	"forget",
 	"cadence",
@@ -18,6 +19,8 @@ const SUPPORTED_COMMANDS := [
 	"settings-check",
 	"preset",
 	"settings",
+	"dnd",
+	"snapshot",
 ]
 
 
@@ -60,16 +63,29 @@ func _resolve_slash(raw: String) -> Dictionary:
 
 
 func _validate_command(command: String, args: Array) -> Dictionary:
-	if command in ["help", "status", "pending", "reward", "memory", "cadence", "settings-check"]:
+	if command in ["help", "status", "pending", "reward", "memory", "journal", "cadence", "settings-check", "snapshot"]:
 		if not args.is_empty():
 			return _result(false, "command", command, {}, "unexpected_args", 1.0)
 		return _result(true, "command", command, {}, "ok", 1.0)
+
+	if command == "dnd":
+		if args.size() != 1:
+			return _result(false, "command", command, {}, "missing_arg", 1.0)
+		var value := str(args[0]).to_lower()
+		if value == "off":
+			return _result(true, "command", command, {"off": true}, "ok", 1.0)
+		if not value.is_valid_int():
+			return _result(false, "command", command, {}, "invalid_arg", 1.0)
+		var minutes := int(value)
+		if minutes < 1 or minutes > 240:
+			return _result(false, "command", command, {}, "invalid_arg", 1.0)
+		return _result(true, "command", command, {"minutes": minutes}, "ok", 1.0)
 
 	if command == "preset":
 		if args.size() != 1:
 			return _result(false, "command", command, {}, "missing_arg", 1.0)
 		var preset := str(args[0]).to_lower()
-		if preset not in ["cozy", "balanced", "deep"]:
+		if preset not in ["cozy", "balanced", "deep", "idle"]:
 			return _result(false, "command", command, {}, "invalid_arg", 1.0)
 		return _result(true, "command", command, {"preset": preset}, "ok", 1.0)
 
@@ -198,6 +214,8 @@ func _resolve_alias(msg: String) -> Dictionary:
 		return _result(true, "command", "preset", {"preset": "balanced"}, "ok", 0.9)
 	if msg.find("set deep preset") >= 0:
 		return _result(true, "command", "preset", {"preset": "deep"}, "ok", 0.9)
+	if msg.find("set idle preset") >= 0:
+		return _result(true, "command", "preset", {"preset": "idle"}, "ok", 0.9)
 	if msg.find("quiet strict") >= 0:
 		return _result(true, "command", "quiet", {"level": "strict"}, "ok", 0.9)
 	if msg.find("quiet balanced") >= 0:
@@ -210,6 +228,10 @@ func _resolve_alias(msg: String) -> Dictionary:
 		return _result(true, "command", "freq", {"value": "normal"}, "ok", 0.9)
 	if msg.find("set frequency high") >= 0:
 		return _result(true, "command", "freq", {"value": "high"}, "ok", 0.9)
+	if msg.find("do not disturb") >= 0:
+		return _result(true, "command", "dnd", {"minutes": 30}, "ok", 0.85)
+	if msg.find("export snapshot") >= 0 or msg.find("save snapshot") >= 0:
+		return _result(true, "command", "snapshot", {}, "ok", 0.85)
 	return {}
 
 

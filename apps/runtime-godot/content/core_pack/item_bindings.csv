@@ -1,0 +1,9 @@
+runtime_id,wz_id,wz_root,wz_group,wz_name,wz_desc,wz_price,wz_slot_max,wz_icon_relpath,icon_asset,equip_slot,category
+wz-tri-colored-dango,2022023,Consume,0202,Tri-colored Dango,A tri-colored dango that includes a handful of tasty dango.\nRecovers each of HP and MP by 400.,,,Item/Item.wz/Consume/0202.img/02022023/info/icon.png,effects/gift_box/frames/000.png,,food
+wz-fruity-candy,2022043,Consume,0202,Fruity Candy,"Multi-colored, fruity-flavored candies.\nSpeed +10 for 30 minutes.",1,,Item/Item.wz/Consume/0202.img/02022043/info/icon.png,effects/happy_sparkle/frames/000.png,,food
+wz-green-halloween-stick-candy,4032444,Etc,0403,Green Halloween Stick Candy,A green-colored Halloween Candy that Cassandra likes.,1,,Item/Item.wz/Etc/0403.img/04032444/info/icon.png,effects/gift_box/frames/000.png,,gifts
+wz-stone-golem-rubble,4000022,Etc,0400,Stone Golem Rubble,A mystic rubble that was a part of Stone Golem.,60,200,Item/Item.wz/Etc/0400.img/04000022/info/icon.png,effects/levelup/frames/000.png,,materials
+wz-ridleys-stone,4032026,Etc,0403,Ridley's Stone,"An ancient magical stone bearing the mark of Ridley, the master artisan-magician. It hums when in vicinity of a Ridley's Statue.",1,,Item/Item.wz/Etc/0403.img/04032026/info/icon.png,effects/levelup/frames/000.png,,materials
+wz-rocky-mask-doll,4032147,Etc,0403,Rocky Mask Doll,"An adorable doll modeled after the Stone Mask, but something doesn't seem right…",1,,Item/Item.wz/Etc/0403.img/04032147/info/icon.png,effects/chair_basic/frames/000.png,,decor
+wz-weapon-1302000,1302000,Character,Weapon,Sword,Maple equipment seed imported from WZ character assets.,,,Character/Character.wz/Weapon/01302000.img/info/icon.png,icons/items/wz-weapon-1302000.png,weapon,gear
+wz-cap-1002001,1002001,Character,Cap,Metal Gear,Maple equipment seed imported from WZ character assets.,,,Character/Character.wz/Cap/01002001.img/info/icon.png,icons/items/wz-cap-1002001.png,hat,gear
