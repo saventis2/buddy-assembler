@@ -1,5 +1,19 @@
 # PLAN11_MAPLE_V83_UI_REBUILD.md
 
+> **Direction change, 2026-11-15 (owner decision).** Menus keep the Maple feel and this plan's
+> interactions (icon slot grid, hover tooltips, tabs, compact windows) but are drawn in code by
+> `scripts/ui/maple_theme.gd` instead of using the original v83 window pictures and button art.
+> Reasons: the pictures carry fixed labels and sizes that did not line up with Buddy's controls,
+> they only exist on a machine with extracted Maple files, and a shipped build may only contain
+> tracked assets. The "WZ Method-Parity Rules" and asset lists below are kept for reference and
+> are no longer requirements. Item icons still come from the Maple files when present.
+>
+> Landed in that pass: shared theme on every window; main menu with plain labels (Chat, Journal,
+> Stats, Inventory, Wardrobe, Pause, Settings, Quit); settings grouped under headings with
+> switches for autonomy and the thinking model and developer tools behind a toggle; inventory and
+> wardrobe slot grid with tooltips, selection, worn marker, empty states and a detail panel.
+> Still open from this plan: paper-doll equip slots, compact/expanded inventory, drag and drop.
+
 ## Goal
 Rebuild runtime menus to match MapleStory v83 UI behavior first, then reattach Buddy features.
 

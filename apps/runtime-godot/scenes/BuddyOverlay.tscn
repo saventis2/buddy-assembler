@@ -167,7 +167,7 @@ layout_mode = 2
 
 [node name="FloorAdjustTitle" type="Label" parent="SettingsWindow/MarginContainer/SettingsVBox/FloorAdjustBox"]
 layout_mode = 2
-text = "Floor Height (TO)"
+text = "Standing height (nudge your buddy up or down)"
 
 [node name="FloorAdjustRow" type="HBoxContainer" parent="SettingsWindow/MarginContainer/SettingsVBox/FloorAdjustBox"]
 layout_mode = 2

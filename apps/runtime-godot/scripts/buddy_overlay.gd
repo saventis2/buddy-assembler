@@ -36,40 +36,29 @@ const MAPLE_WINDOW_SKIN_STATS := "UIWindow.img/Stat/backgrnd.png"
 const MAPLE_WINDOW_SKIN_CHAT := "UIWindow.img/Memo/backgrnd.png"
 const MAPLE_WINDOW_SKIN_INVENTORY := "UIWindow.img/Item/backgrnd.png"
 const MAPLE_WINDOW_SKIN_WARDROBE := "UIWindow.img/Equip/backgrnd.png"
-const MAPLE_BUTTON_NORMAL_REL := "Basic.img/ComboBox2/normal/0.png"
-const MAPLE_BUTTON_HOVER_REL := "Basic.img/ComboBox2/mouseOver/0.png"
-const MAPLE_BUTTON_PRESSED_REL := "Basic.img/ComboBox2/pressed/0.png"
-const MAPLE_BUTTON_DISABLED_REL := "Basic.img/ComboBox2/disabled/0.png"
 const MAPLE_LAYOUT_SETTINGS := {
-    "base_size": Vector2i(478, 586),
-    "min_size": Vector2i(380, 460),
+    "base_size": Vector2i(500, 660),
+    "min_size": Vector2i(460, 560),
     "offset": Vector2i(56, 56),
-    "margins": [20, 38, 20, 18],
+    "margins": [14, 12, 14, 14],
 }
 const MAPLE_LAYOUT_SETTINGS_MAIN := {
-    "base_size": Vector2i(140, 210),
-    "min_size": Vector2i(128, 180),
+    "base_size": Vector2i(250, 430),
+    "min_size": Vector2i(250, 430),
     "offset": Vector2i(56, 56),
-    "margins": [10, 10, 10, 10],
-}
-const MAPLE_GAMEMENU_BUTTONS := {
-    "game_opt": "UIWindow.img/GameMenu/BtGameOpt",
-    "sys_opt": "UIWindow.img/GameMenu/BtSysOpt",
-    "channel": "UIWindow.img/GameMenu/BtChannel",
-    "skin": "UIWindow.img/GameMenu/BtSkin",
-    "quit": "UIWindow.img/GameMenu/BtQuit",
+    "margins": [14, 12, 14, 14],
 }
 const MAPLE_LAYOUT_STATS := {
-    "base_size": Vector2i(220, 410),
-    "min_size": Vector2i(220, 390),
+    "base_size": Vector2i(360, 400),
+    "min_size": Vector2i(360, 400),
     "offset": Vector2i(84, 84),
-    "margins": [12, 16, 12, 12],
+    "margins": [14, 12, 14, 14],
 }
 const MAPLE_LAYOUT_CHAT := {
-    "base_size": Vector2i(360, 280),
-    "min_size": Vector2i(320, 250),
+    "base_size": Vector2i(460, 340),
+    "min_size": Vector2i(380, 280),
     "offset": Vector2i(72, 72),
-    "margins": [12, 12, 12, 10],
+    "margins": [12, 12, 12, 12],
 }
 const MAPLE_LAYOUT_INVENTORY := {
     "base_size": Vector2i(603, 289),
@@ -86,11 +75,20 @@ const MAPLE_LAYOUT_WARDROBE := {
     "max_screen_fraction": [0.34, 0.62],
 }
 const MAPLE_LAYOUT_REBUILD_MENU := {
-    "base_size": Vector2i(603, 289),
-    "min_size": Vector2i(603, 289),
+    "base_size": Vector2i(660, 440),
+    "min_size": Vector2i(660, 440),
     "offset": Vector2i(96, 96),
-    "margins": [0, 0, 0, 0],
-    "max_screen_fraction": [0.66, 0.66],
+    "margins": [12, 10, 12, 12],
+}
+const INVENTORY_SLOT_PX := 40
+const INVENTORY_SLOT_COLUMNS := 8
+const INVENTORY_MIN_SLOTS := 48
+const RARITY_COLORS := {
+    "common": "#F4E9CF",
+    "uncommon": "#8FE39B",
+    "rare": "#7FC4FF",
+    "epic": "#D7A1FF",
+    "legendary": "#FFB45E",
 }
 const PACK_SCALE_PRESETS := [2.35, 2.0, 1.72]
 const DEFAULT_SPRITE_ANCHOR := Vector2(0.5, 1.0)
@@ -287,6 +285,7 @@ const PromptCadence = preload("res://scripts/utility/prompt_cadence.gd")
 const ManualVerificationReport = preload("res://scripts/utility/manual_verification_report.gd")
 const PortableBuddyFallback = preload("res://scripts/visual/portable_buddy_fallback.gd")
 const MindThinker = preload("res://scripts/services/mind_thinker.gd")
+const MapleTheme = preload("res://scripts/ui/maple_theme.gd")
 const PORTABLE_FALLBACK_TEXTURE := preload("res://content/core_pack/character/idle.png")
 
 @onready var tick_timer: Timer = $TickTimer
@@ -445,11 +444,14 @@ var _last_auto_prompt_by_source := {}
 var _deferred_world_prompt := {}
 var _desktop_floor_offset_adjust := 0.0
 var _settings_main_menu_box: VBoxContainer = null
-var _settings_main_btn_game_opt: TextureButton = null
-var _settings_main_btn_sys_opt: TextureButton = null
-var _settings_main_btn_channel: TextureButton = null
-var _settings_main_btn_skin: TextureButton = null
-var _settings_main_btn_quit: TextureButton = null
+var _main_menu_status: Label = null
+var _main_menu_btn_pause: Button = null
+var _main_menu_btn_chat: Button = null
+var _main_menu_btn_stats: Button = null
+var _settings_btn_autonomy: Button = null
+var _settings_btn_model: Button = null
+var _settings_debug_box: Control = null
+var _settings_btn_debug_toggle: Button = null
 var _inventory_maple_canvas: Control = null
 var _inventory_slot_scroll: ScrollContainer = null
 var _inventory_slot_grid: GridContainer = null
@@ -522,7 +524,6 @@ var _inventory_icon_last_source := ""
 var _inventory_icon_last_cache_hit := false
 var _pack_scale_override := -1.0
 var _wz_icon_root := ""
-var _wz_ui_texture_cache := {}
 var _stats_session_baseline := {}
 var _menu_rebuild_enabled := true
 var _menu_rebuild_open := false
@@ -537,6 +538,7 @@ var _menu_rebuild_btn_equip: Button = null
 var _menu_rebuild_btn_unequip: Button = null
 var _menu_rebuild_btn_close: Button = null
 var _menu_rebuild_tabs := {}
+var _menu_rebuild_empty_label: Label = null
 var _menu_rebuild_slot_buttons_by_instance := {}
 var _menu_rebuild_selected_instance_id := -1
 
@@ -753,7 +755,7 @@ func _configure_settings_window() -> void:
     var settings_layout_init := _layout_with_skin_size(MAPLE_LAYOUT_SETTINGS_MAIN, MAPLE_WINDOW_SKIN_SETTINGS_MAIN)
     settings_window.min_size = settings_layout_init["min_size"]
     settings_window.size = settings_layout_init["base_size"]
-    settings_window.title = "Game Menu"
+    settings_window.title = "Buddy Menu"
     settings_window.wrap_controls = true
     settings_window.always_on_top = true
     settings_window.close_requested.connect(func() -> void:
@@ -865,6 +867,7 @@ func _configure_settings_window() -> void:
     )
     settings_btn_wardrobe.tooltip_text = "Opens/closes the Wardrobe popout window."
     _ensure_settings_main_menu_ui()
+    _build_settings_sections()
     _set_settings_menu_mode(false)
     _apply_settings_maple_theme()
     _layout_maple_window_chrome(settings_window, MAPLE_LAYOUT_SETTINGS_MAIN)
@@ -887,56 +890,147 @@ func _ensure_settings_main_menu_ui() -> void:
         _settings_main_menu_box.add_theme_constant_override("separation", 6)
         settings_margin_container.add_child(_settings_main_menu_box)
         settings_margin_container.move_child(_settings_main_menu_box, 1)
-    if _settings_main_btn_game_opt == null:
-        _settings_main_btn_game_opt = _build_maple_game_menu_button("game_opt", "Open Inventory")
-        _settings_main_btn_game_opt.pressed.connect(func() -> void:
-            _toggle_inventory_menu()
-        )
-        _settings_main_menu_box.add_child(_settings_main_btn_game_opt)
-    if _settings_main_btn_sys_opt == null:
-        _settings_main_btn_sys_opt = _build_maple_game_menu_button("sys_opt", "Toggle Advanced Settings")
-        _settings_main_btn_sys_opt.pressed.connect(func() -> void:
-            _set_settings_menu_mode(not _settings_menu_advanced)
-            _layout_settings_window()
-            _refresh_settings_menu()
-        )
-        _settings_main_menu_box.add_child(_settings_main_btn_sys_opt)
-    if _settings_main_btn_channel == null:
-        _settings_main_btn_channel = _build_maple_game_menu_button("channel", "Cycle Visual Pack")
-        _settings_main_btn_channel.pressed.connect(func() -> void:
-            _cycle_pack()
-        )
-        _settings_main_menu_box.add_child(_settings_main_btn_channel)
-    if _settings_main_btn_skin == null:
-        _settings_main_btn_skin = _build_maple_game_menu_button("skin", "Open Wardrobe")
-        _settings_main_btn_skin.pressed.connect(func() -> void:
-            _toggle_wardrobe_menu()
-        )
-        _settings_main_menu_box.add_child(_settings_main_btn_skin)
-    if _settings_main_btn_quit == null:
-        _settings_main_btn_quit = _build_maple_game_menu_button("quit", "Quit Runtime")
-        _settings_main_btn_quit.pressed.connect(func() -> void:
-            _quit_runtime()
-        )
-        _settings_main_menu_box.add_child(_settings_main_btn_quit)
+    if _settings_main_menu_box.get_child_count() > 0:
+        return
+    _settings_main_menu_box.alignment = BoxContainer.ALIGNMENT_BEGIN
+    _settings_main_menu_box.add_theme_constant_override("separation", 7)
+    _main_menu_status = Label.new()
+    _main_menu_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    _main_menu_status.custom_minimum_size = Vector2(220, 0)
+    _main_menu_status.add_theme_color_override("font_color", MapleTheme.TEXT_DIM)
+    _main_menu_status.add_theme_font_size_override("font_size", 12)
+    _settings_main_menu_box.add_child(_main_menu_status)
+    _main_menu_btn_chat = _add_main_menu_button("Chat", "Talk to your buddy and see what it has said.", _toggle_chat_window)
+    _add_main_menu_button("Journal", "Read what your buddy has been doing on its own.", _open_journal)
+    _main_menu_btn_stats = _add_main_menu_button("Stats", "Level, bond and stat points.", _toggle_stats_menu)
+    _add_main_menu_button("Inventory", "Items your buddy has collected.", _toggle_inventory_menu)
+    _add_main_menu_button("Wardrobe", "Change what your buddy wears.", _toggle_wardrobe_menu)
+    _main_menu_btn_pause = _add_main_menu_button("Pause", "Put your buddy to sleep, or wake it up.", func() -> void:
+        _toggle_sleep_state()
+        _refresh_settings_menu()
+    )
+    _add_main_menu_button("Settings", "How busy and how talkative your buddy is.", func() -> void:
+        _set_settings_menu_mode(true)
+        _layout_settings_window()
+        _refresh_settings_menu()
+    )
+    var quit_button := _add_main_menu_button("Quit", "Close Buddy.", _quit_runtime)
+    MapleTheme.make_danger(quit_button)
 
 
-func _build_maple_game_menu_button(key: String, tooltip: String) -> TextureButton:
-    var btn := TextureButton.new()
-    var rel := str(MAPLE_GAMEMENU_BUTTONS.get(key, ""))
-    btn.texture_normal = _resolve_wz_ui_texture("%s/normal/0.png" % rel)
-    btn.texture_hover = _resolve_wz_ui_texture("%s/mouseOver/0.png" % rel)
-    btn.texture_pressed = _resolve_wz_ui_texture("%s/pressed/0.png" % rel)
-    btn.texture_disabled = _resolve_wz_ui_texture("%s/disabled/0.png" % rel)
-    btn.ignore_texture_size = false
-    btn.stretch_mode = TextureButton.STRETCH_KEEP_CENTERED
-    btn.tooltip_text = tooltip
-    btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-    if btn.texture_normal != null:
-        btn.custom_minimum_size = btn.texture_normal.get_size()
-    else:
-        btn.custom_minimum_size = Vector2(81, 25)
-    return btn
+func _add_main_menu_button(label: String, tooltip: String, action: Callable) -> Button:
+    var button := Button.new()
+    button.text = label
+    button.tooltip_text = tooltip
+    button.custom_minimum_size = Vector2(0, 36)
+    button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+    button.pressed.connect(action)
+    _settings_main_menu_box.add_child(button)
+    return button
+
+
+# Shows the buddy's recent journal in the chat window, opening it if needed.
+func _open_journal() -> void:
+    if not _chat_window_open:
+        _toggle_chat_window()
+    _append_chat_line("Journal", "\n" + _build_journal_summary(), "#FFD77A")
+
+
+# Regroups the settings buttons (which the scene keeps in one flat grid) under
+# plain-language headings, adds switches for the buddy's own mind, and tucks
+# the developer tools behind a toggle.
+func _build_settings_sections() -> void:
+    var controls_grid := settings_window.get_node_or_null("MarginContainer/SettingsVBox/ControlsGrid") as GridContainer
+    if controls_grid == null or settings_vbox.get_node_or_null("SettingsSections") != null:
+        return
+    var sections := VBoxContainer.new()
+    sections.name = "SettingsSections"
+    sections.add_theme_constant_override("separation", 8)
+    settings_vbox.add_child(sections)
+    settings_vbox.move_child(sections, controls_grid.get_index())
+
+    var back := Button.new()
+    back.text = "< Back to menu"
+    back.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+    back.pressed.connect(func() -> void:
+        _set_settings_menu_mode(false)
+        _layout_settings_window()
+        _refresh_settings_menu()
+    )
+    settings_vbox.add_child(back)
+    settings_vbox.move_child(back, 0)
+
+    _settings_btn_autonomy = Button.new()
+    _settings_btn_autonomy.tooltip_text = "When on, your buddy decides for itself what to do every ten minutes and keeps a journal."
+    _settings_btn_autonomy.pressed.connect(func() -> void:
+        _toggle_bool_setting("autonomyEnabled")
+    )
+    _settings_btn_model = Button.new()
+    _settings_btn_model.tooltip_text = "When on, a local Ollama model puts your buddy's thoughts into its own words. Needs Ollama running on this PC."
+    _settings_btn_model.pressed.connect(func() -> void:
+        _toggle_bool_setting("mindModelEnabled")
+    )
+
+    _add_settings_section(sections, "How busy your buddy is", [
+        settings_btn_event_freq, settings_btn_prompt_freq, settings_btn_intensity, settings_btn_quiet,
+    ])
+    _add_settings_section(sections, "Do not disturb", [settings_btn_dnd_15, settings_btn_dnd_30, settings_btn_dnd_off], 3)
+    _add_settings_section(sections, "Its own mind", [_settings_btn_autonomy, _settings_btn_model])
+    _add_settings_section(sections, "Look and place", [settings_btn_mode, settings_btn_pack])
+
+    _settings_btn_debug_toggle = Button.new()
+    _settings_btn_debug_toggle.flat = false
+    _settings_btn_debug_toggle.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+    _settings_btn_debug_toggle.pressed.connect(func() -> void:
+        _settings_debug_box.visible = not _settings_debug_box.visible
+        _refresh_settings_menu()
+    )
+    sections.add_child(_settings_btn_debug_toggle)
+    _settings_debug_box = _add_settings_section(sections, "Developer tools", [
+        settings_btn_demo_support, settings_btn_demo_world, settings_btn_reward, settings_btn_telemetry,
+        settings_btn_seed_inventory, settings_btn_repair_inventory, settings_btn_restart, settings_btn_clear_inventory,
+    ])
+    _settings_debug_box.visible = false
+    MapleTheme.make_danger(settings_btn_clear_inventory)
+
+    # These live on the main menu now.
+    for moved in [
+        settings_btn_pause, settings_btn_chat, settings_btn_stats,
+        settings_btn_inventory, settings_btn_wardrobe, settings_btn_quit,
+    ]:
+        moved.visible = false
+    controls_grid.visible = false
+
+
+func _add_settings_section(parent: Control, title: String, buttons: Array, columns: int = 2) -> Control:
+    var panel := PanelContainer.new()
+    var box := VBoxContainer.new()
+    box.add_theme_constant_override("separation", 6)
+    panel.add_child(box)
+    box.add_child(MapleTheme.heading(title))
+    var grid := GridContainer.new()
+    grid.columns = columns
+    grid.add_theme_constant_override("h_separation", 8)
+    grid.add_theme_constant_override("v_separation", 6)
+    box.add_child(grid)
+    for button_variant in buttons:
+        var button := button_variant as Button
+        if button == null:
+            continue
+        if button.get_parent() != null:
+            button.get_parent().remove_child(button)
+        button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+        button.custom_minimum_size = Vector2(0, 32)
+        grid.add_child(button)
+    parent.add_child(panel)
+    return panel
+
+
+func _toggle_bool_setting(key: String) -> void:
+    _set_setting_with_audit(key, not bool(AppState.settings.get(key, true)), "menu")
+    AppState.flush()
+    _refresh_settings_menu()
 
 
 func _set_settings_menu_mode(advanced: bool) -> void:
@@ -945,7 +1039,7 @@ func _set_settings_menu_mode(advanced: bool) -> void:
         _settings_main_menu_box.visible = not advanced
     if settings_vbox != null:
         settings_vbox.visible = advanced
-    settings_window.title = "System Options" if advanced else "Game Menu"
+    settings_window.title = "Buddy Settings" if advanced else "Buddy Menu"
     if advanced:
         _apply_settings_maple_theme()
         _layout_maple_window_chrome(settings_window, MAPLE_LAYOUT_SETTINGS)
@@ -1007,7 +1101,11 @@ func _configure_stats_window() -> void:
     var stats_layout_init := _layout_with_skin_size(MAPLE_LAYOUT_STATS, MAPLE_WINDOW_SKIN_STATS)
     stats_window.min_size = stats_layout_init["min_size"]
     stats_window.size = stats_layout_init["base_size"]
-    stats_window.title = "Maple Buddy Stats"
+    stats_window.title = "Buddy Stats"
+    stats_label.fit_content = true
+    stats_label.scroll_active = false
+    stats_label.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+    stats_label.custom_minimum_size = Vector2(320, 0)
     stats_window.wrap_controls = true
     stats_window.always_on_top = true
     stats_window.close_requested.connect(func() -> void:
@@ -1360,6 +1458,7 @@ func _configure_menu_rebuild_window() -> void:
 
     var root := VBoxContainer.new()
     root.name = "RootVBox"
+    root.add_theme_constant_override("separation", 8)
     margin.add_child(root)
 
     var header := RichTextLabel.new()
@@ -1367,50 +1466,80 @@ func _configure_menu_rebuild_window() -> void:
     header.fit_content = true
     header.scroll_active = false
     header.bbcode_enabled = true
+    header.autowrap_mode = TextServer.AUTOWRAP_OFF
     root.add_child(header)
     _menu_rebuild_header = header
 
     var tab_row := HBoxContainer.new()
     tab_row.name = "TabRow"
+    tab_row.add_theme_constant_override("separation", 4)
     root.add_child(tab_row)
     _menu_rebuild_tabs.clear()
+    var tab_labels := {"all": "All", "equip": "Gear", "use": "Usable", "etc": "Other", "decor": "Decor", "wardrobe": "Wardrobe"}
     for tab_id in ["all", "equip", "use", "etc", "decor", "wardrobe"]:
         var btn := Button.new()
         btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-        btn.text = tab_id.capitalize()
+        btn.toggle_mode = true
+        btn.text = str(tab_labels[tab_id])
         tab_row.add_child(btn)
         _menu_rebuild_tabs[tab_id] = btn
         btn.pressed.connect(func() -> void:
             _set_rebuild_menu_tab(tab_id)
         )
 
-    var split := HSplitContainer.new()
+    var split := HBoxContainer.new()
     split.name = "BodySplit"
     split.size_flags_vertical = Control.SIZE_EXPAND_FILL
-    split.split_offset = 320
+    split.add_theme_constant_override("separation", 10)
     root.add_child(split)
+
+    var left_panel := PanelContainer.new()
+    split.add_child(left_panel)
+    var left_box := VBoxContainer.new()
+    left_box.add_theme_constant_override("separation", 6)
+    left_panel.add_child(left_box)
 
     var left_scroll := ScrollContainer.new()
     left_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
     left_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
-    split.add_child(left_scroll)
+    left_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    left_scroll.custom_minimum_size = Vector2(
+        INVENTORY_SLOT_COLUMNS * (INVENTORY_SLOT_PX + 3) + 12, 6 * (INVENTORY_SLOT_PX + 3)
+    )
+    left_box.add_child(left_scroll)
 
     var slot_grid := GridContainer.new()
-    slot_grid.columns = 8
+    slot_grid.columns = INVENTORY_SLOT_COLUMNS
     slot_grid.add_theme_constant_override("h_separation", 3)
     slot_grid.add_theme_constant_override("v_separation", 3)
     left_scroll.add_child(slot_grid)
     _menu_rebuild_slot_grid = slot_grid
 
+    _menu_rebuild_empty_label = Label.new()
+    _menu_rebuild_empty_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    _menu_rebuild_empty_label.custom_minimum_size = Vector2(320, 0)
+    _menu_rebuild_empty_label.add_theme_color_override("font_color", MapleTheme.TEXT_DIM)
+    _menu_rebuild_empty_label.add_theme_font_size_override("font_size", 12)
+    left_box.add_child(_menu_rebuild_empty_label)
+
+    var detail_panel := PanelContainer.new()
+    detail_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    split.add_child(detail_panel)
     var detail_vbox := VBoxContainer.new()
     detail_vbox.name = "DetailVBox"
-    split.add_child(detail_vbox)
+    detail_vbox.add_theme_constant_override("separation", 8)
+    detail_panel.add_child(detail_vbox)
 
+    var icon_frame := PanelContainer.new()
+    icon_frame.add_theme_stylebox_override("panel", MapleTheme.slot(false))
+    icon_frame.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+    detail_vbox.add_child(icon_frame)
     var icon := TextureRect.new()
     icon.custom_minimum_size = Vector2(64, 64)
     icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
     icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-    detail_vbox.add_child(icon)
+    icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+    icon_frame.add_child(icon)
     _menu_rebuild_icon = icon
 
     var detail := RichTextLabel.new()
@@ -1423,10 +1552,13 @@ func _configure_menu_rebuild_window() -> void:
 
     var action_row := GridContainer.new()
     action_row.columns = 2
+    action_row.add_theme_constant_override("h_separation", 6)
+    action_row.add_theme_constant_override("v_separation", 6)
     detail_vbox.add_child(action_row)
 
     _menu_rebuild_btn_use = Button.new()
     _menu_rebuild_btn_use.text = "Use"
+    _menu_rebuild_btn_use.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     action_row.add_child(_menu_rebuild_btn_use)
     _menu_rebuild_btn_use.pressed.connect(func() -> void:
         _inventory_selected_instance_id = _menu_rebuild_selected_instance_id
@@ -1435,7 +1567,8 @@ func _configure_menu_rebuild_window() -> void:
     )
 
     _menu_rebuild_btn_equip = Button.new()
-    _menu_rebuild_btn_equip.text = "Equip"
+    _menu_rebuild_btn_equip.text = "Wear"
+    _menu_rebuild_btn_equip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     action_row.add_child(_menu_rebuild_btn_equip)
     _menu_rebuild_btn_equip.pressed.connect(func() -> void:
         _inventory_selected_instance_id = _menu_rebuild_selected_instance_id
@@ -1444,7 +1577,8 @@ func _configure_menu_rebuild_window() -> void:
     )
 
     _menu_rebuild_btn_unequip = Button.new()
-    _menu_rebuild_btn_unequip.text = "Unequip"
+    _menu_rebuild_btn_unequip.text = "Take off"
+    _menu_rebuild_btn_unequip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     action_row.add_child(_menu_rebuild_btn_unequip)
     _menu_rebuild_btn_unequip.pressed.connect(func() -> void:
         _inventory_selected_instance_id = _menu_rebuild_selected_instance_id
@@ -1454,6 +1588,7 @@ func _configure_menu_rebuild_window() -> void:
 
     _menu_rebuild_btn_close = Button.new()
     _menu_rebuild_btn_close.text = "Close"
+    _menu_rebuild_btn_close.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     action_row.add_child(_menu_rebuild_btn_close)
     _menu_rebuild_btn_close.pressed.connect(func() -> void:
         _menu_rebuild_open = false
@@ -1528,6 +1663,9 @@ func _refresh_rebuild_menu() -> void:
     var inventory: Array = inv_variant if typeof(inv_variant) == TYPE_ARRAY else []
     var equipped_variant = snapshot.get("equipped_slots", {})
     var equipped_slots: Dictionary = equipped_variant if typeof(equipped_variant) == TYPE_DICTIONARY else {}
+    # The detail panel and the use/wear actions look items up in this cache;
+    # without refreshing it here a newly gained item could not be selected.
+    _inventory_rows_cache = inventory.duplicate(true)
 
     _menu_rebuild_slot_buttons_by_instance.clear()
     for child in _menu_rebuild_slot_grid.get_children():
@@ -1551,14 +1689,7 @@ func _refresh_rebuild_menu() -> void:
         if instance_id <= 0:
             continue
         visible_ids.append(instance_id)
-        var btn := TextureButton.new()
-        btn.custom_minimum_size = Vector2(36, 36)
-        btn.stretch_mode = TextureButton.STRETCH_KEEP_CENTERED
-        var icon_tex := _resolve_item_overlay_texture(row)
-        btn.texture_normal = icon_tex
-        btn.texture_hover = icon_tex
-        btn.texture_pressed = icon_tex
-        btn.tooltip_text = str(row.get("name", row.get("id", "item")))
+        var btn := _make_inventory_slot(row, _equipped_slot_for_instance(equipped_slots, instance_id) != "")
         _menu_rebuild_slot_grid.add_child(btn)
         _menu_rebuild_slot_buttons_by_instance[instance_id] = btn
         btn.pressed.connect(func() -> void:
@@ -1585,22 +1716,42 @@ func _refresh_rebuild_menu() -> void:
         _menu_rebuild_selected_instance_id = int(visible_ids[0])
 
     for id_variant in _menu_rebuild_slot_buttons_by_instance.keys():
-        var id := int(id_variant)
-        var b := _menu_rebuild_slot_buttons_by_instance[id_variant] as TextureButton
+        var b := _menu_rebuild_slot_buttons_by_instance[id_variant] as Button
         if b == null:
             continue
-        b.self_modulate = Color(1.0, 0.92, 0.72, 1.0) if id == _menu_rebuild_selected_instance_id else Color(1.0, 1.0, 1.0, 1.0)
+        if int(id_variant) == _menu_rebuild_selected_instance_id:
+            b.add_theme_stylebox_override("normal", MapleTheme.slot(true))
+            b.add_theme_stylebox_override("hover", MapleTheme.slot(true))
+
+    # Pad with empty slots so the grid always reads as an inventory.
+    var slot_total := maxi(INVENTORY_MIN_SLOTS, int(ceil(float(visible_ids.size()) / INVENTORY_SLOT_COLUMNS)) * INVENTORY_SLOT_COLUMNS)
+    for _i in range(slot_total - visible_ids.size()):
+        var empty_slot := Panel.new()
+        empty_slot.custom_minimum_size = Vector2(INVENTORY_SLOT_PX, INVENTORY_SLOT_PX)
+        empty_slot.add_theme_stylebox_override("panel", MapleTheme.slot(false))
+        empty_slot.modulate = Color(1, 1, 1, 0.55)
+        empty_slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+        _menu_rebuild_slot_grid.add_child(empty_slot)
+    if _menu_rebuild_empty_label != null:
+        if not visible_ids.is_empty():
+            _menu_rebuild_empty_label.text = "Click an item to see it. Double-click to use or wear it."
+        elif _menu_rebuild_mode == "wardrobe":
+            _menu_rebuild_empty_label.text = "Nothing to wear yet. Gear your buddy finds will show up here."
+        elif inventory.is_empty():
+            _menu_rebuild_empty_label.text = "Empty for now. Your buddy brings things back from encounters and reward boxes."
+        else:
+            _menu_rebuild_empty_label.text = "Nothing in this tab. Try All."
 
     var selected := _inventory_item_by_instance(_menu_rebuild_selected_instance_id)
     if _menu_rebuild_header != null:
         var meso := int(snapshot.get("meso", snapshot.get("crystals", 0)))
         var mode_label := "Inventory" if _menu_rebuild_mode == "inventory" else "Wardrobe"
-        _menu_rebuild_header.text = "[b][color=#FFD77A]%s[/color][/b] [color=#A8E8FF]%d meso[/color] [color=#E7D9B4]%d items[/color]" % [mode_label, meso, visible_ids.size()]
+        _menu_rebuild_header.text = "[b][color=#FFD77A]%s[/color][/b]   [color=#A8E8FF]%d meso[/color]   [color=#9AA3B5]%d shown[/color]" % [mode_label, meso, visible_ids.size()]
     _refresh_rebuild_menu_tab_buttons()
     if _menu_rebuild_detail == null or _menu_rebuild_icon == null:
         return
     if selected.is_empty():
-        _menu_rebuild_detail.text = "[color=#E7D9B4]Select an item.[/color]"
+        _menu_rebuild_detail.text = "[color=#9AA3B5]No item selected.[/color]"
         _menu_rebuild_icon.texture = null
         if _menu_rebuild_btn_use != null:
             _menu_rebuild_btn_use.disabled = true
@@ -1616,11 +1767,16 @@ func _refresh_rebuild_menu() -> void:
     var rarity := str(selected.get("rarity", "common"))
     var desc := str(selected.get("description", "")).strip_edges()
     _menu_rebuild_icon.texture = _resolve_item_overlay_texture(selected)
-    var detail_text := "[b][color=#FFD77A]%s[/color][/b]\n[color=#F4E9CF]Category:[/color] %s\n[color=#F4E9CF]Rarity:[/color] %s" % [name, category, rarity]
-    if desc != "":
-        detail_text += "\n[color=#F4E9CF]Description:[/color] %s" % desc
-    _menu_rebuild_detail.text = detail_text
     var equipped_slot := _equipped_slot_for_instance(equipped_slots, int(selected.get("instance_id", -1)))
+    var rarity_color := str(RARITY_COLORS.get(rarity.to_lower(), "#F4E9CF"))
+    var detail_text := "[b][color=%s]%s[/color][/b]\n[color=#9AA3B5]%s, %s[/color]" % [
+        rarity_color, name, rarity.capitalize(), category.replace("_", " ")
+    ]
+    if equipped_slot != "":
+        detail_text += "\n[color=#8FE39B]Wearing now (%s)[/color]" % equipped_slot
+    if desc != "":
+        detail_text += "\n\n%s" % desc
+    _menu_rebuild_detail.text = detail_text
     if _menu_rebuild_btn_use != null:
         _menu_rebuild_btn_use.disabled = not _is_item_usable(selected)
     if _menu_rebuild_btn_equip != null:
@@ -1640,7 +1796,49 @@ func _refresh_rebuild_menu_tab_buttons() -> void:
             active = _menu_rebuild_mode == "wardrobe"
         else:
             active = _menu_rebuild_mode == "inventory" and _inventory_active_tab == key
-        btn.text = "[%s]" % key.capitalize() if active else key.capitalize()
+        btn.set_pressed_no_signal(active)
+        if active:
+            btn.add_theme_stylebox_override("normal", MapleTheme.flat(MapleTheme.BUTTON_HOVER, MapleTheme.SELECTION, 5, 2))
+            btn.add_theme_stylebox_override("pressed", MapleTheme.flat(MapleTheme.BUTTON_HOVER, MapleTheme.SELECTION, 5, 2))
+        else:
+            btn.remove_theme_stylebox_override("normal")
+            btn.remove_theme_stylebox_override("pressed")
+
+
+# One occupied inventory slot: a beige square with the item's icon, its name
+# and rarity as a tooltip, and a green corner mark when it is being worn.
+func _make_inventory_slot(row: Dictionary, is_equipped: bool) -> Button:
+    var btn := Button.new()
+    btn.custom_minimum_size = Vector2(INVENTORY_SLOT_PX, INVENTORY_SLOT_PX)
+    btn.icon = _resolve_item_overlay_texture(row)
+    btn.expand_icon = true
+    btn.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    btn.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+    btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+    btn.add_theme_stylebox_override("normal", MapleTheme.slot(false))
+    btn.add_theme_stylebox_override("hover", MapleTheme.flat(MapleTheme.SLOT.lightened(0.25), MapleTheme.FRAME, 3, 2, 2, 2))
+    btn.add_theme_stylebox_override("pressed", MapleTheme.slot(true))
+    btn.add_theme_stylebox_override("focus", MapleTheme.flat(Color(0, 0, 0, 0), Color(0, 0, 0, 0), 3, 0, 2, 2))
+    var item_name := str(row.get("name", row.get("id", "item")))
+    btn.tooltip_text = "%s\n%s %s%s" % [
+        item_name,
+        str(row.get("rarity", "common")).capitalize(),
+        str(row.get("category", "item")).replace("_", " "),
+        "\nWearing now" if is_equipped else "",
+    ]
+    if btn.icon == null:
+        # No picture for this item on this machine: show its initial instead.
+        btn.text = item_name.substr(0, 1).to_upper()
+        btn.add_theme_color_override("font_color", Color(0.25, 0.22, 0.18))
+        btn.add_theme_color_override("font_hover_color", Color(0.25, 0.22, 0.18))
+    if is_equipped:
+        var mark := ColorRect.new()
+        mark.color = Color(0.30, 0.78, 0.42)
+        mark.size = Vector2(9, 9)
+        mark.position = Vector2(3, 3)
+        mark.mouse_filter = Control.MOUSE_FILTER_IGNORE
+        btn.add_child(mark)
+    return btn
 
 
 func _ensure_wardrobe_slot_grid_ui() -> void:
@@ -1756,107 +1954,32 @@ func _apply_chat_maple_theme() -> void:
 
 func _apply_maple_window_theme(
     target_window: Window,
-    buttons: Array,
-    rich_labels: Array,
-    panel_nodes: Array,
-    text_inputs: Array = [],
-    window_skin_rel: String = MAPLE_WINDOW_SKIN_INVENTORY,
-    style_buttons: bool = true,
-    style_panels: bool = true
+    _buttons: Array,
+    _rich_labels: Array,
+    _panel_nodes: Array,
+    _text_inputs: Array = [],
+    window_skin_rel: String = "",
+    _style_buttons: bool = true,
+    _style_panels: bool = true
 ) -> void:
-    if target_window == null:
-        return
+    # Every control picks its look up from the shared theme on the window.
     _ensure_maple_window_background(target_window, window_skin_rel)
-    var panel := _make_maple_panel_style(window_skin_rel, 18)
-    var panel_alt := _make_maple_panel_style(window_skin_rel, 12)
-    var button_normal := _make_maple_button_style(MAPLE_BUTTON_NORMAL_REL)
-    var button_hover := _make_maple_button_style(MAPLE_BUTTON_HOVER_REL)
-    var button_pressed := _make_maple_button_style(MAPLE_BUTTON_PRESSED_REL)
-    var button_disabled := _make_maple_button_style(MAPLE_BUTTON_DISABLED_REL)
-
-    var margin := target_window.get_node_or_null("MarginContainer") as MarginContainer
-    if style_panels:
-        if margin != null:
-            margin.add_theme_stylebox_override("panel", panel)
-        for node_variant in panel_nodes:
-            if typeof(node_variant) != TYPE_OBJECT or node_variant == null:
-                continue
-            var ctrl := node_variant as Control
-            if ctrl == null:
-                continue
-            ctrl.add_theme_stylebox_override("panel", panel_alt.duplicate())
-    var close_btn := target_window.get_node_or_null("TitleBar/HBoxContainer/CloseButton") as Button
-    if close_btn != null:
-        close_btn.add_theme_stylebox_override("normal", _make_maple_button_style("Basic.img/BtClose/normal/0.png"))
-        close_btn.add_theme_stylebox_override("hover", _make_maple_button_style("Basic.img/BtClose/mouseOver/0.png"))
-        close_btn.add_theme_stylebox_override("pressed", _make_maple_button_style("Basic.img/BtClose/pressed/0.png"))
-        close_btn.add_theme_color_override("font_color", Color(1, 1, 1, 0))
-    if style_buttons:
-        for node_variant in buttons:
-            if typeof(node_variant) != TYPE_OBJECT or node_variant == null:
-                continue
-            var btn := node_variant as Button
-            if btn == null:
-                continue
-            btn.add_theme_stylebox_override("normal", button_normal.duplicate())
-            btn.add_theme_stylebox_override("hover", button_hover.duplicate())
-            btn.add_theme_stylebox_override("pressed", button_pressed.duplicate())
-            btn.add_theme_stylebox_override("disabled", button_disabled.duplicate())
-            btn.add_theme_color_override("font_color", Color(0.97, 0.90, 0.78, 0.98))
-            btn.add_theme_color_override("font_hover_color", Color(1.0, 0.95, 0.84, 0.98))
-            btn.add_theme_color_override("font_pressed_color", Color(1.0, 0.95, 0.88, 0.98))
-            btn.add_theme_color_override("font_disabled_color", Color(0.60, 0.55, 0.48, 0.80))
-    for input_variant in text_inputs:
-        if typeof(input_variant) != TYPE_OBJECT or input_variant == null:
-            continue
-        var line_edit := input_variant as LineEdit
-        if line_edit == null:
-            continue
-        if style_panels:
-            line_edit.add_theme_stylebox_override("normal", _make_maple_panel_style(window_skin_rel, 8))
-            line_edit.add_theme_stylebox_override("focus", _make_maple_panel_style(window_skin_rel, 8))
-        line_edit.add_theme_color_override("font_color", Color(0.97, 0.90, 0.78, 0.98))
-        line_edit.add_theme_color_override("font_placeholder_color", Color(0.68, 0.60, 0.50, 0.88))
-    for node_variant in rich_labels:
-        if typeof(node_variant) != TYPE_OBJECT or node_variant == null:
-            continue
-        var rl := node_variant as RichTextLabel
-        if rl == null:
-            continue
-        rl.add_theme_color_override("default_color", Color(0.96, 0.91, 0.81, 0.98))
 
 
-func _ensure_maple_window_background(target_window: Window, window_skin_rel: String) -> void:
+func _ensure_maple_window_background(target_window: Window, _window_skin_rel: String = "") -> void:
     if target_window == null:
         return
-    var margin := target_window.get_node_or_null("MarginContainer") as Control
-    if margin == null:
-        return
-    var bg := margin.get_node_or_null("MapleSkinBG") as TextureRect
+    target_window.theme = MapleTheme.theme()
+    target_window.transparent = false
+    target_window.transparent_bg = false
+    var bg := target_window.get_node_or_null("MapleWindowBG") as Panel
     if bg == null:
-        bg = TextureRect.new()
-        bg.name = "MapleSkinBG"
+        bg = Panel.new()
+        bg.name = "MapleWindowBG"
         bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-        bg.z_index = -100
-        bg.anchor_left = 0.0
-        bg.anchor_top = 0.0
-        bg.anchor_right = 1.0
-        bg.anchor_bottom = 1.0
-        bg.offset_left = 0.0
-        bg.offset_top = 0.0
-        bg.offset_right = 0.0
-        bg.offset_bottom = 0.0
-        bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-        bg.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED
-        margin.add_child(bg)
-        margin.move_child(bg, 0)
-    var tex := _resolve_wz_ui_texture(window_skin_rel)
-    if tex != null:
-        bg.texture = tex
-        bg.modulate = Color(1.0, 1.0, 1.0, 0.95)
-    else:
-        bg.texture = null
-        bg.modulate = Color(0.08, 0.07, 0.11, 0.92)
+        bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+        target_window.add_child(bg)
+        target_window.move_child(bg, 0)
 
 
 func _layout_maple_window_chrome(target_window: Window, layout_config: Dictionary) -> void:
@@ -1883,109 +2006,10 @@ func _layout_maple_window_chrome(target_window: Window, layout_config: Dictionar
     margin.add_theme_constant_override("margin_bottom", 0)
 
 
-func _make_maple_panel_style(rel_path: String, margin_px: int) -> StyleBoxTexture:
-    var sb := StyleBoxTexture.new()
-    var tex := _resolve_wz_ui_texture(rel_path)
-    if tex != null:
-        sb.texture = tex
-        sb.texture_margin_left = margin_px
-        sb.texture_margin_top = margin_px
-        sb.texture_margin_right = margin_px
-        sb.texture_margin_bottom = margin_px
-        sb.axis_stretch_horizontal = StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH
-        sb.axis_stretch_vertical = StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH
-    else:
-        sb.draw_center = true
-    sb.content_margin_left = 8
-    sb.content_margin_top = 8
-    sb.content_margin_right = 8
-    sb.content_margin_bottom = 8
-    return sb
-
-
-func _make_maple_button_style(rel_path: String) -> StyleBoxTexture:
-    var sb := StyleBoxTexture.new()
-    var tex := _resolve_wz_ui_texture(rel_path)
-    if tex != null:
-        sb.texture = tex
-        sb.texture_margin_left = 4
-        sb.texture_margin_top = 4
-        sb.texture_margin_right = 4
-        sb.texture_margin_bottom = 4
-        sb.axis_stretch_horizontal = StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH
-        sb.axis_stretch_vertical = StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH
-    sb.content_margin_left = 8
-    sb.content_margin_top = 5
-    sb.content_margin_right = 8
-    sb.content_margin_bottom = 5
-    return sb
-
-
-func _resolve_wz_ui_texture(rel_path: String) -> Texture2D:
-    var cleaned := rel_path.replace("\\", "/").trim_prefix("/")
-    if _wz_ui_texture_cache.has(cleaned):
-        var cached = _wz_ui_texture_cache[cleaned]
-        if cached == null or cached is Texture2D:
-            return cached
-    for root_variant in _wz_ui_roots():
-        var root := str(root_variant).replace("\\", "/").trim_suffix("/")
-        var abs_path := root.path_join(cleaned)
-        var tex := _load_texture_from_filesystem(abs_path)
-        if tex != null:
-            _wz_ui_texture_cache[cleaned] = tex
-            return tex
-    _wz_ui_texture_cache[cleaned] = null
-    return null
-
-
-func _wz_ui_roots() -> Array:
-    var roots: Array = []
-    var icon_root := _wz_icon_root.replace("\\", "/").trim_suffix("/")
-    if icon_root != "":
-        roots.append(icon_root.path_join("UI/UI.wz"))
-    roots.append("C:/Users/GGPC/OneDrive/Desktop/83 complete/Base.wz/UI/UI.wz")
-    roots.append("C:/Users/%s/OneDrive/Desktop/83 complete/Base.wz/UI/UI.wz" % OS.get_environment("USERNAME"))
-    var dedup := {}
-    var out: Array = []
-    for root_variant in roots:
-        var root := str(root_variant).replace("\\", "/").trim_suffix("/")
-        if root == "" or dedup.has(root) or not DirAccess.dir_exists_absolute(root):
-            continue
-        dedup[root] = true
-        out.append(root)
-    return out
-
-
-func _skin_backgrnd_size(skin_rel: String, fallback: Vector2i) -> Vector2i:
-    var tex := _resolve_wz_ui_texture(skin_rel)
-    if tex == null:
-        return fallback
-    var sz := tex.get_size()
-    if sz.x <= 0.0 or sz.y <= 0.0:
-        return fallback
-    return Vector2i(int(sz.x), int(sz.y))
-
-
-func _layout_with_skin_size(layout_config: Dictionary, skin_rel: String) -> Dictionary:
-    var next := layout_config.duplicate(true)
-    var fallback: Vector2i = layout_config.get("base_size", Vector2i(420, 320))
-    var skin_size := _skin_backgrnd_size(skin_rel, fallback)
-    var scale_x := 2
-    var scale_y := 1
-    if skin_size.x < 120:
-        scale_x = 3
-    if skin_size.y < 120:
-        scale_y = 2
-    var base := Vector2i(
-        maxi(fallback.x, skin_size.x * scale_x),
-        maxi(fallback.y, skin_size.y * scale_y)
-    )
-    next["base_size"] = base
-    next["min_size"] = Vector2i(
-        maxi(220, int(floor(float(base.x) * 0.66))),
-        maxi(180, int(floor(float(base.y) * 0.66)))
-    )
-    return next
+func _layout_with_skin_size(layout_config: Dictionary, _skin_rel: String) -> Dictionary:
+    # Windows used to be sized from the Maple window pictures. They are drawn
+    # in code now, so the configured size is the size.
+    return layout_config.duplicate(true)
 
 
 func _apply_inventory_maple_theme() -> void:
@@ -3056,96 +3080,85 @@ func _refresh_settings_menu() -> void:
     var prompt_metrics := _manual_verification_report.get_prompt_metrics()
     var lock_remaining := maxi(0, _manual_emote_until_unix - int(Time.get_unix_time_from_system()))
 
-    var text := ""
-    text += "[center][b][color=#FFD77A]Maple Buddy Menu[/color][/b][/center]\n"
-    text += "[center][color=#E7D9B4]Separate movable popout[/color][/center]\n\n"
-    text += "[b][color=#FFCF6E]Character[/color][/b]\n"
-    text += "[color=#F4E9CF]State:[/color] %s   [color=#F4E9CF]Mood:[/color] %s   [color=#F4E9CF]Growth:[/color] %d\n" % [
-        _state, str(snapshot.get("mood", "calm")), int(snapshot.get("growth_stage", 1))
-    ]
-    text += "[color=#F4E9CF]Bond:[/color] Lv %d   XP %d   [color=#F4E9CF]Trust:[/color] %.2f\n" % [
-        int(snapshot.get("bond_level", 1)), int(snapshot.get("bond_xp", 0)), float(snapshot.get("trust_value", 0.2))
-    ]
-    text += "[color=#F4E9CF]Visual Pack:[/color] %s   [color=#F4E9CF]Economy Pack:[/color] %s\n" % [
-        str(snapshot.get("visual_pack_id", snapshot.get("active_pack", "core_pack"))),
-        str(snapshot.get("economy_pack_id", "core_pack"))
-    ]
-    text += "[color=#F4E9CF]Catalog:[/color] %d   [color=#F4E9CF]Mode:[/color] %s\n\n" % [
-        int(snapshot.get("catalog_size", 0)),
-        str(snapshot.get("home_mode", "overlay"))
-    ]
-    text += "[b][color=#FFCF6E]System[/color][/b]\n"
-    text += "[color=#F4E9CF]Event Freq:[/color] %s   [color=#F4E9CF]Prompt Freq:[/color] %s\n" % [
-        str(AppState.settings.get("eventFrequency", "normal")),
-        str(AppState.settings.get("promptFrequency", "normal"))
-    ]
-    text += "[color=#F4E9CF]Cadence:[/color] %s\n" % _build_cadence_hint_compact()
-    text += "[color=#F4E9CF]Floor Adjust (TO):[/color] %s\n" % _format_floor_adjust_text(_desktop_floor_offset_adjust)
-    text += "[color=#F4E9CF]Quiet:[/color] %s (%s)\n" % [
-        str(AppState.settings.get("quietModeStrictness", "balanced")),
-        "on" if AppState.is_quiet_hours_now() else "off"
-    ]
     var now_unix := int(Time.get_unix_time_from_system())
     var dnd_line := "off"
     if _is_dnd_active(now_unix):
-        dnd_line = "on (%dm left)" % _dnd_minutes_remaining(now_unix)
-    text += "[color=#F4E9CF]DND:[/color] %s\n" % dnd_line
-    text += "[color=#F4E9CF]Inventory:[/color] %d items   [color=#F4E9CF]Quarantine:[/color] %d\n" % [
-        int(snapshot.get("inventory_count", 0)),
-        int(snapshot.get("inventory_quarantine_count", 0)),
+        dnd_line = "on, %d min left" % _dnd_minutes_remaining(now_unix)
+    var text := ""
+    text += "[color=#F4E9CF]Mood:[/color] %s   [color=#F4E9CF]Bond:[/color] level %d   [color=#F4E9CF]Doing:[/color] %s\n" % [
+        str(snapshot.get("mood", "calm")), int(snapshot.get("bond_level", 1)), _state
     ]
-    var wz_root := _wz_icon_root
-    var wz_ok := _wz_icon_root_exists()
-    var wz_root_short := "(not set)"
-    if wz_root != "":
-        wz_root_short = wz_root
-        if wz_root_short.length() > 68:
-            wz_root_short = "..." + wz_root_short.substr(wz_root_short.length() - 65, 65)
-    text += "[color=#F4E9CF]WZ Icon Root:[/color] %s (%s)\n" % [wz_root_short, ("ok" if wz_ok else "missing")]
-    text += "[color=#F4E9CF]Prompts:[/color] s+%d s-%d w+%d w-%d wd%d\n\n" % [
-        int(prompt_metrics.get("support_shown", 0)),
-        int(prompt_metrics.get("support_suppressed", 0)),
-        int(prompt_metrics.get("world_shown", 0)),
-        int(prompt_metrics.get("world_suppressed", 0)),
-        int(prompt_metrics.get("world_deferred", 0))
+    text += "[color=#F4E9CF]Quiet hours:[/color] %s   [color=#F4E9CF]Do not disturb:[/color] %s\n" % [
+        "now" if AppState.is_quiet_hours_now() else "not now", dnd_line
     ]
-    text += "[color=#F4E9CF]Verify:[/color] Shift+F2/Shift+F7 demos + /cadence\n\n"
-    text += "[b][color=#FFCF6E]Hotkeys[/color][/b]\n"
-    text += "[color=#F4E9CF]F2[/color] prompt  [color=#F4E9CF]Shift+F2[/color] demo support\n"
-    text += "[color=#F4E9CF]F3[/color] quiet  [color=#F4E9CF]F4[/color] intensity\n"
-    text += "[color=#F4E9CF]F5[/color] home  [color=#F4E9CF]F7[/color] events  [color=#F4E9CF]F8[/color] monitor\n"
-    text += "[color=#F4E9CF]F9[/color] pack  [color=#F4E9CF]F11[/color] reward  [color=#F4E9CF]F12[/color] world\n"
-    text += "[color=#F4E9CF]Shift+F10[/color] stats menu  [color=#F4E9CF]I[/color] inventory  [color=#F4E9CF]W[/color] wardrobe\n\n"
-    text += "[b][color=#FFCF6E]Emote Debug[/color][/b]\n"
-    text += "[color=#F4E9CF]Lock:[/color] %ds\n" % lock_remaining
-    text += "[color=#F4E9CF]1-0:[/color] happy/sad/angry/surprised/love/wink/sleepy/sick/pain/default"
+    text += "[color=#F4E9CF]Thinking model:[/color] %s" % _mind_model_summary()
+    if _settings_debug_box != null and _settings_debug_box.visible:
+        text += "\n\n[color=#9AA3B5]Pack %s / economy %s, catalogue %d, inventory %d (+%d quarantined). " % [
+            str(snapshot.get("visual_pack_id", snapshot.get("active_pack", "core_pack"))),
+            str(snapshot.get("economy_pack_id", "core_pack")),
+            int(snapshot.get("catalog_size", 0)),
+            int(snapshot.get("inventory_count", 0)),
+            int(snapshot.get("inventory_quarantine_count", 0)),
+        ]
+        text += "Cadence %s. Prompts s+%d s-%d w+%d w-%d wd%d. Emote lock %ds. " % [
+            _build_cadence_hint_compact(),
+            int(prompt_metrics.get("support_shown", 0)),
+            int(prompt_metrics.get("support_suppressed", 0)),
+            int(prompt_metrics.get("world_shown", 0)),
+            int(prompt_metrics.get("world_suppressed", 0)),
+            int(prompt_metrics.get("world_deferred", 0)),
+            lock_remaining,
+        ]
+        text += "Hotkeys: F2 prompts, F3 quiet, F4 intensity, F5 home, F6 telemetry, F7 events, F8 monitor, F9 pack, F11 reward, F12 world, 1-0 emotes.[/color]"
     settings_label.bbcode_enabled = true
+    settings_label.fit_content = true
+    settings_label.scroll_active = false
+    settings_label.custom_minimum_size = Vector2(460, 0)
+    settings_label.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
     settings_label.text = text
 
     settings_btn_pause.text = "Resume Buddy" if _state == "sleep" else "Pause Buddy"
-    settings_btn_event_freq.text = "Event Freq (F7): %s" % str(AppState.settings.get("eventFrequency", "normal"))
-    settings_btn_prompt_freq.text = "Prompt Freq (F2): %s" % str(AppState.settings.get("promptFrequency", "normal"))
-    settings_btn_quiet.text = "Quiet (F3): %s" % str(AppState.settings.get("quietModeStrictness", "balanced"))
+    if _main_menu_btn_pause != null:
+        _main_menu_btn_pause.text = "Wake up" if _state == "sleep" else "Pause"
+    if _main_menu_status != null:
+        _main_menu_status.text = "%s, bond level %d.\nDouble-click your buddy to open this menu." % [
+            str(snapshot.get("mood", "calm")).capitalize(), int(snapshot.get("bond_level", 1))
+        ]
+    if _main_menu_btn_chat != null:
+        _main_menu_btn_chat.text = "Chat (%d new)" % _chat_unread_prompt_count if _chat_unread_prompt_count > 0 else "Chat"
+    if _main_menu_btn_stats != null:
+        var spare_points := int(snapshot.get("stat_points_unspent", 0))
+        _main_menu_btn_stats.text = "Stats (%d points to spend)" % spare_points if spare_points > 0 else "Stats"
+    if _settings_btn_autonomy != null:
+        _settings_btn_autonomy.text = "Acts on its own: %s" % ("on" if bool(AppState.settings.get("autonomyEnabled", true)) else "off")
+    if _settings_btn_model != null:
+        _settings_btn_model.text = "Thinking model: %s" % ("on" if bool(AppState.settings.get("mindModelEnabled", true)) else "off")
+    if _settings_btn_debug_toggle != null and _settings_debug_box != null:
+        _settings_btn_debug_toggle.text = "Hide developer tools" if _settings_debug_box.visible else "Show developer tools"
+    settings_btn_event_freq.text = "World events: %s" % str(AppState.settings.get("eventFrequency", "normal"))
+    settings_btn_prompt_freq.text = "Check-ins: %s" % str(AppState.settings.get("promptFrequency", "normal"))
+    settings_btn_quiet.text = "Quiet hours: %s" % str(AppState.settings.get("quietModeStrictness", "balanced"))
     var dnd_remaining := _dnd_minutes_remaining()
     if _is_dnd_active():
-        settings_btn_dnd_15.text = "DND 15m (now %dm)" % dnd_remaining
-        settings_btn_dnd_30.text = "DND 30m (now %dm)" % dnd_remaining
-        settings_btn_dnd_off.text = "DND Off (active)"
+        settings_btn_dnd_15.text = "15 min (%d left)" % dnd_remaining
+        settings_btn_dnd_30.text = "30 min (%d left)" % dnd_remaining
+        settings_btn_dnd_off.text = "Turn off"
     else:
-        settings_btn_dnd_15.text = "DND 15m"
-        settings_btn_dnd_30.text = "DND 30m"
-        settings_btn_dnd_off.text = "DND Off"
-    settings_btn_intensity.text = "Intensity (F4): %s" % str(AppState.settings.get("interactionIntensity", "balanced"))
-    settings_btn_mode.text = "Mode (F5): %s" % str(snapshot.get("home_mode", "overlay"))
-    settings_btn_pack.text = "Cycle Pack (F9): %s" % str(snapshot.get("visual_pack_id", snapshot.get("active_pack", "core_pack")))
-    settings_btn_demo_support.text = "Demo Support (Shift+F2)"
-    settings_btn_demo_world.text = "Demo World (Shift+F7)"
-    settings_btn_reward.text = "Open Reward Box (F11)"
-    settings_btn_seed_inventory.text = "Seed Test Inventory"
-    settings_btn_repair_inventory.text = "Repair Inventory (%d)" % int(snapshot.get("inventory_quarantine_count", 0))
-    settings_btn_clear_inventory.text = "Clear Inventory (Debug)"
-    settings_btn_telemetry.text = "Telemetry (F6): %s" % ("on" if _telemetry_enabled else "off")
-    settings_btn_restart.text = "Restart Runtime"
+        settings_btn_dnd_15.text = "15 minutes"
+        settings_btn_dnd_30.text = "30 minutes"
+        settings_btn_dnd_off.text = "Off"
+    settings_btn_dnd_off.disabled = not _is_dnd_active()
+    settings_btn_intensity.text = "Energy: %s" % str(AppState.settings.get("interactionIntensity", "balanced"))
+    settings_btn_mode.text = "Lives in: %s" % str(snapshot.get("home_mode", "overlay"))
+    settings_btn_pack.text = "Character pack: %s" % str(snapshot.get("visual_pack_id", snapshot.get("active_pack", "core_pack")))
+    settings_btn_demo_support.text = "Demo check-in"
+    settings_btn_demo_world.text = "Demo world event"
+    settings_btn_reward.text = "Open reward box"
+    settings_btn_seed_inventory.text = "Add test items"
+    settings_btn_repair_inventory.text = "Repair inventory (%d)" % int(snapshot.get("inventory_quarantine_count", 0))
+    settings_btn_clear_inventory.text = "Clear inventory"
+    settings_btn_telemetry.text = "Telemetry: %s" % ("on" if _telemetry_enabled else "off")
+    settings_btn_restart.text = "Restart Buddy"
     settings_btn_quit.text = "Quit Runtime"
     var unread_suffix := ""
     if _chat_unread_prompt_count > 0:
@@ -4071,8 +4084,6 @@ func _refresh_stats_menu() -> void:
     var upcoming_unlocks := _upcoming_unlocks(level, 3)
 
     var text := ""
-    text += "[center][b][color=#FFD77A]Maple Buddy Stats[/color][/b][/center]\n"
-    text += "[center][color=#E7D9B4]Separate movable popout[/color][/center]\n\n"
     text += "[b][color=#FFCF6E]Progression[/color][/b]\n"
     text += "[color=#F4E9CF]Bond Level:[/color] %d   [color=#F4E9CF]Growth:[/color] %d\n" % [level, growth]
     if xp_is_max:
@@ -4088,29 +4099,18 @@ func _refresh_stats_menu() -> void:
         text += "[color=#F4E9CF]Soon:[/color] %s\n" % ", ".join(upcoming_unlocks)
     text += "[color=#F4E9CF]Allocation:[/color] %s\n" % ("AUTO (idle mode)" if auto_assign else "MANUAL")
     text += "[color=#F4E9CF]Unspent Points:[/color] %d   [color=#F4E9CF]Spent:[/color] %d\n\n" % [unspent, spent]
-    text += "[b][color=#FFCF6E]Stats[/color][/b]\n"
-    text += "[color=#F4E9CF]STR[/color] %d   [color=#F4E9CF]DEX[/color] %d   [color=#F4E9CF]CHA[/color] %d\n" % [
-        int(stats.get("strength", 1)),
-        int(stats.get("dexterity", 1)),
-        int(stats.get("charisma", 1)),
-    ]
-    text += "[color=#F4E9CF]END[/color] %d   [color=#F4E9CF]WIS[/color] %d   [color=#F4E9CF]KNO[/color] %d\n\n" % [
-        int(stats.get("endurance", 1)),
-        int(stats.get("wisdom", 1)),
-        int(stats.get("knowledge", 1)),
-    ]
     var deltas := _stats_session_delta(stats)
-    text += "[color=#F4E9CF]Session Delta:[/color] STR %+d DEX %+d CHA %+d END %+d WIS %+d KNO %+d\n\n" % [
-        int(deltas.get("strength", 0)),
-        int(deltas.get("dexterity", 0)),
-        int(deltas.get("charisma", 0)),
-        int(deltas.get("endurance", 0)),
-        int(deltas.get("wisdom", 0)),
-        int(deltas.get("knowledge", 0)),
-    ]
-    text += "[b][color=#FFCF6E]Controls[/color][/b]\n"
-    text += "[color=#F4E9CF]Shift+F10[/color] toggle stats menu\n"
-    text += "Use the + buttons below to spend 1 point."
+    var gained: Array[String] = []
+    for stat_key in ["strength", "dexterity", "charisma", "endurance", "wisdom", "knowledge"]:
+        if int(deltas.get(stat_key, 0)) != 0:
+            gained.append("%s %+d" % [stat_key.substr(0, 3).to_upper(), int(deltas.get(stat_key, 0))])
+    if not gained.is_empty():
+        text += "[color=#F4E9CF]This session:[/color] %s\n\n" % ", ".join(gained)
+    text += "[b][color=#FFCF6E]Stats[/color][/b]\n"
+    if unspent > 0:
+        text += "[color=#9DE0A9]You have %d points to spend.[/color] Click a stat below to add 1." % unspent
+    else:
+        text += "[color=#9AA3B5]No points to spend right now.[/color]"
     stats_label.bbcode_enabled = true
     stats_label.text = text
 
@@ -4120,13 +4120,20 @@ func _refresh_stats_menu() -> void:
     _update_stat_button_text(stats_btn_endurance, "END", int(stats.get("endurance", 1)), unspent)
     _update_stat_button_text(stats_btn_wisdom, "WIS", int(stats.get("wisdom", 1)), unspent)
     _update_stat_button_text(stats_btn_knowledge, "KNO", int(stats.get("knowledge", 1)), unspent)
-    stats_btn_close.text = "Close Stats"
+    stats_btn_close.text = "Close"
+    for stat_button in [
+        stats_btn_strength, stats_btn_dexterity, stats_btn_charisma,
+        stats_btn_endurance, stats_btn_wisdom, stats_btn_knowledge,
+    ]:
+        stat_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+        stat_button.custom_minimum_size = Vector2(0, 34)
 
 
 func _update_stat_button_text(btn: Button, short_name: String, value: int, unspent: int) -> void:
     if btn == null:
         return
-    btn.text = "%s %d  [+1]" % [short_name, value]
+    var full_names := {"STR": "Strength", "DEX": "Dexterity", "CHA": "Charisma", "END": "Endurance", "WIS": "Wisdom", "KNO": "Knowledge"}
+    btn.text = "%s  %d%s" % [str(full_names.get(short_name, short_name)), value, "   +" if unspent > 0 else ""]
     btn.disabled = unspent <= 0
     if unspent <= 0:
         btn.tooltip_text = "No unspent stat points. Level up to earn more."
