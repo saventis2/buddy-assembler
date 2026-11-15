@@ -54,7 +54,7 @@ Plan 12A on its own needs no network, no model and no new dependency.
   intents and gives that intent a one-off bonus in the next decision, so the
   model steers what the buddy does next without being able to do anything
   the mind service could not already do.
-- **Always optional.** If Ollama is not running, times out (45 s), answers
+- **Always optional.** If Ollama is not running, times out (120 s), answers
   with an error, or sends something unusable, the buddy uses the built-in
   wording. `/journal` ends with a status line such as
   `Thinking model: gemma3:4b, unreachable (result 2)`.
@@ -82,13 +82,22 @@ Plan 12A on its own needs no network, no model and no new dependency.
 - **Tests.** `MindThinkerTest` (9 cases) in the required headless suite, and
   a manual end-to-end run of the real overlay against a stand-in server
   (good reply, garbage reply, server error, no server).
-- **Not yet verified against a real Ollama.** No Ollama server was reachable
-  when this was built, so the wording quality of `gemma3:4b` and its
-  response time on the target machines are untested.
+- **Measured on a real server** (Ollama 0.40.16, RTX 4070 Ti SUPER,
+  2026-11-15), using the exact request the buddy sends:
+  - `gemma3:4b`: first-ever load ~90 s, reload after unloading ~6 s, reply
+    once loaded ~0.4 s, ~2.9 GB of GPU memory while loaded. Every reply
+    parsed; lines were varied and specific.
+  - `gemma3:1b`: reply ~0.3 s, ~0.9 GB. Every reply parsed, but lines were
+    flat fragments and it asked to `reflect` every time. Use it only where
+    the 4b model will not fit.
+  - Because of those numbers the request times out at 120 s and asks Ollama
+    to unload the model one minute after answering, so GPU memory is free
+    between thoughts.
+  - Not measured: CPU-only machines and the 8 GB RTX 2070.
 
 ## Not yet built
 
-- **Side-by-side model comparison** on the real machines.
+- **Wider model comparison** (only the two Gemma sizes were run).
 - **Leaving things for the buddy.** Notes or pictures the buddy reads later,
   on its own clock, and remembers the giver by.
 - **A visible world.** Places are names only; the home scene does not change
