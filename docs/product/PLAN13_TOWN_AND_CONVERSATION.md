@@ -108,6 +108,12 @@ What the model is given each turn, in this order and within a fixed budget:
 5. The last several turns of this conversation.
 6. Your message.
 
+Decided 2026-11-16: the chat backend is a setting. Ollama is the default and
+the only backend built in this plan; the setting exists so a hosted model can
+be added later without reworking the chat path. Chat and the ten-minute
+thoughts can name different models, so a larger local model can be tried for
+conversation while thoughts stay on `gemma3:4b`.
+
 Replies are parsed and cleaned the same way thoughts are now: schema-shaped
 reply, one plain block of text, length capped, markup and hidden characters
 stripped. If Ollama is off or fails, the buddy says so plainly once and falls
@@ -118,20 +124,33 @@ something from the journal, and the failure path is tested.
 
 ### B2. Memory
 
-Three layers, all stored locally in the save:
+Decided 2026-11-16: memory is a small **knowledge graph** kept inside the
+buddy's own save, not an external database.
 
-- **Conversation log**: recent turns, kept for the session and summarised
-  when it gets long.
-- **Things about you** (profile): a small set of durable facts the buddy has
-  picked up ("works late on Thursdays", "likes tea"). After a conversation
-  ends, one extra model call proposes facts to add or update. Each has a
-  source line and a date.
-- **Shared history** (episodes): short summaries of past conversations and
-  notable days, tagged with place, people and mood.
+- **Nodes**: people, places, things and topics (you, Mira, the pond, tea,
+  your job). The town's places and NPCs from Part A are nodes in the same
+  graph, so what you say and where the buddy goes connect.
+- **Edges**: relations between nodes (you *like* tea; buddy *met* Quill *at*
+  the library; you *work late on* Thursdays). Each edge has a date, the line
+  it came from, and a strength that fades if it is never mentioned again.
+- **Conversation log**: recent turns for the session, summarised when long.
+- **Episodes**: short summaries of past conversations and notable days,
+  linked to the nodes they involved.
 
-Recall is by keyword and recency first (cheap, no extra dependency). Semantic
-search with an embedding model through Ollama is an optional upgrade if
-keyword recall proves too blunt.
+How it is filled: Part A writes town facts directly. After a conversation
+ends, one extra model call extracts new facts as node-relation-node triples
+in a fixed schema; anything outside the schema is dropped. A small model will
+get some of these wrong, which is why every fact is visible and deletable.
+
+How it is used: find the nodes mentioned in your message, take their
+strongest and most recent connections (one or two steps out), and give the
+model those few facts.
+
+Why not the SecondBrain vault graph or the Qdrant server: the buddy would
+then need the home network to remember anything and could not ship to anyone
+else. A few hundred nodes need no database. The graph is capped in size.
+
+Optional later: embeddings through Ollama so "my job" also finds "work".
 
 You stay in control: a **Memory** view lists everything it remembers about
 you, each item deletable; `/forget` works on any of it; one switch turns
@@ -161,7 +180,7 @@ time and the journal explains why either way.
 |---|---|---|---|
 | 1 | A1 town as data | none | medium |
 | 2 | B1 conversation | none | medium |
-| 3 | B2 memory | B1 | medium |
+| 3 | B2 graph memory | B1 (A1 for town nodes) | medium to large |
 | 4 | A2 town window | A1 | medium |
 | 5 | A3 changing town, things you leave | A1, B2 | large |
 | 6 | B3 talk changes the buddy | A1, B1, B2 | medium |
