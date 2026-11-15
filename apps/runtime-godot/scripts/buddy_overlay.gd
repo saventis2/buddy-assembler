@@ -100,7 +100,7 @@ const SIT_PIVOT_OVERFLOW_BLEND := 1.0
 const DEFAULT_EMOTE_MANIFEST_PATH := "character/emotes/manifest.json"
 const SIT_CHAIR_FRAME_PATH := "effects/chair_basic/frames/000.png"
 const SIT_CHAIR_EFFECT_PATH := "effects/chair_basic/effect.json"
-const ASSEMBLER_SCRIPT_REL_PATH := "res://../../render_character_frame.py"
+const ASSEMBLER_SCRIPT_REL_PATH := "res://../../tools/importers/render_character_frame.py"
 const ASSEMBLER_STATE_ACTION_MAP := {
     "idle": "stand1",
     "wander": "walk1",
@@ -2130,8 +2130,13 @@ func _apply_mind_events(events: Array, context: Dictionary) -> void:
         return
     var latest: Dictionary = latest_variant
     var action_id := str(latest.get("action", ""))
+    # forced_action bypasses the engine's own filters, so apply both here:
+    # the pack must be able to draw it and progression must have unlocked it.
     var action_allowed := _allowed_actions.is_empty() or _allowed_actions.has(action_id)
-    if action_id != "" and action_allowed and not context.has("forced_action"):
+    var unlocked_variant = context.get("unlocked_actions", [])
+    var unlocked: Array = unlocked_variant if typeof(unlocked_variant) == TYPE_ARRAY else []
+    var action_unlocked := unlocked.is_empty() or unlocked.has(action_id)
+    if action_id != "" and action_allowed and action_unlocked and not context.has("forced_action"):
         context["forced_action"] = action_id
     if AppState.is_quiet_hours_now():
         return
@@ -4997,7 +5002,7 @@ func _assembler_thread_main(payload: Dictionary) -> Dictionary:
             return {"ok": false, "error": "cache_dir_failed", "cache_key": cache_key}
 
     var key_to_flag := {
-        "body_id": "--body-id",
+        "body_id": "--base-id",
         "head_id": "--head-id",
         "face_id": "--face-id",
         "hair_id": "--hair-id",
