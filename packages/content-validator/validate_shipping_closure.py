@@ -39,6 +39,22 @@ FORBIDDEN_PREFIXES = (
     "res://tools/",
 )
 
+CHAT_BALLOON_SOURCE = "apps/runtime-godot/runtime/ui/chat_balloon.gd"
+LEGACY_CHAT_BALLOON_ROOT = "res://content/core_pack/ui/chat_balloon/"
+LEGACY_CHAT_BALLOON_MARKERS = (
+    LEGACY_CHAT_BALLOON_ROOT,
+    '"nw.png"',
+    '"n.png"',
+    '"ne.png"',
+    '"w.png"',
+    '"c.png"',
+    '"e.png"',
+    '"sw.png"',
+    '"s.png"',
+    '"se.png"',
+    '"arrow.png"',
+)
+
 
 def _setting(text: str, name: str) -> str:
     match = re.search(rf'(?m)^{re.escape(name)}="([^"]*)"$', text)
@@ -93,6 +109,32 @@ def validate_export_contract(preset: str, contract: dict[str, list[str]]) -> lis
             failures.append(f"workstation/WZ/NX path in shipping contract: {path}")
     if not contract["pck_files"]:
         failures.append("exact PCK inventory contract is empty")
+    return failures
+
+
+def validate_chat_balloon_contract(
+    source: str, contract: dict[str, list[str]]
+) -> list[str]:
+    failures: list[str] = []
+    source_markers = [marker for marker in LEGACY_CHAT_BALLOON_MARKERS if marker in source]
+    if source_markers:
+        failures.append(
+            "shipping chat balloon source references legacy PNG dependencies: "
+            + ", ".join(source_markers)
+        )
+
+    shipping_paths = (
+        contract["export_resources"]
+        + contract["include_files"]
+        + contract["pck_files"]
+    )
+    legacy_paths = sorted(
+        path for path in shipping_paths if path.startswith(LEGACY_CHAT_BALLOON_ROOT)
+    )
+    if legacy_paths:
+        failures.append(
+            f"legacy chat balloon PNGs entered the shipping closure: {legacy_paths}"
+        )
     return failures
 
 
@@ -161,6 +203,8 @@ def main() -> int:
 
     preset = (runtime_root / "export_presets.cfg").read_text(encoding="utf-8")
     failures.extend(validate_export_contract(preset, contract))
+    chat_balloon_source = (repo_root / CHAT_BALLOON_SOURCE).read_text(encoding="utf-8")
+    failures.extend(validate_chat_balloon_contract(chat_balloon_source, contract))
 
     if failures:
         print("shipping_closure: FAIL")
