@@ -56,6 +56,8 @@ pack, Restart, and Quit are all buttons, no hotkeys required.
 
 - Left click + drag: move companion
 - Double click: open the Game Menu (chat, stats, inventory, wardrobe, pause)
+- Chat: anything that is not a `/command` gets an in-character answer when
+  Ollama is running (Settings: "Talks back"); `/help` lists the commands
 - Right click: sleep/pause toggle (also a "Pause Buddy" / "Resume Buddy"
   button in the `F10` settings popout)
 - `F6`: toggle telemetry overlay

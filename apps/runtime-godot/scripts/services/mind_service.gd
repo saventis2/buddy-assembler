@@ -23,14 +23,24 @@ const INTENT_ACTIONS := {
 	"tend_home": "sit",
 	"reflect": "idle",
 }
-const PLACES := [
-	{"id": "place:pond", "name": "the pond"},
-	{"id": "place:library", "name": "the old library"},
-	{"id": "place:market", "name": "the market lane"},
-	{"id": "place:hill", "name": "the hill path"},
-	{"id": "place:garden", "name": "the garden"},
+const INTENT_NEEDS := {
+	"rest": "energy",
+	"visit": "social",
+	"explore": "curiosity",
+	"tend_home": "comfort",
+	"reflect": "reflection",
+}
+# Used when no town is supplied: a single always-open home.
+const DEFAULT_TOWN_PLACES := [
+	{"id": "home", "name": "home", "opens": 0, "closes": 24, "distance": 0, "residents": [],
+		"activities": [
+			{"id": "nap", "label": "had a nap", "satisfies": "energy"},
+			{"id": "tidy", "label": "tidied up", "satisfies": "comfort"},
+			{"id": "think", "label": "sat and thought", "satisfies": "reflection"},
+		]},
 ]
 const MIND_DEFAULTS := {
+	"location": "home",
 	"last_decision_unix": 0,
 	"decision_count": 0,
 	"restlessness": 0.4,
@@ -64,7 +74,7 @@ func ensure_profile(profile: Dictionary) -> Dictionary:
 # ones that came due while the app was closed (capped, and spread across the
 # time away). Returns {"profile": Dictionary, "events": Array}; each event is
 # the journal entry plus the animation "action" that expresses it.
-func tick(profile: Dictionary, npcs: Array, now_unix: int, context: Dictionary) -> Dictionary:
+func tick(profile: Dictionary, npcs: Array, now_unix: int, context: Dictionary, town: Dictionary = {}) -> Dictionary:
 	var merged := ensure_profile(profile)
 	var mind: Dictionary = merged["mind"]
 	var last := int(mind.get("last_decision_unix", 0))
@@ -87,7 +97,8 @@ func tick(profile: Dictionary, npcs: Array, now_unix: int, context: Dictionary) 
 			# Past decisions happened unobserved; the live clock's day/night
 			# reading only applies to the one happening right now.
 			decision_context["is_night"] = _hour_is_night(decision_unix)
-		events.append(_decide(merged, npcs, decision_unix, decision_context))
+			decision_context["hour"] = _local_hour(decision_unix)
+		events.append(_decide(merged, npcs, decision_unix, decision_context, town))
 	return {"profile": merged, "events": events}
 
 
@@ -148,7 +159,9 @@ func get_preferences(profile: Dictionary) -> Dictionary:
 	return {"favourite": favourite, "least": least}
 
 
-func _decide(merged: Dictionary, npcs: Array, decision_unix: int, context: Dictionary) -> Dictionary:
+func _decide(
+	merged: Dictionary, npcs: Array, decision_unix: int, context: Dictionary, town: Dictionary = {}
+) -> Dictionary:
 	var mind: Dictionary = merged["mind"]
 	var count := int(mind.get("decision_count", 0))
 	var rng := RandomNumberGenerator.new()
@@ -158,6 +171,14 @@ func _decide(merged: Dictionary, npcs: Array, decision_unix: int, context: Dicti
 	var is_night := bool(context.get("is_night", false))
 	var restlessness := _clamp01(float(mind.get("restlessness", 0.4)))
 	var subjects := _visitable_npcs(npcs)
+	var places := _usable_places(town)
+	var hour := int(context.get("hour", -1))
+	if hour == -1:
+		hour = _local_hour(decision_unix)
+	var open_places: Array = []
+	for place_row in places:
+		if _place_is_open(place_row, hour):
+			open_places.append(place_row)
 
 	var scores := {
 		"rest": float(mods["energy_strain"]) * 1.4 + (0.5 if is_night else 0.0),
@@ -172,7 +193,7 @@ func _decide(merged: Dictionary, npcs: Array, decision_unix: int, context: Dicti
 	if INTENTS.has(wish):
 		scores[wish] = float(scores[wish]) + WISH_BONUS
 	mind["wish"] = ""
-	if subjects.is_empty():
+	if subjects.is_empty() or _candidates_for_need(open_places, "social").is_empty():
 		scores["visit"] = 0.0
 	if str(context.get("top_trait", "")) == "curiosity":
 		scores["explore"] = float(scores["explore"]) + 0.2
@@ -187,22 +208,48 @@ func _decide(merged: Dictionary, npcs: Array, decision_unix: int, context: Dicti
 			best = score
 			intent = candidate
 
-	var subject := {}
+	# Where, and doing what, to meet the need behind the intent.
+	var candidates := _candidates_for_need(open_places, str(INTENT_NEEDS[intent]))
+	var place: Dictionary = {}
+	var activity: Dictionary = {}
+	if candidates.is_empty():
+		intent = "reflect"
+		for home_variant in places:
+			if str(home_variant.get("id", "")) == "home":
+				place = home_variant
+		if place.is_empty():
+			place = (DEFAULT_TOWN_PLACES[0] as Dictionary).duplicate(true)
+		activity = {"id": "think", "label": "sat and thought", "satisfies": "reflection"}
+	else:
+		var chosen := _pick_candidate(candidates, mind["feelings"], rng)
+		place = chosen["place"]
+		activity = chosen["activity"]
+
+	var companion := {}
 	if intent == "visit":
-		subject = _pick_by_feeling(subjects, mind["feelings"], rng)
-	elif intent == "explore":
-		subject = _pick_by_feeling(PLACES, mind["feelings"], rng)
+		var local_subjects: Array = []
+		var residents_variant = place.get("residents", [])
+		if typeof(residents_variant) == TYPE_ARRAY:
+			for row in subjects:
+				if (residents_variant as Array).has(str(row["id"]).trim_prefix("npc:")):
+					local_subjects.append(row)
+		companion = _pick_by_feeling(local_subjects, mind["feelings"], rng)
 
 	# How the experience felt. Confidence tilts it slightly; the rest is the
 	# world being the world.
 	var valence := rng.randf_range(-0.25, 0.6) + (float(mods["confidence"]) - 0.5) * 0.3
 	valence = clampf(valence, -1.0, 1.0)
 
-	if not subject.is_empty():
-		var subject_id := str(subject["id"])
-		var feelings: Dictionary = mind["feelings"]
-		var previous := float(feelings.get(subject_id, 0.0))
-		feelings[subject_id] = clampf(previous * FEELING_MEMORY + valence * 0.5, -1.0, 1.0)
+	var place_id := str(place.get("id", "home"))
+	var place_name := str(place.get("name", place_id))
+	var activity_id := str(activity.get("id", ""))
+	var companion_name := str(companion.get("name", ""))
+	var feelings: Dictionary = mind["feelings"]
+	_bump_feeling(feelings, "place:%s" % place_id, valence)
+	_bump_feeling(feelings, "activity:%s" % activity_id, valence)
+	if not companion.is_empty():
+		_bump_feeling(feelings, str(companion["id"]), valence)
+	mind["location"] = place_id
 
 	_apply_drive_effects(mods, intent)
 	merged["mood_modifiers"] = mods
@@ -215,10 +262,17 @@ func _decide(merged: Dictionary, npcs: Array, decision_unix: int, context: Dicti
 	var entry := {
 		"t": decision_unix,
 		"intent": intent,
-		"subject_id": str(subject.get("id", "")),
-		"subject_name": str(subject.get("name", "")),
+		"subject_id": str(companion["id"]) if not companion.is_empty() else "place:%s" % place_id,
+		"subject_name": companion_name if not companion.is_empty() else place_name,
 		"valence": snappedf(valence, 0.01),
-		"text": _compose_thought(intent, subject, valence, get_preferences(merged), mind["feelings"]),
+		"text": _compose_thought(
+			intent, place, activity, companion_name, valence, get_preferences(merged), mind["feelings"], places
+		),
+		"place_id": place_id,
+		"place_name": place_name,
+		"activity_id": activity_id,
+		"activity_label": str(activity.get("label", "")),
+		"companion_name": companion_name,
 	}
 	var journal: Array = mind["journal"]
 	journal.append(entry)
@@ -295,48 +349,146 @@ func _pick_by_feeling(rows: Array, feelings: Dictionary, rng: RandomNumberGenera
 
 
 func _compose_thought(
-	intent: String, subject: Dictionary, valence: float, preferences: Dictionary, feelings: Dictionary
+	intent: String, place: Dictionary, activity: Dictionary, companion_name: String,
+	valence: float, preferences: Dictionary, feelings: Dictionary, places: Array
 ) -> String:
-	var name := str(subject.get("name", ""))
 	var liked := valence >= 0.2
 	var disliked := valence < -0.05
-	if intent == "rest":
-		return "I was worn out, so I curled up for a while." if liked else "I tried to nap. Mostly I just lay there thinking."
-	if intent == "visit":
-		if liked:
-			return "I went to see %s. I came back lighter than I left." % name
-		if disliked:
-			return "I dropped in on %s. It was a bit awkward today." % name
-		return "I spent some time with %s. Quiet, but fine." % name
-	if intent == "explore":
-		if liked:
-			return "I wandered over to %s and didn't want to leave." % name
-		if disliked:
-			return "I walked out to %s. Not sure it's my kind of place." % name
-		return "I had a look around %s. Nothing much happening." % name
-	if intent == "tend_home":
-		return "I tidied my corner. It feels more like mine now." if liked else "I moved a few things around at home. Still not quite right."
-	var favourite := str(preferences.get("favourite", ""))
-	if favourite != "" and float(feelings.get(favourite, 0.0)) > 0.15:
-		return "I've been thinking. I keep going back to %s; I think I like it there." % _subject_label(favourite)
-	var least := str(preferences.get("least", ""))
-	if least != "" and float(feelings.get(least, 0.0)) < -0.15:
-		return "I've been thinking. I don't think %s is for me." % _subject_label(least).trim_suffix("'s")
-	return "I sat and thought for a bit. I'm still working out what I like."
+	var at_home := str(place.get("id", "")) == "home"
+	var label := str(activity.get("label", ""))
+	if intent == "reflect":
+		# Reflect on somewhere or someone, never on an activity label.
+		var favourite := _strongest_place_or_person(feelings, true)
+		if favourite != "" and float(feelings.get(favourite, 0.0)) > 0.15:
+			if favourite.begins_with("npc:"):
+				return "I've been thinking about %s. I like their company." % _subject_label(favourite, places).trim_suffix("'s")
+			return "I've been thinking. I keep going back to %s; I think I like it there." % _subject_label(favourite, places)
+		var least := _strongest_place_or_person(feelings, false)
+		if least != "" and float(feelings.get(least, 0.0)) < -0.15:
+			if least.begins_with("npc:"):
+				return "I've been thinking about %s. I'm not sure we get on." % _subject_label(least, places).trim_suffix("'s")
+			return "I've been thinking. I don't think %s is for me." % _subject_label(least, places)
+		return "I sat and thought for a bit. I'm still working out what I like."
+	var tone := "It was fine."
+	if liked:
+		tone = "It felt good." if at_home else "I didn't want to leave."
+	elif disliked:
+		tone = "I couldn't settle." if at_home else "Not sure it's for me."
+	if at_home:
+		return "I %s at home. %s" % [label, tone]
+	var place_name := str(place.get("name", place.get("id", "")))
+	if companion_name != "":
+		return "I went to %s and %s with %s. %s" % [place_name, label, companion_name, tone]
+	return "I went to %s and %s. %s" % [place_name, label, tone]
 
 
-func _subject_label(subject_id: String) -> String:
-	for place in PLACES:
-		if str(place["id"]) == subject_id:
-			return str(place["name"])
+func _subject_label(subject_id: String, places: Array) -> String:
+	if subject_id.begins_with("place:"):
+		var place_id := subject_id.trim_prefix("place:")
+		for place in places:
+			if str(place.get("id", "")) == place_id:
+				return str(place.get("name", place_id))
+		return place_id
+	if subject_id.begins_with("activity:"):
+		var activity_id := subject_id.trim_prefix("activity:")
+		for place in places:
+			for activity in place.get("activities", []):
+				if str(activity.get("id", "")) == activity_id:
+					return str(activity.get("label", activity_id))
+		return activity_id
 	if subject_id.begins_with("npc:"):
 		return subject_id.trim_prefix("npc:").capitalize() + "'s"
 	return subject_id
 
 
-func _hour_is_night(unix_time: int) -> bool:
+# Rows with usable shape only; falls back to a lone always-open home.
+func _usable_places(town: Dictionary) -> Array:
+	var rows: Array = []
+	var places_variant = town.get("places", null)
+	if typeof(places_variant) == TYPE_ARRAY:
+		for place_variant in places_variant:
+			if typeof(place_variant) != TYPE_DICTIONARY:
+				continue
+			var place: Dictionary = place_variant
+			if str(place.get("id", "")).strip_edges() == "":
+				continue
+			if typeof(place.get("activities", null)) != TYPE_ARRAY:
+				continue
+			rows.append(place)
+	if rows.is_empty():
+		return DEFAULT_TOWN_PLACES.duplicate(true)
+	return rows
+
+
+func _place_is_open(place: Dictionary, hour: int) -> bool:
+	return int(place.get("opens", 0)) <= hour and hour < int(place.get("closes", 24))
+
+
+func _candidates_for_need(open_places: Array, need: String) -> Array:
+	var rows: Array = []
+	for place in open_places:
+		for activity_variant in place["activities"]:
+			if typeof(activity_variant) != TYPE_DICTIONARY:
+				continue
+			if str((activity_variant as Dictionary).get("satisfies", "")) == need:
+				rows.append({"place": place, "activity": activity_variant})
+	return rows
+
+
+func _pick_candidate(candidates: Array, feelings: Dictionary, rng: RandomNumberGenerator) -> Dictionary:
+	var total := 0.0
+	var weights: Array = []
+	for row in candidates:
+		var place: Dictionary = row["place"]
+		var activity: Dictionary = row["activity"]
+		var place_feeling := float(feelings.get("place:%s" % str(place.get("id", "")), 0.0))
+		var activity_feeling := float(feelings.get("activity:%s" % str(activity.get("id", "")), 0.0))
+		var raw := maxf(0.15, 1.0 + place_feeling * 0.7 + activity_feeling * 0.5)
+		var weight := raw / (1.0 + 0.25 * float(place.get("distance", 0)))
+		weights.append(weight)
+		total += weight
+	var roll := rng.randf() * total
+	var cumulative := 0.0
+	for index in range(candidates.size()):
+		cumulative += float(weights[index])
+		if roll <= cumulative:
+			return candidates[index]
+	return candidates[candidates.size() - 1]
+
+
+func _bump_feeling(feelings: Dictionary, key: String, valence: float) -> void:
+	var previous := float(feelings.get(key, 0.0))
+	feelings[key] = clampf(previous * FEELING_MEMORY + valence * 0.5, -1.0, 1.0)
+
+
+func _local_hour(unix_time: int) -> int:
 	var local_unix := unix_time + int(Time.get_time_zone_from_system().get("bias", 0)) * 60
-	var hour := int(Time.get_datetime_dict_from_unix_time(local_unix).get("hour", 12))
+	return int(Time.get_datetime_dict_from_unix_time(local_unix).get("hour", 12))
+
+
+# The most liked (or least liked) place or town character, by feeling.
+func _strongest_place_or_person(feelings: Dictionary, want_highest: bool) -> String:
+	var best := ""
+	var keys := feelings.keys()
+	keys.sort()
+	for key_variant in keys:
+		var key := str(key_variant)
+		if key == "place:home":
+			continue
+		if not key.begins_with("place:") and not key.begins_with("npc:"):
+			continue
+		var value := float(feelings[key_variant])
+		if best == "":
+			best = key
+		elif want_highest and value > float(feelings[best]):
+			best = key
+		elif not want_highest and value < float(feelings[best]):
+			best = key
+	return best
+
+
+func _hour_is_night(unix_time: int) -> bool:
+	var hour := _local_hour(unix_time)
 	return hour < 7 or hour >= 22
 
 
