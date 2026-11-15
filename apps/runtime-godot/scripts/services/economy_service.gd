@@ -770,16 +770,21 @@ func _normalize_inventory_instances(world_state: Dictionary) -> void:
     var quarantine: Array = quarantine_variant if typeof(quarantine_variant) == TYPE_ARRAY else []
     var normalized: Array = []
     var next_id := maxi(1, int(world_state.get("next_item_instance_id", 1)))
+    # The catalogue is not part of the save; it is filled in from the content
+    # pack after the save is loaded. Until then nothing can be judged
+    # "missing", so items are only checked once a catalogue is present.
+    var catalog_loaded := not catalog.is_empty()
     for row_variant in inventory:
         if typeof(row_variant) != TYPE_DICTIONARY:
             continue
         var row: Dictionary = (row_variant as Dictionary).duplicate(true)
-        var item_id := str(row.get("id", ""))
-        var resolved_item_id := _resolve_catalog_item_id(item_id, catalog)
-        if resolved_item_id == "" or not catalog.has(resolved_item_id):
-            quarantine = _append_inventory_quarantine(quarantine, row, "missing_catalog_item", resolved_item_id)
-            continue
-        row = _merge_item_row_from_catalog(row, catalog)
+        if catalog_loaded:
+            var item_id := str(row.get("id", ""))
+            var resolved_item_id := _resolve_catalog_item_id(item_id, catalog)
+            if resolved_item_id == "" or not catalog.has(resolved_item_id):
+                quarantine = _append_inventory_quarantine(quarantine, row, "missing_catalog_item", resolved_item_id)
+                continue
+            row = _merge_item_row_from_catalog(row, catalog)
         var instance_id := int(row.get("instance_id", 0))
         if instance_id <= 0:
             instance_id = next_id

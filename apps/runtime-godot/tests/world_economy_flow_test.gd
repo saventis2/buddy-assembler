@@ -23,6 +23,7 @@ func _run_all() -> void:
 	_case("duplicate_recycle_flow", func(): return _test_duplicate_recycle_flow())
 	_case("legacy_inventory_ids_remap_to_catalog", func(): return _test_legacy_inventory_ids_remap_to_catalog())
 	_case("strict_catalog_quarantine_and_repair", func(): return _test_strict_catalog_quarantine_and_repair())
+	_case("items_survive_load_before_catalog", func(): return _test_items_survive_load_before_catalog())
 
 
 func _case(name: String, body: Callable) -> void:
@@ -295,4 +296,21 @@ func _test_strict_catalog_quarantine_and_repair() -> Variant:
 		return "expected repaired item to return to inventory"
 	if int(snapshot_after.get("quarantine_count", 0)) != 0:
 		return "expected quarantine to be empty after successful repair"
+	return null
+
+# A save holds the inventory but not the item catalogue, which is rebuilt
+# from the content pack afterwards. Loading must not treat every item as
+# unknown in between, and the real check must still run once it is there.
+func _test_items_survive_load_before_catalog() -> Variant:
+	var economy := EconomyService.new()
+	var saved := {"inventory": [{"id": "item-a", "instance_id": 7, "name": "Item A"}], "next_item_instance_id": 8}
+	var loaded := economy.ensure_world_state(saved)
+	if (loaded.get("inventory", []) as Array).size() != 1:
+		return "item was dropped when the save was loaded before the catalogue"
+	if not (loaded.get("inventory_quarantine", []) as Array).is_empty():
+		return "item was quarantined before any catalogue was loaded"
+	loaded["item_catalog"] = {"item-b": {"id": "item-b", "name": "Item B", "category": "food", "rarity": "common"}}
+	var checked := economy.ensure_world_state(loaded)
+	if (checked.get("inventory_quarantine", []) as Array).size() != 1:
+		return "an item missing from a loaded catalogue should still be quarantined"
 	return null
