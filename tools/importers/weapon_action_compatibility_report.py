@@ -7,64 +7,15 @@ import argparse
 import csv
 import json
 from pathlib import Path
-from typing import Dict, List, Set
-import xml.etree.ElementTree as ET
+from typing import Dict, List
 
-
-def detect_actions_in_asset_dir(asset_dir: Path) -> Set[str]:
-    if not asset_dir.exists() or not asset_dir.is_dir():
-        return set()
-    actions: Set[str] = set()
-    for child in asset_dir.iterdir():
-        if not child.is_dir():
-            continue
-        name = child.name
-        if not name or name == "info":
-            continue
-        has_png = any(child.rglob("*.png"))
-        if has_png:
-            actions.add(name)
-    return actions
-
-
-def read_info_strings(xml_path: Path) -> Dict[str, str]:
-    out: Dict[str, str] = {}
-    if not xml_path.exists():
-        return out
-    try:
-        root = ET.parse(xml_path).getroot()
-    except Exception:
-        return out
-    info_node = None
-    for child in root:
-        if child.tag == "imgdir" and child.attrib.get("name") == "info":
-            info_node = child
-            break
-    if info_node is None:
-        return out
-    for child in info_node:
-        if child.tag == "string":
-            key = child.attrib.get("name", "")
-            if key:
-                out[key] = child.attrib.get("value", "")
-    return out
-
-
-def frame_counts(asset_dir: Path, actions: Set[str]) -> Dict[str, int]:
-    out: Dict[str, int] = {}
-    for action in sorted(actions):
-        action_dir = asset_dir / action
-        count = 0
-        if action_dir.exists() and action_dir.is_dir():
-            for child in action_dir.iterdir():
-                if not child.is_dir():
-                    continue
-                if not child.name.isdigit():
-                    continue
-                if any(child.glob("*.png")):
-                    count += 1
-        out[action] = count
-    return out
+from wz_shared import (
+    FALLBACK_ANALYSIS_DIR,
+    FALLBACK_BASE_WZ,
+    count_action_frames,
+    detect_actions_in_asset_dir,
+    read_info_strings,
+)
 
 
 def parse_weapon_id_from_xml_name(name: str) -> int | None:
@@ -95,7 +46,7 @@ def build_profiles(base_wz: Path) -> List[dict]:
                 "xml": str(xml_path),
                 "info": info,
                 "supported_actions": sorted(actions),
-                "frame_counts": frame_counts(asset_dir, actions),
+                "frame_counts": count_action_frames(asset_dir, actions),
             }
         )
     return profiles
@@ -134,12 +85,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--base-wz",
-        default=r"C:\Users\GGPC\OneDrive\Desktop\83 complete\Base.wz",
+        default=FALLBACK_BASE_WZ,
         help="Path to extracted Base.wz root",
     )
     parser.add_argument(
         "--output-dir",
-        default=r"C:\Users\GGPC\OneDrive\Desktop\83 complete\analysis\dataset_audit",
+        default=FALLBACK_ANALYSIS_DIR + r"\dataset_audit",
         help="Directory for report outputs",
     )
     parser.add_argument(

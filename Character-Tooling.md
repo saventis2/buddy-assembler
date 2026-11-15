@@ -25,19 +25,23 @@ takes a WZ/analysis path resolves it with the same precedence:
 
 `build_wz_index.py` and `character_tooling_gui.py` previously hardcoded their
 Base.wz/analysis paths as module-level constants with no override at all;
-they now follow this same precedence via a small `resolve_base_wz()` /
-`resolve_default_path()` helper in each file. Scripts that already exposed
+they now follow this same precedence via the shared `resolve_base_wz()` /
+`resolve_default_path()` helpers in `tools/importers/wz_shared.py` (one
+implementation shared by both scripts — backlog #46; before that, each file
+carried its own copy). Scripts that already exposed
 `--base-wz`/`--output-dir` (etc.) via `argparse` — e.g.
 `build_item_catalogue.py`, `build_itemwz_catalogue.py`,
 `import_runtime_ground_tile.py`, `analyze_npc_animation_links.py`,
 `render_character_frame.py`, `export_effect_sprites.py`,
 `weapon_action_compatibility_report.py`, `analyze_character_assets.py` — were
-left as-is; their CLI flag already provides an override, so no env var was
-added to avoid a redundant second mechanism. Scripts whose path args are
-`required=True` with no default (`diff_character_assets.py`,
-`alignment_audit.py`, `audit_dataset_metadata.py`) and
-`export_runtime_character_sprites.py` (repo-relative defaults, no hardcoded
-machine path) needed no changes.
+left as-is behavior-wise; their CLI flag already provides an override, so no
+env var was added to avoid a redundant second mechanism (their hardcoded
+fallback *defaults* now reference the shared `FALLBACK_BASE_WZ` /
+`FALLBACK_ANALYSIS_DIR` constants from `wz_shared.py`, same values as
+before). Scripts whose path args are `required=True` with no default
+(`diff_character_assets.py`, `alignment_audit.py`,
+`audit_dataset_metadata.py`) and `export_runtime_character_sprites.py`
+(repo-relative defaults, no hardcoded machine path) needed no changes.
 
 ## 0) Desktop GUI (Render + Diff)
 

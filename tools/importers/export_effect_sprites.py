@@ -19,21 +19,9 @@ import shutil
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+from wz_shared import FALLBACK_BASE_WZ, find_imgdir_path
+
 DEFAULT_DELAY_MS = 90
-
-
-def _find_imgdir(root: ET.Element, path: list[str]) -> ET.Element | None:
-    node = root
-    for segment in path:
-        found = None
-        for child in node:
-            if child.tag == "imgdir" and child.attrib.get("name") == segment:
-                found = child
-                break
-        if found is None:
-            return None
-        node = found
-    return node
 
 
 def extract_effect(
@@ -54,7 +42,7 @@ def extract_effect(
         raise FileNotFoundError(f"Effect PNG dir not found: {png_dir}")
 
     tree = ET.parse(xml_path)
-    node = _find_imgdir(tree.getroot(), effect_path)
+    node = find_imgdir_path(tree.getroot(), effect_path)
     if node is None:
         raise ValueError(f"imgdir path {effect_path} not found in {xml_path}")
 
@@ -102,7 +90,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--effect-wz-root",
-        default=r"C:\Users\GGPC\OneDrive\Desktop\83 complete\Base.wz\Effect\Effect.wz",
+        default=FALLBACK_BASE_WZ + r"\Effect\Effect.wz",
     )
     parser.add_argument("--img", default="BasicEff.img")
     parser.add_argument("--path", nargs="+", required=True, help="imgdir path, e.g. LevelUp")

@@ -42,7 +42,10 @@ These are hard constraints. A PR that violates any of these should not merge.
 
 ### Content Pipeline (`content/`, `tools/`)
 
-- [ ] Content promotion verified: `python apps/runtime-godot/tools/verify_content_promotion.py`
+- [ ] Content promotion verified (from repo root — the script's defaults are
+      cwd-relative and silently skip otherwise; also enforced in CI by the
+      `verify-provenance` job in `content-validator.yml`):
+      `python apps/runtime-godot/tools/verify_content_promotion.py --intermediate-dir apps/runtime-godot/content/intermediate --promotion-log apps/runtime-godot/content/promotion_log.json`
 - [ ] If new `.bif` files added: run `approve_content_snapshot.py` and commit `promotion_log.json`
 - [ ] Pack manifests validated: `python packages/content-validator/validate.py content/core_pack/manifest.json`
 
@@ -59,7 +62,7 @@ These are hard constraints. A PR that violates any of these should not merge.
 |------|---------|----------|
 | Headless parse + smoke test | `pwsh ./apps/runtime-godot/tests/run_headless_checks.ps1` | Yes |
 | Python syntax check | `python -m py_compile <changed files>` | Yes |
-| Content promotion check | `python apps/runtime-godot/tools/verify_content_promotion.py` | Yes (if content changed) |
+| Content promotion check | `python apps/runtime-godot/tools/verify_content_promotion.py --intermediate-dir apps/runtime-godot/content/intermediate --promotion-log apps/runtime-godot/content/promotion_log.json` (CI: `verify-provenance` job) | Yes (if content changed) |
 | Pack validation | `python packages/content-validator/validate.py ...` | Yes (if manifest changed) |
 | Interactive vertical-slice run | Manual — see `SCENARIO_CHECKLIST.md` | Before milestone releases |
 

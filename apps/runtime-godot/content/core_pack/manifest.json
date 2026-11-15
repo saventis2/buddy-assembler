@@ -1,5 +1,6 @@
 {
   "schemaVersion": 1,
+  "runtimeAudience": "user",
   "id": "core-pack",
   "name": "Core Companion Pack",
   "version": "1.0.0",
@@ -12,6 +13,7 @@
     ]
   },
   "visual": {
+    "faceMode": "embedded",
     "scale": 2.35,
     "anchor": [
       0.5,

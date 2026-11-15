@@ -9,142 +9,14 @@ from pathlib import Path
 from typing import Any
 import xml.etree.ElementTree as ET
 
-
-def _child_imgdir(node: ET.Element, name: str) -> ET.Element | None:
-    for child in node:
-        if child.tag == "imgdir" and child.attrib.get("name") == name:
-            return child
-    return None
-
-
-def _asset_id_from_xml(xml_path: Path) -> str:
-    return xml_path.stem.replace(".img", "")
-
-
-def _extract_info_link(root: ET.Element) -> str | None:
-    info = _child_imgdir(root, "info")
-    if info is None:
-        return None
-    for node in info:
-        if node.attrib.get("name") != "link":
-            continue
-        if node.tag not in {"string", "int"}:
-            continue
-        value = str(node.attrib.get("value", "")).strip()
-        if value:
-            return value
-    return None
-
-
-def _resolve_link_target_xml(current_xml: Path, link_value: str) -> Path | None:
-    raw = str(link_value).strip()
-    if not raw:
-        return None
-
-    base_dir = current_xml.parent
-    width = len(_asset_id_from_xml(current_xml))
-    candidates: list[str] = []
-    if raw.endswith(".img.xml"):
-        candidates.append(raw)
-    else:
-        candidates.append(f"{raw}.img.xml")
-    if raw.isdigit():
-        candidates.append(f"{raw.zfill(width)}.img.xml")
-        candidates.append(f"{int(raw):0{width}d}.img.xml")
-        candidates.append(f"{int(raw)}.img.xml")
-
-    seen: set[str] = set()
-    for name in candidates:
-        if name in seen:
-            continue
-        seen.add(name)
-        candidate = base_dir / name
-        if candidate.exists():
-            return candidate
-    return None
-
-
-def _parse_delay_ms(raw: Any) -> int | None:
-    if raw is None:
-        return None
-    try:
-        value = int(str(raw).strip())
-    except Exception:
-        return None
-    return max(1, value)
-
-
-def _extract_node_delay_ms(frame_node: ET.Element) -> int | None:
-    for child in frame_node:
-        if child.attrib.get("name") != "delay":
-            continue
-        if child.tag not in {"int", "string"}:
-            continue
-        parsed = _parse_delay_ms(child.attrib.get("value"))
-        if parsed is not None:
-            return parsed
-    return None
-
-
-def _resolve_uol_target_frame(value: str) -> int | None:
-    raw = str(value).strip()
-    if not raw:
-        return None
-    if raw.isdigit():
-        return int(raw)
-    tokens = [tok for tok in raw.split("/") if tok not in {"", "."}]
-    for token in reversed(tokens):
-        if token.isdigit():
-            return int(token)
-    return None
-
-
-def _resolve_frame_delay_ms(
-    frame_idx: int,
-    frame_nodes: dict[int, ET.Element],
-    default_delay_ms: int,
-    visited: set[int] | None = None,
-) -> int:
-    if visited is None:
-        visited = set()
-    if frame_idx in visited:
-        return default_delay_ms
-    visited.add(frame_idx)
-
-    frame_node = frame_nodes.get(frame_idx)
-    if frame_node is None:
-        return default_delay_ms
-
-    direct = _extract_node_delay_ms(frame_node)
-    if direct is not None:
-        return direct
-
-    if frame_node.tag == "uol":
-        target = _resolve_uol_target_frame(frame_node.attrib.get("value", ""))
-        if target is not None:
-            return _resolve_frame_delay_ms(target, frame_nodes, default_delay_ms, visited)
-
-    return default_delay_ms
-
-
-def _build_timeline_from_action_node(action_node: ET.Element, default_delay_ms: int) -> list[dict[str, int]]:
-    frame_nodes: dict[int, ET.Element] = {}
-    for child in action_node:
-        name = str(child.attrib.get("name", "")).strip()
-        if not name.isdigit():
-            continue
-        if child.tag not in {"imgdir", "canvas", "uol"}:
-            continue
-        frame_nodes[int(name)] = child
-
-    if not frame_nodes:
-        return [{"frame": 0, "delay_ms": default_delay_ms}]
-
-    timeline: list[dict[str, int]] = []
-    for frame_idx in sorted(frame_nodes.keys()):
-        delay_ms = _resolve_frame_delay_ms(frame_idx, frame_nodes, default_delay_ms)
-        timeline.append({"frame": int(frame_idx), "delay_ms": int(delay_ms)})
-    return timeline
+from wz_shared import (
+    FALLBACK_BASE_WZ,
+    asset_id_from_xml,
+    build_timeline_from_action_node,
+    child_imgdir,
+    extract_info_link,
+    resolve_link_target_xml,
+)
 
 
 def resolve_npc_action(
@@ -189,10 +61,10 @@ def resolve_npc_action(
         seen.add(current_xml)
 
         root = ET.parse(current_xml).getroot()
-        chain.append(_asset_id_from_xml(current_xml))
-        action_node = _child_imgdir(root, action)
+        chain.append(asset_id_from_xml(current_xml))
+        action_node = child_imgdir(root, action)
         if action_node is not None:
-            timeline = _build_timeline_from_action_node(action_node, safe_default)
+            timeline = build_timeline_from_action_node(action_node, safe_default)
             return {
                 "ok": True,
                 "reason": "ok",
@@ -204,7 +76,7 @@ def resolve_npc_action(
                 "timeline": timeline[: max(1, int(max_frames))],
             }
 
-        link_value = _extract_info_link(root)
+        link_value = extract_info_link(root)
         if not link_value:
             return {
                 "ok": False,
@@ -216,7 +88,7 @@ def resolve_npc_action(
                 "timeline": [],
             }
 
-        linked_xml = _resolve_link_target_xml(current_xml, link_value)
+        linked_xml = resolve_link_target_xml(current_xml, link_value)
         if linked_xml is None:
             return {
                 "ok": False,
@@ -262,7 +134,7 @@ def scan_npc_dataset(base_wz: Path, *, scan_limit: int) -> dict[str, Any]:
             continue
         total += 1
 
-        link_value = _extract_info_link(root)
+        link_value = extract_info_link(root)
         if link_value:
             with_link += 1
 
@@ -298,7 +170,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--base-wz",
-        default=r"C:\Users\GGPC\OneDrive\Desktop\83 complete\Base.wz",
+        default=FALLBACK_BASE_WZ,
         help="Path to extracted Base.wz directory",
     )
     parser.add_argument("--npc-id", type=int, default=2004, help="NPC id to inspect")

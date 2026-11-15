@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC TEST FIXTURE - not real MapleStory data.
+     Head part (id 12000). Attaches to the body-published neck anchor and
+     publishes the brow anchor that face and hair snap to. -->
+<imgdir name="00012000.img">
+  <imgdir name="stand1">
+    <imgdir name="0">
+      <canvas name="head" width="18" height="18">
+        <vector name="origin" x="9" y="9"/>
+        <imgdir name="map">
+          <vector name="neck" x="0" y="9"/>
+          <vector name="brow" x="0" y="-4"/>
+        </imgdir>
+        <string name="z" value="head"/>
+      </canvas>
+    </imgdir>
+  </imgdir>
+</imgdir>

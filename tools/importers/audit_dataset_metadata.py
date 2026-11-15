@@ -6,10 +6,10 @@ from __future__ import annotations
 import argparse
 import json
 from collections import Counter
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 import xml.etree.ElementTree as ET
+
+from wz_shared import child_imgdir, utc_now_iso
 
 
 CORE_TREES = [
@@ -57,13 +57,6 @@ INFO_FIELDS = [
 ]
 
 
-def _find_child_imgdir(node: ET.Element, name: str) -> Optional[ET.Element]:
-    for child in node:
-        if child.tag == "imgdir" and child.attrib.get("name") == name:
-            return child
-    return None
-
-
 def _has_info_field(info_node: ET.Element, field: str) -> bool:
     tag = "string" if field in {"islot", "vslot"} else "int"
     for child in info_node:
@@ -93,7 +86,7 @@ def _count_name_entries(eqp_img_xml: Path) -> int:
     if not eqp_img_xml.exists():
         return 0
     root = ET.parse(eqp_img_xml).getroot()
-    eqp_outer = _find_child_imgdir(root, "Eqp")
+    eqp_outer = child_imgdir(root, "Eqp")
     if eqp_outer is None:
         return 0
     total = 0
@@ -132,7 +125,7 @@ def audit(base_wz: Path) -> dict:
                 root = ET.parse(xml_path).getroot()
             except Exception:  # noqa: BLE001
                 continue
-            info_node = _find_child_imgdir(root, "info")
+            info_node = child_imgdir(root, "info")
             if info_node is None:
                 continue
             parsed += 1
@@ -191,7 +184,7 @@ def audit(base_wz: Path) -> dict:
                 install_req_fields[name] += 1
 
     return {
-        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "generated_at_utc": utc_now_iso(),
         "base_wz": str(base_wz),
         "tree_presence": tree_presence,
         "character_equipment_categories": category_stats,

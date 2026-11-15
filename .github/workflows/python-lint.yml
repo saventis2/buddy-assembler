@@ -7,8 +7,8 @@ on:
       - main
 
 # Scope: tools/importers/ importer/analysis scripts, packages/content-validator/,
-# and apps/runtime-godot/tools/. This is the first time this Python tooling
-# has been linted or type-checked in CI (backlog #54).
+# and apps/runtime-godot/tools/. Tool and test dependencies come from the
+# repository's pinned requirements files.
 #
 # ruff: blocking. Rule selection is ruff's default set (E4, E7, E9, F -
 # pyflakes correctness rules + a handful of pycodestyle error checks), not
@@ -36,16 +36,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
-      - name: Install ruff and mypy
+      - name: Install pinned Python tooling and test dependencies
         run: |
-          pip install ruff==0.6.9 mypy==1.11.2
+          python -m pip install -r requirements.txt -r requirements-dev.txt
 
       - name: ruff check (blocking)
         run: |
@@ -59,3 +59,22 @@ jobs:
         continue-on-error: true
         run: |
           mypy tools/importers --ignore-missing-imports
+
+      # Pytest exits 5 when a selected suite collects zero tests. Keeping the
+      # logical suites separate prevents one populated path from hiding an
+      # accidentally empty required path.
+      - name: Importer Python unit suite (zero tests fails)
+        run: |
+          env -u PYTEST_ADDOPTS python -m pytest -q -o addopts= tools/importers/tests
+
+      - name: Runtime-tool Python unit suite (zero tests fails)
+        run: |
+          env -u PYTEST_ADDOPTS python -m pytest -q -o addopts= apps/runtime-godot/tools/tests
+
+      - name: CI-contract Python unit suite (zero tests fails)
+        run: |
+          env -u PYTEST_ADDOPTS python -m pytest -q -o addopts= packages/content-validator
+
+      - name: Verify CI/toolchain contract authority (redundant)
+        run: |
+          python packages/content-validator/validate_ci_contract.py

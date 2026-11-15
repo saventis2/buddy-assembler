@@ -45,5 +45,8 @@ build/
 *.uid
 *.import
 
+# Godot auto-imports item_bindings*.csv as translations; generated, not source
+apps/runtime-godot/content/core_pack/*.translation
+
 # Claude Code local state (settings, agent worktree isolation scratch)
 .claude/

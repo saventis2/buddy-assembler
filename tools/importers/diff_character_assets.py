@@ -4,15 +4,15 @@
 from __future__ import annotations
 
 import argparse
-import csv
 import hashlib
 import json
 from collections import Counter
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Iterable, Optional, Tuple
 import xml.etree.ElementTree as ET
+
+from wz_shared import child_imgdir, utc_now_iso, write_csv
 
 
 def sha1_file(path: Path) -> str:
@@ -47,11 +47,7 @@ class XmlFeatures:
 
 def extract_xml_features(xml_path: Path) -> XmlFeatures:
     root = ET.parse(xml_path).getroot()
-    info = None
-    for child in root:
-        if child.tag == "imgdir" and child.attrib.get("name") == "info":
-            info = child
-            break
+    info = child_imgdir(root, "info")
 
     islot = None
     vslot = None
@@ -131,14 +127,6 @@ def impact_from_flags(flags: set[str]) -> str:
     return "none"
 
 
-def write_csv(path: Path, rows: list[dict], headers: list[str]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=headers)
-        writer.writeheader()
-        writer.writerows(rows)
-
-
 def diff_character_trees(
     old_base_wz: Path,
     new_base_wz: Path,
@@ -169,7 +157,7 @@ def diff_character_trees(
             ["path", "change_type"],
         )
         summary = {
-            "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+            "generated_at_utc": utc_now_iso(),
             "old_base_wz": str(old_base_wz),
             "new_base_wz": str(new_base_wz),
             "counts": {
@@ -300,7 +288,7 @@ def diff_character_trees(
     art_changed_png = png_change_counts["added"] + png_change_counts["removed"] + png_change_counts["modified"]
 
     summary = {
-        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "generated_at_utc": utc_now_iso(),
         "old_base_wz": str(old_base_wz),
         "new_base_wz": str(new_base_wz),
         "counts": {

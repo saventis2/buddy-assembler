@@ -272,6 +272,8 @@ const UnlockTable = preload("res://scripts/progression/unlock_table.gd")
 const ProductivityTracker = preload("res://scripts/utility/productivity_tracker.gd")
 const PromptCadence = preload("res://scripts/utility/prompt_cadence.gd")
 const ManualVerificationReport = preload("res://scripts/utility/manual_verification_report.gd")
+const PortableBuddyFallback = preload("res://scripts/visual/portable_buddy_fallback.gd")
+const PORTABLE_FALLBACK_TEXTURE := preload("res://content/core_pack/character/idle.png")
 
 @onready var tick_timer: Timer = $TickTimer
 @onready var telemetry_timer: Timer = $TelemetryTimer
@@ -1999,28 +2001,10 @@ func _apply_inventory_maple_theme() -> void:
 
 func _draw() -> void:
     var center := _draw_center
-    if _current_texture == null:
-        _load_core_character_animation_fallbacks()
-        _load_core_character_sprite_fallbacks()
-        _set_visual_for_state(_state, true)
-
     _draw_sit_chair(center)
     _draw_equipped_item_overlays(center, "back")
-    if _draw_character_sprite(center):
+    if _draw_character_sprite(center, _presentation_texture()):
         _draw_equipped_item_overlays(center, "front")
-        _draw_face_overlay()
-        return
-
-    var missing_rect := Rect2(center - Vector2(34.0, 34.0), Vector2(68.0, 68.0))
-    draw_rect(missing_rect, Color(0.15, 0.02, 0.02, 0.7), true)
-    draw_rect(missing_rect, Color(0.92, 0.28, 0.28, 0.95), false, 2.0)
-    draw_line(missing_rect.position, missing_rect.end, Color(0.92, 0.28, 0.28, 0.95), 2.0)
-    draw_line(
-        Vector2(missing_rect.position.x, missing_rect.end.y),
-        Vector2(missing_rect.end.x, missing_rect.position.y),
-        Color(0.92, 0.28, 0.28, 0.95),
-        2.0
-    )
 
 
 func _center_point() -> Vector2:
@@ -2065,10 +2049,13 @@ func _ground_surface_y(viewport_size: Vector2) -> float:
 
 
 func _hit_test(point: Vector2) -> bool:
-    if _current_texture != null:
-        var hit_rect := _sprite_rect_for_texture(_draw_center, _current_texture).grow(8.0)
+    var texture := _presentation_texture()
+    if texture != null:
+        var hit_rect := _presentation_rect(_draw_center, texture).grow(8.0)
         _current_sprite_rect = hit_rect
         return hit_rect.has_point(point)
+    if _current_sprite_rect.size.x > 0.0 and _current_sprite_rect.size.y > 0.0:
+        return _current_sprite_rect.grow(8.0).has_point(point)
     return point.distance_to(_draw_center) <= FALLBACK_HIT_RADIUS
 
 
@@ -2137,7 +2124,8 @@ func _is_night() -> bool:
 
 func _load_content_pack() -> void:
     var selected_pack := str(AppState.settings.get("selectedPackId", "core_pack"))
-    var loaded := ContentLoader.load_with_fallback(selected_pack)
+    var allow_development := OS.get_cmdline_user_args().has("--allow-development-packs")
+    var loaded := ContentLoader.load_with_fallback(selected_pack, "", allow_development)
 
     var source_tier := str(loaded.get("source_tier", "selected"))
     if source_tier != "selected":
@@ -2260,7 +2248,7 @@ func _cycle_interaction_intensity() -> void:
     AppState.flush()
     _emit_setting_feedback("interactionIntensity", values[index])
     _update_balloon_position()
-    var line := "Interaction intensity: %s" % values[index]
+    var line: String = "Interaction intensity: %s" % values[index]
     if values[index] == "idle":
         line += " (autopilot + auto stat assignment)"
     _buddy_say(line)
@@ -2357,14 +2345,15 @@ func _update_window_roam(delta: float) -> void:
 
 
 func _cycle_pack() -> void:
-    var ids := ContentLoader.list_cycleable_pack_ids()
+    var allow_development := OS.get_cmdline_user_args().has("--allow-development-packs")
+    var ids := ContentLoader.list_cycleable_pack_ids("", allow_development)
     if ids.is_empty():
         _update_balloon_position()
         _buddy_say("No valid content packs found.")
         return
     if ids.size() == 1:
         var only_pack := str(ids[0])
-        var loaded_only := ContentLoader.load_with_fallback(only_pack)
+        var loaded_only := ContentLoader.load_with_fallback(only_pack, "", allow_development)
         var only_manifest_variant = loaded_only.get("manifest", null)
         if typeof(only_manifest_variant) != TYPE_DICTIONARY:
             _update_balloon_position()
@@ -2396,7 +2385,7 @@ func _cycle_pack() -> void:
         index = (index + 1) % ids.size()
 
     var next_pack := str(ids[index])
-    var loaded := ContentLoader.load_with_fallback(next_pack)
+    var loaded := ContentLoader.load_with_fallback(next_pack, "", allow_development)
     var manifest_variant = loaded.get("manifest", null)
     if typeof(manifest_variant) != TYPE_DICTIONARY:
         _update_balloon_position()
@@ -5405,10 +5394,6 @@ func _load_visual_assets(pack_id: String, manifest: Dictionary) -> void:
     if _pack_scale_override > 0.0:
         _sprite_scale = maxf(0.2, _pack_scale_override)
 
-    if _action_animations.is_empty():
-        _load_core_character_animation_fallbacks()
-    if _action_textures.is_empty():
-        _load_core_character_sprite_fallbacks()
     _load_sit_chair_assets(pack_id)
     _ground_enabled = false
     _ground_texture = null
@@ -5672,52 +5657,82 @@ func _auto_adjust_floor_padding_to_loaded_pivots() -> void:
     _floor_padding = maxf(2.0, _floor_padding - required_delta)
 
 
-func _draw_character_sprite(center: Vector2) -> bool:
-    var texture_to_draw: Texture2D = _current_texture
+func _selected_texture() -> Texture2D:
     if _assembled_state_texture_overrides.has(_state):
         var override_variant = _assembled_state_texture_overrides.get(_state, null)
         if override_variant is Texture2D:
-            texture_to_draw = override_variant
-    if texture_to_draw == null:
+            return override_variant
+    return _current_texture
+
+
+func _presentation_texture() -> Texture2D:
+    var selected := _selected_texture()
+    var selected_size := Vector2.ZERO
+    if selected != null:
+        selected_size = selected.get_size()
+    var fallback_size := Vector2.ZERO
+    if PORTABLE_FALLBACK_TEXTURE != null:
+        fallback_size = PORTABLE_FALLBACK_TEXTURE.get_size()
+    var mode := PortableBuddyFallback.presentation_mode(selected_size, fallback_size)
+    if mode == PortableBuddyFallback.PRESENTATION_SELECTED_ASSET:
+        return selected
+    if mode == PortableBuddyFallback.PRESENTATION_FALLBACK_ASSET:
+        return PORTABLE_FALLBACK_TEXTURE
+    return null
+
+
+func _presentation_rect(center: Vector2, texture: Texture2D) -> Rect2:
+    if texture == _selected_texture():
+        return _sprite_rect_for_texture(center, texture)
+    return PortableBuddyFallback.fitted_asset_rect(
+        get_viewport_rect().size,
+        texture.get_size(),
+        _sprite_scale,
+        SPRITE_VIEW_MARGIN
+    )
+
+
+func _draw_character_sprite(center: Vector2, texture: Texture2D) -> bool:
+    if texture == null:
         return false
 
-    var tex_size: Vector2 = texture_to_draw.get_size()
+    var tex_size: Vector2 = texture.get_size()
     if tex_size.x <= 0.0 or tex_size.y <= 0.0:
         return false
 
-    _current_sprite_rect = _sprite_rect_for_texture(center, texture_to_draw)
+    _current_sprite_rect = _presentation_rect(center, texture)
     if _facing_sign < 0:
         var local_rect := Rect2(_current_sprite_rect.position - center, _current_sprite_rect.size)
         draw_set_transform(center, 0.0, Vector2(-1.0, 1.0))
-        draw_texture_rect(texture_to_draw, local_rect, false)
+        draw_texture_rect(texture, local_rect, false)
         draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
     else:
-        draw_texture_rect(texture_to_draw, _current_sprite_rect, false)
+        draw_texture_rect(texture, _current_sprite_rect, false)
     return true
 
 
-func _draw_face_overlay() -> void:
+func _draw_face_overlay() -> bool:
     if _current_texture == null:
-        return
+        return false
     if _face_overlay_frames.is_empty():
-        return
+        return false
     if _current_animation_index < 0 or _current_animation_index >= _face_overlay_frames.size():
-        return
+        return false
 
     var frame_overlay_variant = _face_overlay_frames[_current_animation_index]
     if typeof(frame_overlay_variant) != TYPE_DICTIONARY:
-        return
+        return false
     var frame_overlay: Dictionary = frame_overlay_variant
     if frame_overlay.is_empty():
-        return
+        return false
 
     var face_texture := _resolve_face_texture_for_overlay(frame_overlay)
     if face_texture == null:
-        return
+        return false
 
     var local_pos_variant = frame_overlay.get("local_top_left", [])
     if typeof(local_pos_variant) != TYPE_ARRAY or (local_pos_variant as Array).size() < 2:
-        return
+        return false
     var local_pos_arr: Array = local_pos_variant
     var local_top_left := Vector2(float(local_pos_arr[0]), float(local_pos_arr[1]))
     var emote_offset = EMOTE_DRAW_OFFSETS.get(_active_emote_semantic, Vector2.ZERO)
@@ -5726,7 +5741,7 @@ func _draw_face_overlay() -> void:
 
     var source_size: Vector2 = _current_texture.get_size()
     if source_size.x <= 0.0 or source_size.y <= 0.0:
-        return
+        return false
 
     var scale_x := _current_sprite_rect.size.x / source_size.x
     var scale_y := _current_sprite_rect.size.y / source_size.y
@@ -5743,6 +5758,7 @@ func _draw_face_overlay() -> void:
         draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
     else:
         draw_texture_rect(face_texture, draw_rect, false)
+    return true
 
 
 func _draw_ground() -> void:
@@ -5828,7 +5844,8 @@ func _load_emote_manifest(path_spec: String, pack_id: String) -> Dictionary:
 
 func _resolve_face_texture_for_overlay(frame_overlay: Dictionary) -> Texture2D:
     var default_path := str(frame_overlay.get("default_png", ""))
-    if default_path == "":
+    if not PortableBuddyFallback.is_repository_asset_path(default_path):
+        _last_face_texture_path = "rejected non-repository face path"
         return null
     var cache_key := "%s|%s" % [_active_face_variant, default_path]
     if _face_texture_cache.has(cache_key):
@@ -5940,13 +5957,18 @@ func _fit_scale_for_viewport(tex_size: Vector2, viewport_size: Vector2) -> float
 
 
 func _effective_hit_radius() -> float:
-    if _current_texture != null:
-        var tex_size: Vector2 = _current_texture.get_size() * _sprite_scale
+    var texture := _presentation_texture()
+    if texture != null:
+        var tex_size: Vector2 = texture.get_size() * _sprite_scale
         return maxf(FALLBACK_HIT_RADIUS, maxf(tex_size.x, tex_size.y) * 0.28)
     return FALLBACK_HIT_RADIUS
 
 
 func _resolve_texture(path_spec: String, pack_id: String) -> Texture2D:
+    if not PortableBuddyFallback.is_repository_asset_path(path_spec):
+        return null
+    if not path_spec.begins_with("res://") and not PortableBuddyFallback.is_pack_id(pack_id):
+        return null
     var res_candidates: Array[String] = []
     if path_spec.begins_with("res://"):
         res_candidates.append(path_spec)
@@ -5966,11 +5988,6 @@ func _resolve_texture(path_spec: String, pack_id: String) -> Texture2D:
         var loaded_fs := _load_texture_from_file(fs_path)
         if loaded_fs != null:
             return loaded_fs
-
-    if not path_spec.begins_with("res://"):
-        var direct_loaded := _load_texture_from_file(path_spec)
-        if direct_loaded != null:
-            return direct_loaded
 
     return null
 
@@ -6009,13 +6026,14 @@ func _load_animation_spec(path_spec: String, pack_id: String) -> Dictionary:
     if typeof(parsed) != TYPE_DICTIONARY:
         return {}
     var animation_data: Dictionary = parsed
-    var animation_state := str(animation_data.get("state", ""))
-    var animation_dir := animation_source_path.get_base_dir()
-
     var sheet_path := str(animation_data.get("sheet", ""))
     if sheet_path == "":
         return {}
-    var sheet_texture := _resolve_texture(sheet_path, pack_id)
+    var sheet_pack_id := pack_id
+    if animation_source_path.begins_with("res://content/"):
+        var source_relative := animation_source_path.trim_prefix("res://content/")
+        sheet_pack_id = source_relative.get_slice("/", 0)
+    var sheet_texture := _resolve_texture(sheet_path, sheet_pack_id)
     if sheet_texture == null:
         return {}
 
@@ -6048,8 +6066,9 @@ func _load_animation_spec(path_spec: String, pack_id: String) -> Dictionary:
         atlas.atlas = sheet_texture
         atlas.region = Rect2(rect_x, rect_y, rect_w, rect_h)
         frames.append(atlas)
-        var source_frame := int(frame_data.get("source_frame", int(frame_data.get("index", 0))))
-        face_overlays.append(_load_face_overlay_for_frame(animation_dir, animation_state, source_frame))
+        # Per-frame face metadata is excluded from shipping. Keep the runtime
+        # overlay array aligned without reading those development-only files.
+        face_overlays.append({})
 
         var duration_ms_raw = frame_data.get("duration_ms", 120)
         var duration_seconds := 0.12
@@ -6086,58 +6105,16 @@ func _load_animation_spec(path_spec: String, pack_id: String) -> Dictionary:
     }
 
 
-func _load_face_overlay_for_frame(animation_dir: String, animation_state: String, source_frame: int) -> Dictionary:
-    if animation_dir == "" or animation_state == "":
-        return {}
-    var frame_rel_path := "%s/frames/%03d.json" % [animation_state, source_frame]
-    var metadata_path := animation_dir.path_join(frame_rel_path)
-    var raw := _read_text_file(metadata_path)
-    if raw == "":
-        return {}
-
-    var parsed = JSON.parse_string(raw)
-    if typeof(parsed) != TYPE_DICTIONARY:
-        return {}
-    var metadata: Dictionary = parsed
-    var bounds_variant = metadata.get("frame_bounds_world", {})
-    if typeof(bounds_variant) != TYPE_DICTIONARY:
-        return {}
-    var bounds: Dictionary = bounds_variant
-    var bounds_left := float(bounds.get("left", 0.0))
-    var bounds_top := float(bounds.get("top", 0.0))
-
-    var draw_order_variant = metadata.get("draw_order", [])
-    if typeof(draw_order_variant) != TYPE_ARRAY:
-        return {}
-    var draw_order: Array = draw_order_variant
-    for entry_variant in draw_order:
-        if typeof(entry_variant) != TYPE_DICTIONARY:
-            continue
-        var entry: Dictionary = entry_variant
-        if str(entry.get("asset_kind", "")) != "face":
-            continue
-        var top_left_variant = entry.get("top_left", [])
-        if typeof(top_left_variant) != TYPE_ARRAY or (top_left_variant as Array).size() < 2:
-            continue
-        var top_left: Array = top_left_variant
-        var local_x := float(top_left[0]) - bounds_left
-        var local_y := float(top_left[1]) - bounds_top
-        var default_path := str(entry.get("png", ""))
-        if default_path == "":
-            continue
-        return {
-            "default_png": default_path,
-            "local_top_left": [local_x, local_y],
-        }
-    return {}
-
-
 func _resolve_text(path_spec: String, pack_id: String) -> String:
     var bundle := _resolve_text_with_source(path_spec, pack_id)
     return str(bundle.get("text", ""))
 
 
 func _resolve_text_with_source(path_spec: String, pack_id: String) -> Dictionary:
+    if not PortableBuddyFallback.is_repository_asset_path(path_spec):
+        return {}
+    if not path_spec.begins_with("res://") and not PortableBuddyFallback.is_pack_id(pack_id):
+        return {}
     var res_candidates: Array[String] = []
     if path_spec.begins_with("res://"):
         res_candidates.append(path_spec)
@@ -6154,10 +6131,6 @@ func _resolve_text_with_source(path_spec: String, pack_id: String) -> Dictionary
         if from_fs != "":
             return {"text": from_fs, "source": fs_path}
 
-    if not path_spec.begins_with("res://"):
-        var from_direct := _read_text_file(path_spec)
-        if from_direct != "":
-            return {"text": from_direct, "source": path_spec}
     return {}
 
 
@@ -6170,27 +6143,6 @@ func _read_text_file(path: String) -> String:
     var content := file.get_as_text()
     file.close()
     return content
-
-
-func _load_core_character_animation_fallbacks() -> void:
-    var actions := ["idle", "wander", "sit", "sleep", "happy", "gift", "visitor"]
-    for action_id in actions:
-        var res_path: String = "res://content/core_pack/character/animations/%s.json" % action_id
-        var animation := _load_animation_spec(res_path, "core_pack")
-        if not animation.is_empty():
-            _action_animations[action_id] = animation
-            var max_pivot_variant = animation.get("max_pivot_y", 0.0)
-            if typeof(max_pivot_variant) == TYPE_INT or typeof(max_pivot_variant) == TYPE_FLOAT:
-                _max_loaded_pivot_px_y = maxf(_max_loaded_pivot_px_y, float(max_pivot_variant))
-
-
-func _load_core_character_sprite_fallbacks() -> void:
-    var actions := ["idle", "wander", "sit", "sleep", "happy", "gift", "visitor"]
-    for action_id in actions:
-        var res_path: String = "res://content/core_pack/character/%s.png" % action_id
-        var texture := _resolve_texture(res_path, "core_pack")
-        if texture != null:
-            _action_textures[action_id] = texture
 
 
 func _maybe_show_bond_phrase() -> void:

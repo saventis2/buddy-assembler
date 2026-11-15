@@ -13,8 +13,10 @@ the runtime does **not** depend on WZ/NX schemas at runtime.
 ## What is landed on `main`
 
 - Godot runtime vertical slice: BuddyActor, idle/drag/sleep/visit states,
-  face emote rotation, gift pipeline, chair overlay, Effect.wz-derived
-  overlays (baked to PNG), ChatBalloon 9-slice bubble.
+  embedded composed character frames, gift pipeline, chair overlay,
+  Effect.wz-derived overlays (baked to PNG), ChatBalloon 9-slice bubble.
+  Runtime face-overlay rotation remains deferred until its approved assets are
+  tracked in the shipping closure.
 - Character rendering + animation export pipeline (Python).
 - Product docs under `docs/product/` (V1 PRD, milestone status, execution
   plan, decision register, Windows release checklist, PR architecture

@@ -1,22 +1,13 @@
 ; Engine configuration file.
-; It's best edited using the editor UI and not directly,
-; since the parameters that go here are not all obvious.
-;
-; Format:
-;   [section] ; section goes between []
-;   param=value ; assign values to parameters
+; Minimal runtime project for the desktop buddy vertical slice.
 
 config_version=5
-
-[animation]
-
-compatibility/default_parent_skeleton_in_mesh_instance_3d=true
 
 [application]
 
 config/name="Buddy Runtime"
 run/main_scene="res://scenes/LaunchRouter.tscn"
-config/features=PackedStringArray("4.6")
+config/features=PackedStringArray("4.2")
 
 [autoload]
 
@@ -32,11 +23,11 @@ window/size/always_on_top=true
 window/per_pixel_transparency/allowed=true
 window/per_pixel_transparency/enabled=true
 
-[editor_plugins]
-
-enabled=PackedStringArray("res://addons/buddy_importer/plugin.cfg")
-
 [rendering]
 
 renderer/rendering_method="gl_compatibility"
 environment/defaults/default_clear_color=Color(0, 0, 0, 0)
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/buddy_importer/plugin.cfg")

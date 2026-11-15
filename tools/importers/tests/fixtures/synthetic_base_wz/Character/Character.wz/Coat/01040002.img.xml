@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC TEST FIXTURE - not real MapleStory data.
+     Coat equip (id 1040002) with a stand1 action and a single "mail"
+     canvas. Attaches via the world-root navel anchor and layers between
+     body and arm per the fixture zmap. -->
+<imgdir name="01040002.img">
+  <imgdir name="info">
+    <string name="islot" value="Ma"/>
+    <string name="vslot" value="Ma"/>
+  </imgdir>
+  <imgdir name="stand1">
+    <imgdir name="0">
+      <canvas name="mail" width="16" height="14">
+        <vector name="origin" x="8" y="7"/>
+        <imgdir name="map">
+          <vector name="navel" x="0" y="5"/>
+        </imgdir>
+        <string name="z" value="mail"/>
+      </canvas>
+    </imgdir>
+  </imgdir>
+</imgdir>

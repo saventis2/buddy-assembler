@@ -35,6 +35,10 @@ func _run_all() -> void:
     _case("fallback_selected", func(): return _test_fallback_selected())
     _case("fallback_to_core", func(): return _test_fallback_to_core())
     _case("fallback_to_builtin", func(): return _test_fallback_to_builtin())
+    _case("unsafe_asset_path_rejected", func(): return _test_unsafe_asset_path_rejected())
+    _case("development_pack_excluded", func(): return _test_development_pack_excluded())
+    _case("development_selection_falls_back", func(): return _test_development_selection_falls_back())
+    _case("development_pack_explicit_path", func(): return _test_development_pack_explicit_path())
 
 
 func _case(name: String, body: Callable) -> void:
@@ -228,4 +232,56 @@ func _test_fallback_to_builtin() -> Variant:
     var m: Dictionary = r.get("manifest", {})
     if not m.has("idleActions"):
         return "builtin manifest missing idleActions"
+    return null
+
+
+func _test_unsafe_asset_path_rejected() -> Variant:
+    var m := _valid_manifest_dict("unsafe")
+    m["visual"] = {"sprites": {"idle": "C:/workstation-only/face.png"}}
+    _write_pack("unsafe", m)
+    var r := ContentLoader.load_pack("unsafe", ROOT)
+    if bool(r.get("ok", false)):
+        return "expected drive-letter asset path to fail"
+    for error in r.get("errors", []):
+        if String(error).find("non-repository path") >= 0:
+            return null
+    return "expected non-repository path error, got %s" % [r.get("errors", [])]
+
+
+func _test_development_pack_excluded() -> Variant:
+    var core := _valid_manifest_dict("core-pack")
+    core["runtimeAudience"] = "user"
+    var dev := _valid_manifest_dict("dev-pack")
+    dev["runtimeAudience"] = "development"
+    _write_pack("core_pack", core)
+    _write_pack("dev_pack", dev)
+    var production_ids := ContentLoader.list_cycleable_pack_ids(ROOT)
+    if production_ids.has("dev_pack"):
+        return "development pack leaked into production cycle: %s" % [production_ids]
+    return null
+
+
+func _test_development_selection_falls_back() -> Variant:
+    var core := _valid_manifest_dict("core-pack")
+    core["runtimeAudience"] = "user"
+    var dev := _valid_manifest_dict("dev-pack")
+    dev["runtimeAudience"] = "development"
+    _write_pack("core_pack", core)
+    _write_pack("dev_pack", dev)
+    var loaded := ContentLoader.load_with_fallback("dev_pack", ROOT)
+    if str(loaded.get("source_tier", "")) != "core":
+        return "stale development selection did not fall back to core: %s" % [loaded]
+    return null
+
+
+func _test_development_pack_explicit_path() -> Variant:
+    var dev := _valid_manifest_dict("dev-pack")
+    dev["runtimeAudience"] = "development"
+    _write_pack("dev_pack", dev)
+    var ids := ContentLoader.list_cycleable_pack_ids(ROOT, true)
+    if not ids.has("dev_pack"):
+        return "explicit development cycle did not expose dev_pack: %s" % [ids]
+    var loaded := ContentLoader.load_with_fallback("dev_pack", ROOT, true)
+    if str(loaded.get("source_tier", "")) != "selected":
+        return "explicit development load failed: %s" % [loaded]
     return null

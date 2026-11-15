@@ -5,10 +5,11 @@
 
 ## What this proves
 
-The runtime content pipeline is generic. It does not require MapleStory assets
-to function. Any pack conforming to `docs/product/CONTENT_SCHEMA.md` will load,
-validate, and run — even with no visual assets at all (runtime falls back to
-the code-drawn placeholder buddy).
+The manifest and validation lane is generic: a conforming development pack can
+load and validate with no visual assets. This does not prove an asset-free
+shipping runtime; when that pack has no visual, the runtime deliberately uses
+the existing tracked and approved core idle asset rather than generating
+replacement art.
 
 ## How it was proven
 
@@ -18,7 +19,8 @@ the code-drawn placeholder buddy).
 
 `ContentLoader.validate_manifest` and `validate_assets` both pass on this pack.
 The CI `validate-content` step runs against all packs under `content/` including
-`sample_pack` — a green CI run on this PR is the proof.
+`sample_pack`. It is marked `runtimeAudience: development`, is tested through
+the explicit development path, and cannot enter the production pack cycle.
 
 ## Adapter seam
 
@@ -27,8 +29,9 @@ The seam is `ContentLoader.load_with_fallback`:
 2. If validation fails, fall back to `core_pack`.
 3. If `core_pack` also fails, fall back to the built-in safe-mode manifest.
 
-`sample_pack` proves tier 1 (selected pack succeeds). Tiers 2 and 3 are
-covered by the `PackValidationTest` headless test (PR-04).
+`sample_pack` proves tier 1 only when development packs are explicitly
+enabled. The production path falls back from a stale development selection to
+`core_pack`; tiers 2 and 3 remain covered by `PackValidationTest`.
 
 ## Non-goals
 

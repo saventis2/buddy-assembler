@@ -18,9 +18,12 @@ Multi-hour run (release gate):
 apps\runtime-godot\tests\run_burn_in.ps1 -Duration 10800
 ```
 
-The wrapper invokes `godot --headless` against `IdleProfile.tscn`
-with a single BuddyActor idling for the requested duration. It
-samples static memory every 5 s and captures every frame delta.
+The wrapper verifies exact Godot 4.2.2-stable, then invokes that editor/console
+binary against the development-only `IdleProfile.tscn` with a single
+BuddyActor idling for the requested duration. It samples static memory every
+5 s and captures every frame delta. This source-project probe is not an
+exported-build burn-in; release evidence must label the execution target
+honestly until a separate exported-runtime profiling route exists.
 
 Output log:
 `%APPDATA%\Godot\app_userdata\Buddy Runtime\perf\idle_profile_<unix>.log`
