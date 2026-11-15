@@ -36,6 +36,8 @@ is documented. This plan is our own design toward that feel.
 Move places out of code into the content pack as a `town` block in the
 manifest, validated by the schema:
 
+- **Places and items declare what they are for** (see C6): which needs they
+  meet and what can be done with them, so new content needs no code.
 - **Places**: `id`, `name`, `kind` (home, shop, park, library, cafe, square),
   `opens`/`closes` hours, `activities` (what can be done there and which
   drive it satisfies), `residents` (NPC ids usually found there), `neighbours`
@@ -174,6 +176,158 @@ deleting it stops it being used.
 Done when: a request in chat visibly changes the next decision some of the
 time and the journal explains why either way.
 
+## Part C: Living a life
+
+Added 2026-11-16 after looking at how other systems get a character to feel
+alive. The owner's brief: make plans and carry them out, develop likes and
+dislikes, ask for new things it wants, live in the town, be creative, be
+itself.
+
+One rule runs through all of it, and it is what makes this workable on a
+small local model: **code decides, the model voices.** Needs, plans, wants
+and memories are data that code computes and checks. The model is asked to
+phrase a thought, pick among a few options it is shown, or fill one slot. It
+is never the only record of what happened. The systems that let the model
+both decide and remember report invented memories, loops and bland
+agreeable characters; the classic life sims that feel most alive use no
+language model at all.
+
+### C1. Plans it carries out
+
+- **A day plan.** Each morning the buddy makes a plan of three to five
+  intentions from its routine, its wants and what is on in town ("market
+  day, so the market; then see Mira; fix the shelf tonight"). Decisions
+  through the day follow the plan unless something more pressing comes up,
+  and the journal says when and why it changed its mind.
+- **Projects over days.** Things that take several steps and several days:
+  save up for a hat, learn to bake, fill a shelf with shells, make a gift
+  for Pip. Each has steps, progress and an end, and finishing one is an
+  event.
+- **Did it work?** After each activity code compares what was meant to
+  happen with what did. A plan that keeps failing is dropped and the buddy
+  says so. This is the main guard against loops.
+
+### C2. Wants, and asking for things
+
+- **A wants list** it keeps itself: each want has a reason, a strength, an
+  age and a status. Wants come from unmet needs, things seen in town, things
+  other characters have, things you mention, and finished projects.
+- **It acts on them first.** It has its own money; it can save and buy from
+  the town's shops, or work toward a want as a project.
+- **It asks you when it cannot.** A new kind of item, a new place added to
+  the town, a decoration, a book on a subject. You can grant, decline or say
+  "later". It remembers which, and how it felt about it. A want you ignore
+  fades; it does not nag.
+
+### C3. Likes and dislikes
+
+- **Tastes by category**: foods, places, weather, colours, people,
+  activities, times of day. Today it has one number per place or person.
+- **Formed by experience, not assigned.** Each experience nudges a taste by
+  how it felt, weighted by how much it mattered. Important moments move a
+  taste further and are remembered longer.
+- **Seen through its personality.** The same event lands differently on a
+  curious buddy and a cautious one, so two buddies in the same town grow
+  apart. Personality itself shifts slowly from what it lives through.
+- **Opinions it will state**, including ones that differ from yours. A
+  character that agrees with everything reads as nobody.
+
+### C4. Being itself
+
+- **A short self-description it owns.** A few hundred words: who it is, what
+  it cares about, how it talks, what it is working on. It sits at the top of
+  every prompt. It is the character's, not ours: the buddy revises it in
+  small edits, never wholesale.
+- **A nightly reflection.** While it sleeps, one batched model pass looks
+  over the day, draws two or three conclusions ("I keep avoiding the
+  library; I think it bores me"), adjusts tastes and the self-description,
+  tidies memory and drafts tomorrow's plan. This is where it changes.
+- **It can choose its own name** on the first night, if the owner has not
+  given one.
+- **Quirks and rituals** that emerge and stick: a usual seat, a morning
+  habit, a word it overuses.
+- **It can say no**, be in a mood, want to be left alone, or be busy.
+
+### C5. Making things
+
+- **Small works it can actually produce**: a few lines of verse, a name for
+  something, a recipe, a letter, a tiny pixel drawing (the model chooses a
+  small grid of palette colours and code draws it), an arrangement of its
+  room.
+- **A portfolio** of everything it has made, with a title and date. Code
+  checks new work against it so it does not make the same thing twice, and
+  the buddy can look back at old work and build on it.
+- **Shown, kept, given.** Works hang in its home, go in a scrapbook you can
+  browse, or are given to you or a town character.
+- **Skills that grow with practice.** Cooking, drawing, fishing, gardening.
+  Practice raises a skill, which opens new things to make and do.
+
+### C6. A home, belongings and a place in the town
+
+- **Places and objects say what they are for.** Each place and item declares
+  which needs it meets and what can be done with it. The buddy does not need
+  to know about new content in advance, so adding a place or an item to a
+  pack makes it part of its life straight away.
+- **Its home is its own**: it places what it owns, keeps what it likes, puts
+  away what it has gone off.
+- **Relationships that run both ways.** Each town character has tastes and
+  an opinion of the buddy. Friendships, a cooling-off, gifts exchanged, a
+  standing arrangement to meet.
+- **Time that means something**: weather, seasons, the anniversary of the
+  day you met, things that only happen once.
+
+### C7. So you can see it living
+
+- **Today view**: its plan, what it is doing, what it wants, how it feels.
+- **A weekly letter** it writes to you about its week.
+- **Scrapbook**: things it made, places it liked, days it marked.
+- **Being away matters, gently.** If you are gone a while it gets on with its
+  life and has more to tell you. It may say it missed you. No decay, no
+  guilt, nothing dies.
+
+### C8. Remembering well
+
+Carried over from the generative-agents research, cut down for one model call
+every ten minutes:
+
+- Every memory gets an **importance** score once, when it is written.
+- Recall ranks memories by **recency, importance and relevance** together.
+- Only code-confirmed events are stored as facts. What the model says about
+  them is stored as the buddy's opinion, marked as such.
+
+### What I would build first from this part
+
+1. **Wants and projects** (C1, C2): the biggest change in how alive it feels,
+   and mostly code.
+2. **Nightly reflection and the self-description** (C4): what makes it an
+   individual that changes.
+3. **Places and objects that say what they are for** (C6): should be built
+   into the town data from the start, in step A1.
+4. **Making things and the portfolio** (C5).
+5. Tastes by category, relationships and the views on top (C3, C6, C7).
+
+### Model calls this needs
+
+One short call per decision (as now), one batched call per night, one or two
+per chat turn, and one after a conversation to extract facts. No always-on
+agent loop.
+
+### Sources looked at
+
+Park et al., "Generative Agents" (2023): memory stream, recall scoring,
+reflection, day-to-minute planning. a16z AI Town (local-model port). Altera
+"Project Sid" (expected-versus-actual outcome checks, tracking others'
+sentiment). Voyager (self-proposed tasks, a library of things that worked).
+Letta/MemGPT (a small self-edited persona block, sleep-time consolidation).
+The Sims (objects advertise what they satisfy), Creatures (drives reward and
+punish learning, processed in sleep), Dwarf Fortress (thoughts filtered
+through personality, which then shifts), Animal Crossing (routines, tastes,
+requests), Black & White (behaviour shaped by what is reinforced).
+
+Not found: any published small-model companion that does all of this, or an
+independent test that nightly consolidation works well. Those parts are our
+own bet.
+
 ## Order of work
 
 | Step | What | Depends on | Size |
@@ -184,6 +338,10 @@ time and the journal explains why either way.
 | 4 | A2 town window | A1 | medium |
 | 5 | A3 changing town, things you leave | A1, B2 | large |
 | 6 | B3 talk changes the buddy | A1, B1, B2 | medium |
+| 7 | C1 + C2 wants, day plans, projects | A1 | large |
+| 8 | C4 nightly reflection, self-description | B2 | medium |
+| 9 | C5 making things, portfolio, skills | A1, C4 | medium |
+| 10 | C3, C6, C7 tastes, relationships, views | earlier steps | large |
 
 Steps 1 and 2 are independent and give the most visible change for the least
 work: after both, the buddy lives somewhere specific and you can talk to it.
