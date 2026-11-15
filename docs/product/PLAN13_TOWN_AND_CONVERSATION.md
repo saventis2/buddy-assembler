@@ -48,6 +48,16 @@ Measured with `gemma3:4b` on Ollama 0.40.16:
   blacksmith"). A larger chat model is the likely fix.
 - Ollama occasionally answers one request with HTTP 500; a chat line is now
   retried once before the buddy says its model is not answering.
+- `gemma3:12b` against `gemma3:4b` on the buddy's exact chat requests (six
+  questions, three times each, RTX 4070 Ti SUPER): 12b gave 0 of 18 broken
+  replies (4b: 4 of 18, which the app now mostly recovers), sounded more
+  natural and varied, and refused the override attempt 3 of 3 (4b also 3 of 3
+  in this run). Neither reliably rejects something the question invents: 4b
+  "had not heard of" the old mill but played along with "Barnaby"; 12b did
+  the reverse. 12b replies in about 1.1 s once loaded (4b 0.5 s), about 9 s
+  from cold (4b 6 s), and holds about 8 GB of graphics memory for 5 minutes
+  after the last chat. The owner's chat now uses 12b via `chatModelName`;
+  the shipped default stays `gemma3:4b`, which every install can run.
 
 ## Goal
 
