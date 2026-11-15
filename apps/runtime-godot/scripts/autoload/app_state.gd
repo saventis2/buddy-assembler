@@ -1164,6 +1164,7 @@ func _default_settings() -> Dictionary:
         "chatTextSize": "m",
         "continuityDigestEnabled": true,
         "autonomyEnabled": true,
+        "inventoryCompact": false,
         "mindModelEnabled": true,
         "mindModelUrl": "http://127.0.0.1:11434",
         "mindModelName": "gemma3:4b",

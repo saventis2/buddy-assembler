@@ -81,6 +81,7 @@ const MAPLE_LAYOUT_REBUILD_MENU := {
     "margins": [12, 10, 12, 12],
 }
 const INVENTORY_SLOT_PX := 40
+const INVENTORY_COMPACT_SIZE := Vector2i(400, 490)
 const PAPER_DOLL_SLOTS := [
     {"id": "hat", "label": "Hat", "pos": Vector2(0, 0)},
     {"id": "face_accessory", "label": "Face", "pos": Vector2(0, 44)},
@@ -560,6 +561,8 @@ var _menu_rebuild_doll: Control = null
 var _menu_rebuild_doll_preview: TextureRect = null
 var _menu_rebuild_doll_slots := {}      # slot id -> Button
 var _menu_rebuild_slot_filter := ""     # slot id the item grid is filtered to, or ""
+var _menu_rebuild_detail_panel: Control = null
+var _menu_rebuild_btn_compact: Button = null
 
 
 func _ready() -> void:
@@ -1480,14 +1483,26 @@ func _configure_menu_rebuild_window() -> void:
     root.add_theme_constant_override("separation", 8)
     margin.add_child(root)
 
+    var header_row := HBoxContainer.new()
+    header_row.name = "HeaderRow"
+    root.add_child(header_row)
+
     var header := RichTextLabel.new()
     header.name = "Header"
+    header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     header.fit_content = true
     header.scroll_active = false
     header.bbcode_enabled = true
     header.autowrap_mode = TextServer.AUTOWRAP_OFF
-    root.add_child(header)
+    header_row.add_child(header)
     _menu_rebuild_header = header
+
+    var compact_btn := Button.new()
+    compact_btn.size_flags_horizontal = Control.SIZE_SHRINK_END
+    compact_btn.focus_mode = Control.FOCUS_NONE
+    header_row.add_child(compact_btn)
+    _menu_rebuild_btn_compact = compact_btn
+    compact_btn.pressed.connect(_toggle_inventory_compact)
 
     var tab_row := HBoxContainer.new()
     tab_row.name = "TabRow"
@@ -1526,6 +1541,7 @@ func _configure_menu_rebuild_window() -> void:
         INVENTORY_SLOT_COLUMNS * (INVENTORY_SLOT_PX + 3) + 12, 6 * (INVENTORY_SLOT_PX + 3)
     )
     left_box.add_child(left_scroll)
+    left_scroll.set_drag_forwarding(Callable(), _rebuild_can_drop_on_grid, _rebuild_drop_on_grid)
 
     var slot_grid := GridContainer.new()
     slot_grid.columns = INVENTORY_SLOT_COLUMNS
@@ -1544,6 +1560,7 @@ func _configure_menu_rebuild_window() -> void:
     var detail_panel := PanelContainer.new()
     detail_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     split.add_child(detail_panel)
+    _menu_rebuild_detail_panel = detail_panel
     var detail_vbox := VBoxContainer.new()
     detail_vbox.name = "DetailVBox"
     detail_vbox.add_theme_constant_override("separation", 8)
@@ -1595,6 +1612,11 @@ func _configure_menu_rebuild_window() -> void:
         _menu_rebuild_doll_slots[doll_slot_id] = doll_btn
         doll_btn.pressed.connect(func() -> void:
             _on_paper_doll_slot_pressed(doll_slot_id)
+        )
+        doll_btn.set_drag_forwarding(
+            _rebuild_doll_drag_data.bind(doll_btn, doll_slot_id),
+            _rebuild_can_drop_on_doll.bind(doll_slot_id),
+            _rebuild_drop_on_doll.bind(doll_slot_id)
         )
 
     var detail := RichTextLabel.new()
@@ -1672,6 +1694,18 @@ func _set_rebuild_menu_tab(tab_id: String) -> void:
     else:
         _menu_rebuild_mode = "inventory"
         _set_inventory_tab(tab)
+    _layout_rebuild_menu_window()
+    _refresh_rebuild_menu()
+
+
+func _is_inventory_compact() -> bool:
+    return _menu_rebuild_mode == "inventory" and bool(AppState.settings.get("inventoryCompact", false))
+
+
+func _toggle_inventory_compact() -> void:
+    _set_setting_with_audit("inventoryCompact", not bool(AppState.settings.get("inventoryCompact", false)), "menu")
+    AppState.flush()
+    _layout_rebuild_menu_window()
     _refresh_rebuild_menu()
 
 
@@ -1703,7 +1737,13 @@ func _layout_rebuild_menu_window() -> void:
         return
     inventory_window.hide()
     wardrobe_window.hide()
-    _layout_popup_window(_menu_rebuild_window, true, MAPLE_LAYOUT_REBUILD_MENU)
+    var layout: Dictionary = MAPLE_LAYOUT_REBUILD_MENU.duplicate(true)
+    if _is_inventory_compact():
+        layout["base_size"] = INVENTORY_COMPACT_SIZE
+        layout["min_size"] = INVENTORY_COMPACT_SIZE
+    if _menu_rebuild_detail_panel != null:
+        _menu_rebuild_detail_panel.visible = not _is_inventory_compact()
+    _layout_popup_window(_menu_rebuild_window, true, layout)
     _menu_rebuild_window.title = "Inventory" if _menu_rebuild_mode == "inventory" else "Wardrobe"
 
 
@@ -1869,6 +1909,8 @@ func _refresh_rebuild_menu() -> void:
                 _menu_rebuild_empty_label.text = "Showing items for one slot. Click that slot again to show everything."
             else:
                 _menu_rebuild_empty_label.text = "Nothing fits that slot yet. Click the slot again to show everything."
+        elif _menu_rebuild_mode == "wardrobe" and not visible_ids.is_empty():
+            _menu_rebuild_empty_label.text = "Drag an item onto a body slot to wear it, or drag a worn item back here to take it off."
         elif not visible_ids.is_empty():
             _menu_rebuild_empty_label.text = "Click an item to see it. Double-click to use or wear it."
         elif _menu_rebuild_mode == "wardrobe":
@@ -1884,6 +1926,12 @@ func _refresh_rebuild_menu() -> void:
         var mode_label := "Inventory" if _menu_rebuild_mode == "inventory" else "Wardrobe"
         _menu_rebuild_header.text = "[b][color=#FFD77A]%s[/color][/b]   [color=#A8E8FF]%d meso[/color]   [color=#9AA3B5]%d shown[/color]" % [mode_label, meso, visible_ids.size()]
     _refresh_rebuild_menu_tab_buttons()
+    if _menu_rebuild_detail_panel != null:
+        _menu_rebuild_detail_panel.visible = not _is_inventory_compact()
+    if _menu_rebuild_btn_compact != null:
+        _menu_rebuild_btn_compact.visible = _menu_rebuild_mode == "inventory"
+        _menu_rebuild_btn_compact.text = "Expand" if _is_inventory_compact() else "Compact"
+        _menu_rebuild_btn_compact.tooltip_text = "Show item details beside the grid." if _is_inventory_compact() else "Show only the item grid."
     _refresh_rebuild_paper_doll(equipped_slots)
     if _menu_rebuild_detail == null or _menu_rebuild_icon == null:
         return
@@ -1975,7 +2023,82 @@ func _make_inventory_slot(row: Dictionary, is_equipped: bool) -> Button:
         mark.position = Vector2(3, 3)
         mark.mouse_filter = Control.MOUSE_FILTER_IGNORE
         btn.add_child(mark)
+    var slot_instance_id: int = int(row.get("instance_id", -1))
+    btn.set_drag_forwarding(_rebuild_item_drag_data.bind(btn, slot_instance_id), _rebuild_can_drop_on_grid, _rebuild_drop_on_grid)
     return btn
+
+
+func _rebuild_drag_preview(texture: Texture2D, label: String) -> Control:
+    if texture != null:
+        var rect := TextureRect.new()
+        rect.texture = texture
+        rect.size = Vector2(36, 36)
+        rect.custom_minimum_size = Vector2(36, 36)
+        rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+        rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+        rect.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+        return rect
+    var lbl := Label.new()
+    lbl.text = label.substr(0, 1).to_upper()
+    return lbl
+
+
+func _rebuild_item_drag_data(_at_position: Vector2, source: Control, instance_id: int) -> Variant:
+    var row := _inventory_item_by_instance(instance_id)
+    if row.is_empty():
+        return null
+    source.set_drag_preview(_rebuild_drag_preview(_resolve_item_overlay_texture(row), str(row.get("name", "?"))))
+    return {"kind": "buddy_item", "instance_id": instance_id}
+
+
+func _rebuild_doll_drag_data(_at_position: Vector2, source: Control, slot_id: String) -> Variant:
+    var snapshot_variant: Variant = AppState.get_inventory_snapshot()
+    var snapshot: Dictionary = snapshot_variant if snapshot_variant is Dictionary else {}
+    var equipped_variant: Variant = snapshot.get("equipped_slots", {})
+    var equipped_slots: Dictionary = equipped_variant if equipped_variant is Dictionary else {}
+    var worn_id: int = int(equipped_slots.get(slot_id, -1))
+    if worn_id <= 0:
+        return null
+    var row := _inventory_item_by_instance(worn_id)
+    source.set_drag_preview(_rebuild_drag_preview(_resolve_item_overlay_texture(row), str(row.get("name", "?"))))
+    return {"kind": "buddy_worn", "slot_id": slot_id, "instance_id": worn_id}
+
+
+func _rebuild_can_drop_on_doll(_at_position: Vector2, data: Variant, slot_id: String) -> bool:
+    if not (data is Dictionary):
+        return false
+    if str(data.get("kind", "")) != "buddy_item":
+        return false
+    var row := _inventory_item_by_instance(int(data.get("instance_id", -1)))
+    return _item_equip_slot_id(row) == slot_id
+
+
+func _rebuild_drop_on_doll(_at_position: Vector2, data: Variant, slot_id: String) -> void:
+    if not _rebuild_can_drop_on_doll(_at_position, data, slot_id):
+        return
+    var dragged_id: int = int(data.get("instance_id", -1))
+    _menu_rebuild_selected_instance_id = dragged_id
+    _inventory_selected_instance_id = dragged_id
+    _equip_selected_inventory_item()
+    _refresh_rebuild_menu()
+
+
+func _rebuild_can_drop_on_grid(_at_position: Vector2, data: Variant) -> bool:
+    if not (data is Dictionary):
+        return false
+    if str(data.get("kind", "")) != "buddy_worn":
+        return false
+    return int(data.get("instance_id", -1)) > 0
+
+
+func _rebuild_drop_on_grid(_at_position: Vector2, data: Variant) -> void:
+    if not _rebuild_can_drop_on_grid(_at_position, data):
+        return
+    var dragged_id: int = int(data.get("instance_id", -1))
+    _menu_rebuild_selected_instance_id = dragged_id
+    _inventory_selected_instance_id = dragged_id
+    _unequip_selected_inventory_item()
+    _refresh_rebuild_menu()
 
 
 func _ensure_wardrobe_slot_grid_ui() -> void:

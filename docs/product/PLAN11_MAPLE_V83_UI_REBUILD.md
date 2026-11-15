@@ -12,7 +12,8 @@
 > Stats, Inventory, Wardrobe, Pause, Settings, Quit); settings grouped under headings with
 > switches for autonomy and the thinking model and developer tools behind a toggle; inventory and
 > wardrobe slot grid with tooltips, selection, worn marker, empty states and a detail panel.
-> Still open from this plan: paper-doll equip slots, compact/expanded inventory, drag and drop.
+> Since landed: paper-doll equip slots in the Wardrobe tab, a compact/expanded inventory toggle
+> (remembered in `inventoryCompact`), and drag and drop between the item grid and the body slots.
 
 ## Goal
 Rebuild runtime menus to match MapleStory v83 UI behavior first, then reattach Buddy features.
