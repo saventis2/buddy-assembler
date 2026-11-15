@@ -54,6 +54,8 @@ func tick(now_unix: int, context: Dictionary) -> Dictionary:
     var interaction_intensity := str(context.get("interaction_intensity", "balanced"))
     if interaction_intensity == "cozy":
         gate_chance *= 0.75
+    elif interaction_intensity == "idle":
+        gate_chance *= 0.55
     elif interaction_intensity == "deep":
         gate_chance *= 1.2
 

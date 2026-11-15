@@ -38,6 +38,8 @@ func tick(now_unix: int, settings: Dictionary) -> Dictionary:
     var event_cooldown_seconds := 180
     if interaction_intensity == "cozy":
         event_cooldown_seconds = 240
+    elif interaction_intensity == "idle":
+        event_cooldown_seconds = 300
     elif interaction_intensity == "deep":
         event_cooldown_seconds = 120
 
@@ -134,6 +136,8 @@ func _reset(now_unix: int) -> void:
 func _intensity_threshold_scale(interaction_intensity: String) -> float:
     if interaction_intensity == "cozy":
         return 1.25
+    if interaction_intensity == "idle":
+        return 1.45
     if interaction_intensity == "deep":
         return 0.75
     return 1.0
@@ -179,6 +183,8 @@ func _roll_hour_window(now_unix: int) -> void:
 func _max_events_per_hour(interaction_intensity: String, quiet_now: bool, quiet_strictness: String) -> int:
     var cap := 2
     if interaction_intensity == "cozy":
+        cap = 1
+    elif interaction_intensity == "idle":
         cap = 1
     elif interaction_intensity == "deep":
         cap = 3

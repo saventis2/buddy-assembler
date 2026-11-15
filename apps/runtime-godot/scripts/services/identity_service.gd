@@ -19,6 +19,10 @@ const DEFAULT_PROFILE := {
     "active_goals": ["settle-in"],
     "trait_history_summary": [],
     "interaction_counters": {},
+    "job_id": "explorer_buddy",
+    "job_name": "Explorer Buddy",
+    "job_primary_stat": "charisma",
+    "job_drop_bias": [],
 }
 
 
@@ -63,6 +67,43 @@ func record_behavior(profile: Dictionary, action_id: String) -> Dictionary:
     return merged
 
 
+func configure_from_manifest(profile: Dictionary, manifest: Dictionary) -> Dictionary:
+    var merged := ensure_profile(profile)
+    var progression_variant = manifest.get("progression", null)
+    if typeof(progression_variant) != TYPE_DICTIONARY:
+        return merged
+    var progression: Dictionary = progression_variant
+    var jobs_variant = progression.get("jobs", null)
+    if typeof(jobs_variant) != TYPE_ARRAY:
+        return merged
+    var jobs: Array = jobs_variant
+    if jobs.is_empty():
+        return merged
+
+    var active_job_id := str(progression.get("activeJobId", ""))
+    var picked: Dictionary = {}
+    for row_variant in jobs:
+        if typeof(row_variant) != TYPE_DICTIONARY:
+            continue
+        var row: Dictionary = row_variant
+        if active_job_id != "" and str(row.get("id", "")) == active_job_id:
+            picked = row
+            break
+        if picked.is_empty():
+            picked = row
+    if picked.is_empty():
+        return merged
+    merged["job_id"] = str(picked.get("id", merged.get("job_id", "explorer_buddy")))
+    merged["job_name"] = str(picked.get("name", merged.get("job_name", "Explorer Buddy")))
+    merged["job_primary_stat"] = _normalize_primary_stat(str(picked.get("primaryStat", merged.get("job_primary_stat", "charisma"))))
+    var drop_bias_variant = picked.get("dropBias", [])
+    if typeof(drop_bias_variant) == TYPE_ARRAY:
+        merged["job_drop_bias"] = (drop_bias_variant as Array).duplicate(true)
+    elif typeof(merged.get("job_drop_bias", null)) != TYPE_ARRAY:
+        merged["job_drop_bias"] = []
+    return merged
+
+
 func get_context(profile: Dictionary) -> Dictionary:
     var merged := ensure_profile(profile)
     var personality: Dictionary = merged.get("current_personality_profile", {})
@@ -94,3 +135,18 @@ func _refresh_interests(profile: Dictionary) -> void:
 
 func _clamp01(value: float) -> float:
     return minf(1.0, maxf(0.0, value))
+
+
+func _normalize_primary_stat(raw: String) -> String:
+    var key := raw.to_lower()
+    if key in ["str", "strength"]:
+        return "strength"
+    if key in ["dex", "dexterity"]:
+        return "dexterity"
+    if key in ["int", "knowledge", "wisdom", "intelligence"]:
+        return "knowledge"
+    if key in ["luk", "charisma", "luck"]:
+        return "charisma"
+    if key in ["endurance", "hp", "vitality"]:
+        return "endurance"
+    return "charisma"
