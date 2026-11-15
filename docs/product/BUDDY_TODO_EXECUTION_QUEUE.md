@@ -228,6 +228,26 @@ Done gate:
 - [ ] Manual gate passes with no blocker regressions
 - [ ] Follow-up list is recorded and prioritized
 
+### Plan 12A: Autonomous Mind (offline)
+
+Status: `done`
+
+Tasks:
+- [x] Self-directed decision loop driven by mood modifiers
+- [x] Learned per-subject feelings and preference-weighted choices
+- [x] Journal, `/journal`, spoken thought, catch-up while closed
+- [x] `MindServiceTest` wired into the required headless suite
+
+Done gate:
+- [x] Headless suite passes (14 tests)
+- [ ] Manual desktop confirmation that thoughts and animations feel right
+
+### Plan 12B: Thinking model and things left for the buddy
+
+Status: `needs owner decision`
+
+See `PLAN12_AUTONOMOUS_MIND.md` ("Not yet built"). Blocked on where the model runs.
+
 ## Follow-Up Backlog (Populate During Testing)
 
 - [x] Fix Plan 5 gate runner to auto-launch runtime + vertical-slice sessions

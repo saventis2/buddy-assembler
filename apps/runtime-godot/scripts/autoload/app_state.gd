@@ -19,6 +19,7 @@ const SERVICE_PATHS := {
     "economy": "res://scripts/services/economy_service.gd",
     "world": "res://scripts/services/world_service.gd",
     "report": "res://scripts/services/report_service.gd",
+    "mind": "res://scripts/services/mind_service.gd",
 }
 
 var settings := {}
@@ -328,6 +329,40 @@ func tick_world_events(now_unix: int) -> Dictionary:
         flush()
     var prompt = result.get("prompt", {})
     return prompt if typeof(prompt) == TYPE_DICTIONARY else {}
+
+
+# Lets the buddy make any self-directed decisions that have come due
+# (including ones from while the app was closed). Returns the resulting
+# journal events, oldest first; empty when nothing was due or autonomy is off.
+func tick_mind(now_unix: int) -> Array:
+    if not bool(settings.get("autonomyEnabled", true)):
+        return []
+    var npcs: Array = []
+    var world_variant = world_state.get("world", null)
+    if typeof(world_variant) == TYPE_DICTIONARY:
+        var npcs_variant = (world_variant as Dictionary).get("npcs", [])
+        if typeof(npcs_variant) == TYPE_ARRAY:
+            npcs = npcs_variant
+    var context := {"is_night": _is_night(), "top_trait": ""}
+    var identity_ctx = _call_service_with_fallback("identity", "get_context", [profile], {})
+    if typeof(identity_ctx) == TYPE_DICTIONARY:
+        context["top_trait"] = str(identity_ctx.get("top_trait", ""))
+    var result = _call_service_with_fallback("mind", "tick", [profile, npcs, now_unix, context], {})
+    if typeof(result) != TYPE_DICTIONARY:
+        return []
+    var events = result.get("events", [])
+    if typeof(events) != TYPE_ARRAY or (events as Array).is_empty():
+        return []
+    var next_profile = result.get("profile", null)
+    if typeof(next_profile) == TYPE_DICTIONARY:
+        profile = next_profile
+        flush()
+    return events
+
+
+func get_mind_journal(limit: int = 5) -> Array:
+    var journal = _call_service_with_fallback("mind", "get_journal", [profile, limit], [])
+    return journal if typeof(journal) == TYPE_ARRAY else []
 
 
 func get_world_snapshot() -> Dictionary:
@@ -808,6 +843,7 @@ func _ensure_profile_modules(input_profile: Dictionary) -> Dictionary:
     merged = _call_profile_service("mood", "ensure_profile", [merged], false)
     merged = _call_profile_service("bond", "ensure_profile", [merged], false)
     merged = _call_profile_service("growth", "ensure_profile", [merged], false)
+    merged = _call_profile_service("mind", "ensure_profile", [merged], false)
     return merged
 
 
@@ -1064,6 +1100,7 @@ func _default_settings() -> Dictionary:
         "quietModeStrictness": "balanced",
         "chatTextSize": "m",
         "continuityDigestEnabled": true,
+        "autonomyEnabled": true,
         "supportHintsEnabled": true,
         "productivityOptIn": false,
         "focusCelebrateMinutes": 20,

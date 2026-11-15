@@ -9,6 +9,21 @@ Updated: 2026-04-23 (Plan 9 inventory/progression/drop coupling)
 > Execution todo queue now tracked in:
 > `BUDDY_TODO_EXECUTION_QUEUE.md`
 
+## Plan 12A (Autonomous Mind, offline) - 2026-11-15
+
+- [done] `mind_service.gd`: unprompted decisions every 10 min (rest / visit / explore / tend home / reflect)
+- [done] Drives reuse mood modifiers; per-subject feelings learned from each experience
+- [done] Catch-up of decisions missed while closed (capped at 8)
+- [done] First-person journal (`/journal`), spoken thought + acted-out animation, silent in quiet hours
+- [done] `autonomyEnabled` setting (default on); `MindServiceTest` (8 cases) in required headless suite
+- [open] Language-model thinker, notes left for the buddy, visible places: see `PLAN12_AUTONOMOUS_MIND.md`
+
+## Integration (2026-11-15)
+
+- [done] `feature-to-next-pass` (Stats/Inventory/Wardrobe, economy tuning, WZ item bindings) merged with `main` (Gate 0, gate authority, tooling split)
+- [done] Required headless suite green on pinned Godot 4.2.2 (14 tests); Python lint/type/test and content/shipping validators green
+- [open] Windows export + RC scenario suite on the merged build not yet re-run
+
 ## Buddy Milestone 3 (World Layer Stub — 2026-04-20)
 
 - [done] Added manifest-driven world contract fields (`home`, `npcs`, `quests`, `encounters`)

@@ -2098,6 +2098,9 @@ func _on_tick_timer_timeout() -> void:
                     _last_event_id = event_id
                     AppState.record_event_trigger(event_id, action_id)
 
+    if not _is_paused:
+        _apply_mind_events(AppState.tick_mind(int(now_unix)), context)
+
     var action := _engine.tick(now_unix, context)
     var new_state := str(action.get("id", "idle"))
     if _is_paused:
@@ -2114,6 +2117,43 @@ func _on_tick_timer_timeout() -> void:
     _refresh_telemetry()
     if _state == "idle":
         _maybe_show_bond_phrase()
+
+
+# The buddy's own decisions. The latest one is acted out (unless something
+# more urgent already claimed this tick) and spoken, except in quiet hours
+# where it only goes in the journal.
+func _apply_mind_events(events: Array, context: Dictionary) -> void:
+    if events.is_empty():
+        return
+    var latest_variant = events[events.size() - 1]
+    if typeof(latest_variant) != TYPE_DICTIONARY:
+        return
+    var latest: Dictionary = latest_variant
+    var action_id := str(latest.get("action", ""))
+    var action_allowed := _allowed_actions.is_empty() or _allowed_actions.has(action_id)
+    if action_id != "" and action_allowed and not context.has("forced_action"):
+        context["forced_action"] = action_id
+    if AppState.is_quiet_hours_now():
+        return
+    var line := str(latest.get("text", ""))
+    if events.size() > 1:
+        line = "%s (I did %d things while you were away. /journal has the rest.)" % [line, events.size()]
+    _buddy_say(line)
+
+
+func _build_journal_summary() -> String:
+    var entries := AppState.get_mind_journal(5)
+    if entries.is_empty():
+        return "My journal is empty so far. Give me a little time."
+    var lines: Array[String] = []
+    for entry_variant in entries:
+        if typeof(entry_variant) != TYPE_DICTIONARY:
+            continue
+        var entry: Dictionary = entry_variant
+        var stamp := Time.get_datetime_string_from_unix_time(int(entry.get("t", 0)), true)
+        lines.append("%s UTC: %s" % [stamp.substr(5, 11), str(entry.get("text", ""))])
+    return "
+".join(lines)
 
 
 func _is_night() -> bool:
@@ -3188,7 +3228,7 @@ func _execute_chat_command(command: String, params: Dictionary) -> Dictionary:
         return _action_result(
             true,
             "command.help",
-            "Commands: /help /status /pending /mode home|overlay /reward /world engage|skip|complete /quiet lenient|balanced|strict /freq low|normal|high /dnd <minutes|off> /chat close|clear [confirm]|text m|l /memory /remember <note> /forget <id> [confirm] /snapshot /cadence /debug chat /settings-check /preset cozy|balanced|deep|idle /settings reset [confirm]|undo",
+            "Commands: /help /status /pending /mode home|overlay /reward /world engage|skip|complete /quiet lenient|balanced|strict /freq low|normal|high /dnd <minutes|off> /chat close|clear [confirm]|text m|l /memory /journal /remember <note> /forget <id> [confirm] /snapshot /cadence /debug chat /settings-check /preset cozy|balanced|deep|idle /settings reset [confirm]|undo",
             "ok"
         )
     if command == "status":
@@ -3295,6 +3335,8 @@ func _execute_chat_command(command: String, params: Dictionary) -> Dictionary:
         return _action_result(false, "command.chat", "Unknown chat action.", "invalid_arg")
     if command == "memory":
         return _action_result(true, "command.memory", _build_memory_summary(), "ok")
+    if command == "journal":
+        return _action_result(true, "command.journal", _build_journal_summary(), "ok")
     if command == "remember":
         var note := str(params.get("note", "")).strip_edges()
         if note == "":
