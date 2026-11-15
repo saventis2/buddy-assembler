@@ -360,6 +360,21 @@ func tick_mind(now_unix: int) -> Array:
     return events
 
 
+# Stores the thinking model's wording for a decision already in the journal.
+func apply_mind_thought(decision_unix: int, thought: String, want: String) -> void:
+    var result = _call_service_with_fallback(
+        "mind", "apply_thought", [profile, decision_unix, thought, want], null
+    )
+    if typeof(result) == TYPE_DICTIONARY:
+        profile = result
+        flush()
+
+
+func get_mind_preferences() -> Dictionary:
+    var preferences = _call_service_with_fallback("mind", "get_preferences", [profile], {})
+    return preferences if typeof(preferences) == TYPE_DICTIONARY else {}
+
+
 func get_mind_journal(limit: int = 5) -> Array:
     var journal = _call_service_with_fallback("mind", "get_journal", [profile, limit], [])
     return journal if typeof(journal) == TYPE_ARRAY else []
@@ -1101,6 +1116,9 @@ func _default_settings() -> Dictionary:
         "chatTextSize": "m",
         "continuityDigestEnabled": true,
         "autonomyEnabled": true,
+        "mindModelEnabled": true,
+        "mindModelUrl": "http://127.0.0.1:11434",
+        "mindModelName": "gemma3:4b",
         "supportHintsEnabled": true,
         "productivityOptIn": false,
         "focusCelebrateMinutes": 20,

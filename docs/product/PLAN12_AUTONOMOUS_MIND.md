@@ -39,17 +39,56 @@ nothing here is copied from it.
   so tests replay exactly. Covered by `MindServiceTest` (8 cases) in the
   required headless suite.
 
-No network, no model, no new dependency. `DEFERRED.md` still holds: there is
-no LLM integration in the runtime.
+Plan 12A on its own needs no network, no model and no new dependency.
+
+## Plan 12B (landed): thinking model via local Ollama
+
+`apps/runtime-godot/scripts/services/mind_thinker.gd`, owner decision
+2026-11-15: the model runs in a local Ollama server.
+
+- **What the model does.** After each live decision the buddy sends a small
+  fact sheet (what it did, with whom or where, how it felt, its favourite so
+  far, its last few journal lines) to Ollama `POST /api/chat`. The reply is
+  `{"thought": ..., "want": ...}`. The thought replaces the template wording
+  in the journal and is what the buddy says. `want` is one of the five
+  intents and gives that intent a one-off bonus in the next decision, so the
+  model steers what the buddy does next without being able to do anything
+  the mind service could not already do.
+- **Always optional.** If Ollama is not running, times out (45 s), answers
+  with an error, or sends something unusable, the buddy uses the built-in
+  wording. `/journal` ends with a status line such as
+  `Thinking model: gemma3:4b, unreachable (result 2)`.
+- **Settings** (`user://settings.json`):
+  - `mindModelEnabled` (default `true`)
+  - `mindModelUrl` (default `http://127.0.0.1:11434`; only the scheme, host
+    and port are used)
+  - `mindModelName` (default `gemma3:4b`)
+- **Setup.** Install Ollama, then `ollama pull gemma3:4b`. On a CPU-only
+  machine use `gemma3:1b` and set `mindModelName` to match.
+- **Why `gemma3:4b`.** About 3.4 GB and not a "thinking" model, so there is
+  no reasoning text that can leak into the reply. Most small models released
+  in 2026 are thinking models. This choice is from published model listings,
+  not from our own side-by-side testing. Gemma has its own terms of use; the
+  app only names the model, it does not ship it.
+- **Reply handling.** The reply is treated as untrusted text. The request
+  asks Ollama to enforce a JSON schema, and the reply is validated again on
+  arrival: size capped at 64 KB, `thought` reduced to one plain line of at
+  most 160 characters with brackets, angle brackets, control characters and
+  invisible or direction-changing characters removed, `want` dropped unless
+  it is a known intent. Redirects are not followed.
+- **What leaves the machine.** Nothing, with the default URL. The fact sheet
+  holds only the buddy's own state and NPC names from the content pack; it
+  never includes user notes or anything typed in chat.
+- **Tests.** `MindThinkerTest` (9 cases) in the required headless suite, and
+  a manual end-to-end run of the real overlay against a stand-in server
+  (good reply, garbage reply, server error, no server).
+- **Not yet verified against a real Ollama.** No Ollama server was reachable
+  when this was built, so the wording quality of `gemma3:4b` and its
+  response time on the target machines are untested.
 
 ## Not yet built
 
-- **A thinking model.** Thoughts are templates. Swapping in a language model
-  for the journal voice and for choosing among intents is the step that makes
-  this feel like a mind rather than a schedule. It reopens the "no LLM in V1"
-  fence in `DEFERRED.md` and needs an owner decision on where the model runs
-  (local Ollama on the LAN vs a hosted API), plus prompt-injection handling
-  for anything the user leaves for the buddy to read.
+- **Side-by-side model comparison** on the real machines.
 - **Leaving things for the buddy.** Notes or pictures the buddy reads later,
   on its own clock, and remembers the giver by.
 - **A visible world.** Places are names only; the home scene does not change

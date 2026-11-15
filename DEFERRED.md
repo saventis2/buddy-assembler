@@ -5,7 +5,10 @@ unless the V1 exit criteria in `PR_PLAN.md` are signed off.
 
 ## Product scope fences
 
-- Free-form AI chat (no LLM integration in V1).
+- Free-form AI chat. (Reopened in part on 2026-11-15: the buddy may use an
+  optional local Ollama model to word its own journal thoughts and say what
+  it wants to do next; see `docs/product/PLAN12_AUTONOMOUS_MIND.md`. The
+  model does not answer the user, and chat stays command-driven.)
 - Generalized plugin / runtime scripting surface.
 - Multi-character world simulation beyond the existing single-companion +
   optional visitor pattern.

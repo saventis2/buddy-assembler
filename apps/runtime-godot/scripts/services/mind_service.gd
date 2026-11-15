@@ -13,6 +13,8 @@ const DECISION_INTERVAL_SECONDS := 600
 const MAX_CATCHUP_DECISIONS := 8
 const JOURNAL_LIMIT := 40
 const FEELING_MEMORY := 0.85
+const WISH_BONUS := 0.35
+const MAX_THOUGHT_CHARS := 200
 const INTENTS := ["rest", "visit", "explore", "tend_home", "reflect"]
 const INTENT_ACTIONS := {
 	"rest": "sleep",
@@ -33,6 +35,7 @@ const MIND_DEFAULTS := {
 	"decision_count": 0,
 	"restlessness": 0.4,
 	"last_intent": "",
+	"wish": "",
 	"feelings": {},
 	"journal": [],
 }
@@ -88,6 +91,35 @@ func tick(profile: Dictionary, npcs: Array, now_unix: int, context: Dictionary) 
 	return {"profile": merged, "events": events}
 
 
+# Replaces the template wording of the decision made at `decision_unix` with
+# the buddy's own words, and records what it said it wants to do next. Both
+# inputs come from a language model, so they are re-checked here: the thought
+# must be non-empty and the wish must be one of the known intents.
+func apply_thought(profile: Dictionary, decision_unix: int, thought: String, want: String) -> Dictionary:
+	var merged := ensure_profile(profile)
+	var mind: Dictionary = merged["mind"]
+	var journal: Array = mind["journal"]
+	var text := thought.strip_edges()
+	if text == "" or text.length() > MAX_THOUGHT_CHARS:
+		return merged
+	for index in range(journal.size() - 1, -1, -1):
+		var entry_variant = journal[index]
+		if typeof(entry_variant) != TYPE_DICTIONARY:
+			continue
+		var entry: Dictionary = entry_variant
+		if int(entry.get("t", 0)) != decision_unix:
+			continue
+		entry["text"] = text
+		entry["voiced"] = true
+		journal[index] = entry
+		if INTENTS.has(want):
+			mind["wish"] = want
+		break
+	mind["journal"] = journal
+	merged["mind"] = mind
+	return merged
+
+
 func get_journal(profile: Dictionary, limit: int = 5) -> Array:
 	var journal: Array = ensure_profile(profile)["mind"]["journal"]
 	if limit <= 0 or journal.size() <= limit:
@@ -134,6 +166,12 @@ func _decide(merged: Dictionary, npcs: Array, decision_unix: int, context: Dicti
 		"tend_home": (1.0 - float(mods["comfort"])) * 1.0,
 		"reflect": 0.25 + (0.3 if count > 0 and count % 5 == 4 else 0.0),
 	}
+	# Something the buddy said it felt like doing next (see apply_thought).
+	# It nudges one decision and is then spent, whether or not it won.
+	var wish := str(mind.get("wish", ""))
+	if INTENTS.has(wish):
+		scores[wish] = float(scores[wish]) + WISH_BONUS
+	mind["wish"] = ""
 	if subjects.is_empty():
 		scores["visit"] = 0.0
 	if str(context.get("top_trait", "")) == "curiosity":

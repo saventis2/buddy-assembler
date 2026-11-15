@@ -16,7 +16,17 @@ Updated: 2026-04-23 (Plan 9 inventory/progression/drop coupling)
 - [done] Catch-up of decisions missed while closed (capped at 8)
 - [done] First-person journal (`/journal`), spoken thought + acted-out animation, silent in quiet hours
 - [done] `autonomyEnabled` setting (default on); `MindServiceTest` (8 cases) in required headless suite
-- [open] Language-model thinker, notes left for the buddy, visible places: see `PLAN12_AUTONOMOUS_MIND.md`
+- [open] Notes left for the buddy, visible places: see `PLAN12_AUTONOMOUS_MIND.md`
+
+## Plan 12B (Thinking model via local Ollama) - 2026-11-15
+
+- [done] `mind_thinker.gd`: request builder, strict reply parser and sanitiser
+- [done] Overlay sends each live decision to Ollama; reply rewrites the journal entry and is spoken
+- [done] Model's `want` gives a one-off bonus to the next decision
+- [done] Silent fallback to built-in wording when Ollama is absent or misbehaves
+- [done] Settings `mindModelEnabled` / `mindModelUrl` / `mindModelName` (default `gemma3:4b`)
+- [done] `MindThinkerTest` (9 cases) in required headless suite; end-to-end run against a stand-in server
+- [open] Run against a real Ollama server and judge wording and latency
 
 ## Integration (2026-11-15)
 

@@ -242,11 +242,22 @@ Done gate:
 - [x] Headless suite passes (14 tests)
 - [ ] Manual desktop confirmation that thoughts and animations feel right
 
-### Plan 12B: Thinking model and things left for the buddy
+### Plan 12B: Thinking model via local Ollama
 
-Status: `needs owner decision`
+Status: `done` (pending a run against a real Ollama server)
 
-See `PLAN12_AUTONOMOUS_MIND.md` ("Not yet built"). Blocked on where the model runs.
+Tasks:
+- [x] Request builder, reply parser and sanitiser (`mind_thinker.gd`)
+- [x] Async call from the overlay with silent fallback
+- [x] Model `want` nudges the next decision
+- [x] `MindThinkerTest` wired into the required headless suite
+- [ ] Confirm wording and latency with `gemma3:4b` on a real Ollama server
+
+### Plan 12C: Things left for the buddy, visible places
+
+Status: `not started`
+
+See `PLAN12_AUTONOMOUS_MIND.md` ("Not yet built").
 
 ## Follow-Up Backlog (Populate During Testing)
 

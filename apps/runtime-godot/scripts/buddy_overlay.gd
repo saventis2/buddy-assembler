@@ -273,6 +273,7 @@ const ProductivityTracker = preload("res://scripts/utility/productivity_tracker.
 const PromptCadence = preload("res://scripts/utility/prompt_cadence.gd")
 const ManualVerificationReport = preload("res://scripts/utility/manual_verification_report.gd")
 const PortableBuddyFallback = preload("res://scripts/visual/portable_buddy_fallback.gd")
+const MindThinker = preload("res://scripts/services/mind_thinker.gd")
 const PORTABLE_FALLBACK_TEXTURE := preload("res://content/core_pack/character/idle.png")
 
 @onready var tick_timer: Timer = $TickTimer
@@ -363,6 +364,9 @@ var _prompt_cadence := PromptCadence.new()
 var _manual_verification_report := ManualVerificationReport.new()
 var _state := "idle"
 var _is_paused := false
+var _mind_http: HTTPRequest = null
+var _mind_pending := {}
+var _mind_model_status := "not tried yet"
 var _dragging := false
 var _drag_offset := Vector2i.ZERO
 var _bob_time := 0.0
@@ -2138,18 +2142,82 @@ func _apply_mind_events(events: Array, context: Dictionary) -> void:
     var action_unlocked := unlocked.is_empty() or unlocked.has(action_id)
     if action_id != "" and action_allowed and action_unlocked and not context.has("forced_action"):
         context["forced_action"] = action_id
-    if AppState.is_quiet_hours_now():
-        return
-    var line := str(latest.get("text", ""))
+    var suffix := ""
     if events.size() > 1:
-        line = "%s (I did %d things while you were away. /journal has the rest.)" % [line, events.size()]
-    _buddy_say(line)
+        suffix = " (I did %d things while you were away. /journal has the rest.)" % events.size()
+    if _request_mind_thought(latest, suffix):
+        return
+    _say_mind_line(str(latest.get("text", "")), suffix)
+
+
+func _say_mind_line(line: String, suffix: String) -> void:
+    if line == "" or AppState.is_quiet_hours_now() or _is_dnd_active():
+        return
+    _buddy_say(line + suffix)
+
+
+# Asks the local thinking model to put the decision into the buddy's own
+# words. Returns false when no request was started (model off, bad URL, or
+# one already in flight); the caller then speaks the built-in wording.
+func _request_mind_thought(event: Dictionary, suffix: String) -> bool:
+    if not bool(AppState.settings.get("mindModelEnabled", true)):
+        _mind_model_status = "off"
+        return false
+    var url := MindThinker.endpoint(str(AppState.settings.get("mindModelUrl", MindThinker.DEFAULT_URL)))
+    if url == "":
+        _mind_model_status = "invalid mindModelUrl"
+        return false
+    if not _mind_pending.is_empty():
+        return false
+    if _mind_http == null:
+        _mind_http = HTTPRequest.new()
+        _mind_http.timeout = MindThinker.REQUEST_TIMEOUT_SECONDS
+        _mind_http.body_size_limit = MindThinker.MAX_REPLY_BYTES
+        _mind_http.max_redirects = 0
+        _mind_http.request_completed.connect(_on_mind_thought_completed)
+        add_child(_mind_http)
+    var recent: Array = []
+    for entry_variant in AppState.get_mind_journal(5):
+        if typeof(entry_variant) != TYPE_DICTIONARY:
+            continue
+        var entry: Dictionary = entry_variant
+        if int(entry.get("t", 0)) != int(event.get("t", 0)):
+            recent.append(str(entry.get("text", "")))
+    var favourite := str(AppState.get_mind_preferences().get("favourite", "")).get_slice(":", 1)
+    var body := MindThinker.build_request(
+        str(AppState.settings.get("mindModelName", MindThinker.DEFAULT_MODEL)), event, recent, favourite
+    )
+    var error := _mind_http.request(url, ["Content-Type: application/json"], HTTPClient.METHOD_POST, body)
+    if error != OK:
+        _mind_model_status = "could not start request (%d)" % error
+        return false
+    _mind_pending = {"t": int(event.get("t", 0)), "fallback": str(event.get("text", "")), "suffix": suffix}
+    return true
+
+
+func _on_mind_thought_completed(result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
+    var pending := _mind_pending
+    _mind_pending = {}
+    var line := str(pending.get("fallback", ""))
+    if result != HTTPRequest.RESULT_SUCCESS:
+        _mind_model_status = "unreachable (result %d)" % result
+    elif response_code != 200:
+        _mind_model_status = "server answered HTTP %d" % response_code
+    else:
+        var reply := MindThinker.parse_reply(body.get_string_from_utf8())
+        if bool(reply.get("ok", false)):
+            _mind_model_status = "ok"
+            line = str(reply.get("thought", ""))
+            AppState.apply_mind_thought(int(pending.get("t", 0)), line, str(reply.get("want", "")))
+        else:
+            _mind_model_status = "unusable reply (%s)" % str(reply.get("reason", ""))
+    _say_mind_line(line, str(pending.get("suffix", "")))
 
 
 func _build_journal_summary() -> String:
     var entries := AppState.get_mind_journal(5)
     if entries.is_empty():
-        return "My journal is empty so far. Give me a little time."
+        return "My journal is empty so far. Give me a little time. (Thinking model: %s)" % _mind_model_summary()
     var lines: Array[String] = []
     for entry_variant in entries:
         if typeof(entry_variant) != TYPE_DICTIONARY:
@@ -2157,8 +2225,13 @@ func _build_journal_summary() -> String:
         var entry: Dictionary = entry_variant
         var stamp := Time.get_datetime_string_from_unix_time(int(entry.get("t", 0)), true)
         lines.append("%s UTC: %s" % [stamp.substr(5, 11), str(entry.get("text", ""))])
-    return "
-".join(lines)
+    lines.append("Thinking model: %s" % _mind_model_summary())
+    return "\n".join(lines)
+
+
+func _mind_model_summary() -> String:
+    var model := MindThinker.model_name(str(AppState.settings.get("mindModelName", MindThinker.DEFAULT_MODEL)))
+    return "%s, %s" % [model, _mind_model_status]
 
 
 func _is_night() -> bool:

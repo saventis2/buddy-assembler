@@ -14,6 +14,7 @@
     {"id": "prompt-cadence", "scene": "res://tests/PromptCadenceTest.tscn", "pass_marker": "prompt_cadence_test: PASS (3 cases)"},
     {"id": "chat-command-router", "scene": "res://tests/ChatCommandRouterTest.tscn", "pass_marker": "chat_command_router_test: PASS (14 cases)"},
     {"id": "mind-service", "scene": "res://tests/MindServiceTest.tscn", "pass_marker": "mind_service_test: PASS (8 cases)"},
+    {"id": "mind-thinker", "scene": "res://tests/MindThinkerTest.tscn", "pass_marker": "mind_thinker_test: PASS (9 cases)"},
     {"id": "manual-verification-report", "scene": "res://tests/ManualVerificationReportTest.tscn", "pass_marker": "manual_verification_report_test: PASS (2 cases)"}
   ]
 }
