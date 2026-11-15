@@ -75,12 +75,27 @@ const MAPLE_LAYOUT_WARDROBE := {
     "max_screen_fraction": [0.34, 0.62],
 }
 const MAPLE_LAYOUT_REBUILD_MENU := {
-    "base_size": Vector2i(660, 440),
-    "min_size": Vector2i(660, 440),
+    "base_size": Vector2i(660, 490),
+    "min_size": Vector2i(660, 490),
     "offset": Vector2i(96, 96),
     "margins": [12, 10, 12, 12],
 }
 const INVENTORY_SLOT_PX := 40
+const PAPER_DOLL_SLOTS := [
+    {"id": "hat", "label": "Hat", "pos": Vector2(0, 0)},
+    {"id": "face_accessory", "label": "Face", "pos": Vector2(0, 44)},
+    {"id": "eye_accessory", "label": "Eyes", "pos": Vector2(0, 88)},
+    {"id": "earrings", "label": "Ears", "pos": Vector2(0, 132)},
+    {"id": "cape", "label": "Cape", "pos": Vector2(196, 0)},
+    {"id": "top", "label": "Top", "pos": Vector2(196, 44)},
+    {"id": "bottom", "label": "Legs", "pos": Vector2(196, 88)},
+    {"id": "gloves", "label": "Hands", "pos": Vector2(196, 132)},
+    {"id": "weapon", "label": "Weapon", "pos": Vector2(0, 176)},
+    {"id": "shield", "label": "Shield", "pos": Vector2(49, 176)},
+    {"id": "overall", "label": "Outfit", "pos": Vector2(98, 176)},
+    {"id": "shoes", "label": "Shoes", "pos": Vector2(147, 176)},
+    {"id": "pendant1", "label": "Neck", "pos": Vector2(196, 176)},
+]
 const INVENTORY_SLOT_COLUMNS := 8
 const INVENTORY_MIN_SLOTS := 48
 const RARITY_COLORS := {
@@ -541,6 +556,10 @@ var _menu_rebuild_tabs := {}
 var _menu_rebuild_empty_label: Label = null
 var _menu_rebuild_slot_buttons_by_instance := {}
 var _menu_rebuild_selected_instance_id := -1
+var _menu_rebuild_doll: Control = null
+var _menu_rebuild_doll_preview: TextureRect = null
+var _menu_rebuild_doll_slots := {}      # slot id -> Button
+var _menu_rebuild_slot_filter := ""     # slot id the item grid is filtered to, or ""
 
 
 func _ready() -> void:
@@ -1542,7 +1561,44 @@ func _configure_menu_rebuild_window() -> void:
     icon_frame.add_child(icon)
     _menu_rebuild_icon = icon
 
+    _menu_rebuild_doll = Control.new()
+    _menu_rebuild_doll.custom_minimum_size = Vector2(236, 216)
+    _menu_rebuild_doll.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+    _menu_rebuild_doll.visible = false
+    detail_vbox.add_child(_menu_rebuild_doll)
+    var doll_preview := TextureRect.new()
+    doll_preview.position = Vector2(44, 0)
+    doll_preview.size = Vector2(148, 172)
+    doll_preview.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+    doll_preview.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+    doll_preview.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+    doll_preview.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    _menu_rebuild_doll.add_child(doll_preview)
+    _menu_rebuild_doll_preview = doll_preview
+    _menu_rebuild_doll_slots.clear()
+    for entry_variant in PAPER_DOLL_SLOTS:
+        var entry: Dictionary = entry_variant
+        var doll_slot_id: String = str(entry.get("id", ""))
+        var doll_btn := Button.new()
+        doll_btn.position = entry.get("pos", Vector2.ZERO)
+        doll_btn.size = Vector2(40, 40)
+        doll_btn.custom_minimum_size = Vector2(40, 40)
+        doll_btn.expand_icon = true
+        doll_btn.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+        doll_btn.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+        doll_btn.clip_text = true
+        doll_btn.add_theme_font_size_override("font_size", 9)
+        for color_name in ["font_color", "font_hover_color", "font_pressed_color"]:
+            doll_btn.add_theme_color_override(color_name, Color(0.35, 0.32, 0.27))
+        doll_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+        _menu_rebuild_doll.add_child(doll_btn)
+        _menu_rebuild_doll_slots[doll_slot_id] = doll_btn
+        doll_btn.pressed.connect(func() -> void:
+            _on_paper_doll_slot_pressed(doll_slot_id)
+        )
+
     var detail := RichTextLabel.new()
+    detail.custom_minimum_size = Vector2(0, 76)
     detail.size_flags_vertical = Control.SIZE_EXPAND_FILL
     detail.bbcode_enabled = true
     detail.fit_content = false
@@ -1651,6 +1707,75 @@ func _layout_rebuild_menu_window() -> void:
     _menu_rebuild_window.title = "Inventory" if _menu_rebuild_mode == "inventory" else "Wardrobe"
 
 
+func _on_paper_doll_slot_pressed(slot_id: String) -> void:
+    var snapshot := AppState.get_inventory_snapshot()
+    var equipped_variant = snapshot.get("equipped_slots", {})
+    var equipped_slots: Dictionary = equipped_variant if typeof(equipped_variant) == TYPE_DICTIONARY else {}
+    var worn_id: int = int(equipped_slots.get(slot_id, -1))
+    if worn_id > 0:
+        _menu_rebuild_selected_instance_id = worn_id
+        _inventory_selected_instance_id = worn_id
+        _menu_rebuild_slot_filter = ""
+    else:
+        _menu_rebuild_slot_filter = "" if _menu_rebuild_slot_filter == slot_id else slot_id
+    _refresh_rebuild_menu()
+
+
+func _refresh_rebuild_paper_doll(equipped_slots: Dictionary) -> void:
+    if _menu_rebuild_doll == null:
+        return
+    var is_wardrobe := _menu_rebuild_mode == "wardrobe"
+    _menu_rebuild_doll.visible = is_wardrobe
+    if _menu_rebuild_icon != null and _menu_rebuild_icon.get_parent() != null:
+        _menu_rebuild_icon.get_parent().visible = not is_wardrobe
+    if not is_wardrobe:
+        return
+    if _menu_rebuild_doll_preview != null:
+        var preview_tex: Texture2D = null
+        var idle_variant = _assembled_state_texture_overrides.get("idle")
+        if typeof(idle_variant) == TYPE_DICTIONARY:
+            var frames_variant = (idle_variant as Dictionary).get("frames", [])
+            if typeof(frames_variant) == TYPE_ARRAY and not (frames_variant as Array).is_empty():
+                preview_tex = (frames_variant as Array)[0] as Texture2D
+        if preview_tex == null:
+            preview_tex = _current_texture
+        if preview_tex == null:
+            preview_tex = PORTABLE_FALLBACK_TEXTURE
+        _menu_rebuild_doll_preview.texture = preview_tex
+    for entry_variant in PAPER_DOLL_SLOTS:
+        var entry: Dictionary = entry_variant
+        var slot_id: String = str(entry.get("id", ""))
+        var label: String = str(entry.get("label", ""))
+        var button := _menu_rebuild_doll_slots.get(slot_id) as Button
+        if button == null:
+            continue
+        var worn_id: int = int(equipped_slots.get(slot_id, -1))
+        var row: Dictionary = _inventory_item_by_instance(worn_id) if worn_id > 0 else {}
+        var occupied := not row.is_empty()
+        if occupied:
+            var item_name: String = str(row.get("name", row.get("id", "Item")))
+            var icon_tex := _resolve_item_overlay_texture(row)
+            button.icon = icon_tex
+            button.text = "" if icon_tex != null else item_name.substr(0, 1).to_upper()
+            button.tooltip_text = "%s: %s\nClick to select it, then Take off." % [label, item_name]
+            button.modulate = Color(1, 1, 1, 1)
+        else:
+            button.icon = null
+            button.text = label
+            button.tooltip_text = "%s: empty\nClick to show items that fit here." % label
+            button.modulate = Color(1, 1, 1, 0.7)
+        var highlight: bool = (worn_id > 0 and worn_id == _menu_rebuild_selected_instance_id) or _menu_rebuild_slot_filter == slot_id
+        if highlight:
+            button.add_theme_stylebox_override("normal", MapleTheme.slot(true))
+            button.add_theme_stylebox_override("hover", MapleTheme.slot(true))
+            button.add_theme_stylebox_override("pressed", MapleTheme.slot(true))
+        else:
+            button.add_theme_stylebox_override("normal", MapleTheme.slot(false))
+            button.add_theme_stylebox_override("hover", MapleTheme.flat(MapleTheme.SLOT.lightened(0.25), MapleTheme.FRAME, 3, 2, 2, 2))
+            button.add_theme_stylebox_override("pressed", MapleTheme.slot(true))
+        button.add_theme_stylebox_override("focus", MapleTheme.flat(Color(0, 0, 0, 0), Color(0, 0, 0, 0), 3, 0, 2, 2))
+
+
 func _refresh_rebuild_menu() -> void:
     if not _menu_rebuild_enabled:
         return
@@ -1658,6 +1783,10 @@ func _refresh_rebuild_menu() -> void:
         return
     if not _menu_rebuild_open:
         return
+    if _menu_rebuild_mode != "wardrobe":
+        _menu_rebuild_slot_filter = ""
+    if _menu_rebuild_btn_use != null:
+        _menu_rebuild_btn_use.visible = _menu_rebuild_mode != "wardrobe"
     var snapshot := AppState.get_inventory_snapshot()
     var inv_variant = snapshot.get("inventory", [])
     var inventory: Array = inv_variant if typeof(inv_variant) == TYPE_ARRAY else []
@@ -1681,6 +1810,8 @@ func _refresh_rebuild_menu() -> void:
         var is_equippable := _is_item_equippable(row)
         if _menu_rebuild_mode == "wardrobe":
             if not is_equippable:
+                continue
+            if _menu_rebuild_slot_filter != "" and _item_equip_slot_id(row) != _menu_rebuild_slot_filter:
                 continue
         else:
             if not allowed_categories.has(category):
@@ -1733,7 +1864,12 @@ func _refresh_rebuild_menu() -> void:
         empty_slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
         _menu_rebuild_slot_grid.add_child(empty_slot)
     if _menu_rebuild_empty_label != null:
-        if not visible_ids.is_empty():
+        if _menu_rebuild_mode == "wardrobe" and _menu_rebuild_slot_filter != "":
+            if not visible_ids.is_empty():
+                _menu_rebuild_empty_label.text = "Showing items for one slot. Click that slot again to show everything."
+            else:
+                _menu_rebuild_empty_label.text = "Nothing fits that slot yet. Click the slot again to show everything."
+        elif not visible_ids.is_empty():
             _menu_rebuild_empty_label.text = "Click an item to see it. Double-click to use or wear it."
         elif _menu_rebuild_mode == "wardrobe":
             _menu_rebuild_empty_label.text = "Nothing to wear yet. Gear your buddy finds will show up here."
@@ -1748,6 +1884,7 @@ func _refresh_rebuild_menu() -> void:
         var mode_label := "Inventory" if _menu_rebuild_mode == "inventory" else "Wardrobe"
         _menu_rebuild_header.text = "[b][color=#FFD77A]%s[/color][/b]   [color=#A8E8FF]%d meso[/color]   [color=#9AA3B5]%d shown[/color]" % [mode_label, meso, visible_ids.size()]
     _refresh_rebuild_menu_tab_buttons()
+    _refresh_rebuild_paper_doll(equipped_slots)
     if _menu_rebuild_detail == null or _menu_rebuild_icon == null:
         return
     if selected.is_empty():
@@ -1780,7 +1917,7 @@ func _refresh_rebuild_menu() -> void:
     if _menu_rebuild_btn_use != null:
         _menu_rebuild_btn_use.disabled = not _is_item_usable(selected)
     if _menu_rebuild_btn_equip != null:
-        _menu_rebuild_btn_equip.disabled = not _is_item_equippable(selected)
+        _menu_rebuild_btn_equip.disabled = not _is_item_equippable(selected) or equipped_slot != ""
     if _menu_rebuild_btn_unequip != null:
         _menu_rebuild_btn_unequip.disabled = equipped_slot == ""
 
@@ -4613,6 +4750,10 @@ func _is_item_equippable(item: Dictionary) -> bool:
         return true
     var category := str(item.get("category", "")).to_lower()
     return category in ["gear", "training_items", "evolution_items"]
+
+
+func _item_equip_slot_id(row: Dictionary) -> String:
+    return _normalize_inventory_slot_name(str(row.get("equipSlot", "")))
 
 
 func _is_item_usable(item: Dictionary) -> bool:
