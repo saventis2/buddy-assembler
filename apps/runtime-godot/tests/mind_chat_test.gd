@@ -99,6 +99,16 @@ func _test_hostile_user_text_stays_data() -> Variant:
 		return "the reply reminder must come after what they said"
 	if str(facts.get("your_task", "")) != MindThinker.CHAT_TASK_REMINDER:
 		return "the reply reminder is missing"
+	var with_town: Variant = JSON.parse_string(MindThinker.build_chat_request("m", {}, [], [], "hello", {"places": ["the pond", "x".repeat(200)], "people": ["Mira the mentor"]}))
+	var town_content := str((with_town as Dictionary)["messages"][1]["content"])
+	var town_facts: Variant = JSON.parse_string(town_content)
+	var town: Variant = (town_facts as Dictionary).get("town", null)
+	if typeof(town) != TYPE_DICTIONARY or not (town.get("places", []) as Array).has("the pond") or not (town.get("people", []) as Array).has("Mira the mentor"):
+		return "the town roster is missing from the chat request: %s" % [town_facts]
+	if str((town.get("places", []) as Array)[1]).length() > 43:
+		return "town entries must be length-capped"
+	if town_content.rfind("\"your_task\"") < town_content.rfind("\"town\""):
+		return "the reply reminder must stay last"
 	return null
 
 

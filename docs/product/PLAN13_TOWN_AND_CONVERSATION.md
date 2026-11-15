@@ -36,6 +36,18 @@ Measured with `gemma3:4b` on Ollama 0.40.16:
   reply is still only cleaned text; a larger chat model is the real fix.
 - It tends to return to one favourite place or friend in every reply. A
   fuller journal (and B2 memory) should vary this; not yet measured.
+- Found in use (2026-11-16): an old canned "idle phrase" said a line from a
+  short list every ~18 s, and a filter dressed repeats up as "Let me put that
+  a different way: ...". Both read as a script on loop. While the buddy acts
+  on its own the canned lines are now off (its thoughts replace them); with
+  autonomy off they are limited to one every 5 minutes and respect quiet
+  hours. Repeats are no longer rewritten; unprompted repeats are skipped.
+- Chat now gets every place and person in town. In testing it stopped
+  inventing places on its own (it "had not heard of" the old mill), but it
+  still plays along when the user's question invents someone ("Barnaby at the
+  blacksmith"). A larger chat model is the likely fix.
+- Ollama occasionally answers one request with HTTP 500; a chat line is now
+  retried once before the buddy says its model is not answering.
 
 ## Goal
 

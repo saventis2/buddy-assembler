@@ -488,7 +488,6 @@ var _chat_last_command_id := ""
 var _chat_last_reason_code := ""
 var _chat_last_line_unix := 0
 var _chat_recent_buddy_norm_lines: Array = []
-var _chat_rewrite_cursor := 0
 var _chat_last_followup_turn := -100
 var _chat_memory_tag_counts := {
     "goal": 0,
@@ -1091,7 +1090,7 @@ func _configure_chat_window() -> void:
     var chat_layout_init := _layout_with_skin_size(MAPLE_LAYOUT_CHAT, MAPLE_WINDOW_SKIN_CHAT)
     chat_window.min_size = chat_layout_init["min_size"]
     chat_window.size = chat_layout_init["base_size"]
-    chat_window.title = "Buddy Chat"
+    chat_window.title = _chat_window_title()
     if chat_input != null:
         chat_input.max_length = MindThinker.MAX_USER_TEXT_CHARS
     chat_window.close_requested.connect(func() -> void:
@@ -2497,7 +2496,7 @@ func _request_mind_thought(event: Dictionary, suffix: String) -> bool:
         var entry: Dictionary = entry_variant
         if int(entry.get("t", 0)) != int(event.get("t", 0)):
             recent.append(str(entry.get("text", "")))
-    var favourite := str(AppState.get_mind_preferences().get("favourite", "")).get_slice(":", 1)
+    var favourite: String = str(_mind_favourites().get("favourite", ""))
     var body := MindThinker.build_request(
         str(AppState.settings.get("mindModelName", MindThinker.DEFAULT_MODEL)), event, recent, favourite
     )
@@ -2542,23 +2541,106 @@ func _buddy_name() -> String:
 
 func _chat_about() -> Dictionary:
     var snapshot := AppState.get_telemetry_snapshot()
-    var preferences := AppState.get_mind_preferences()
+    var favourites := _mind_favourites()
     var about := {}
     var buddy_name: String = _buddy_name()
     if buddy_name != "":
         about["name"] = buddy_name
     about["mood"] = str(snapshot.get("mood", "calm"))
     about["doing_now"] = _state
-    about["favourite_so_far"] = _strip_preference_prefix(str(preferences.get("favourite", "")))
-    about["least_favourite"] = _strip_preference_prefix(str(preferences.get("least", "")))
+    about["favourite_so_far"] = str(favourites.get("favourite", ""))
+    about["least_favourite"] = str(favourites.get("least", ""))
+    var mind_variant = AppState.profile.get("mind", null)
+    if typeof(mind_variant) == TYPE_DICTIONARY:
+        var here: String = _place_display_name(str((mind_variant as Dictionary).get("location", "")))
+        if here != "":
+            about["where_you_are"] = here
     return about
 
 
-func _strip_preference_prefix(value: String) -> String:
-    for prefix in ["place:", "npc:", "activity:"]:
-        if value.begins_with(prefix):
-            return value.substr(prefix.length())
-    return value
+func _town_places() -> Array:
+    var places_variant = AppState.get_town().get("places", [])
+    return places_variant if typeof(places_variant) == TYPE_ARRAY else []
+
+
+func _town_place_names() -> Array:
+    var names: Array = []
+    for place_variant in _town_places():
+        if typeof(place_variant) == TYPE_DICTIONARY:
+            var place_name: String = str((place_variant as Dictionary).get("name", "")).strip_edges()
+            if place_name != "":
+                names.append(place_name)
+    return names
+
+
+func _place_display_name(place_id: String) -> String:
+    if place_id == "":
+        return ""
+    for place_variant in _town_places():
+        if typeof(place_variant) == TYPE_DICTIONARY and str((place_variant as Dictionary).get("id", "")) == place_id:
+            return str((place_variant as Dictionary).get("name", place_id))
+    return ""
+
+
+func _town_npcs() -> Array:
+    var world_variant = AppState.world_state.get("world", null)
+    if typeof(world_variant) != TYPE_DICTIONARY:
+        return []
+    var npcs_variant = (world_variant as Dictionary).get("npcs", [])
+    return npcs_variant if typeof(npcs_variant) == TYPE_ARRAY else []
+
+
+# "Mira the mentor" style entries for every town character.
+func _town_people() -> Array:
+    var people: Array = []
+    for npc_variant in _town_npcs():
+        if typeof(npc_variant) != TYPE_DICTIONARY:
+            continue
+        var npc: Dictionary = npc_variant
+        var npc_name: String = str(npc.get("name", "")).strip_edges()
+        if npc_name == "":
+            continue
+        var role: String = str(npc.get("role", "")).strip_edges()
+        people.append("%s the %s" % [npc_name, role] if role != "" else npc_name)
+    return people
+
+
+# Display name for a feelings key such as "place:pond" or "npc:mira".
+func _subject_display_name(subject_id: String) -> String:
+    if subject_id.begins_with("place:"):
+        return _place_display_name(subject_id.trim_prefix("place:"))
+    if subject_id.begins_with("npc:"):
+        var npc_id: String = subject_id.trim_prefix("npc:")
+        for npc_variant in _town_npcs():
+            if typeof(npc_variant) == TYPE_DICTIONARY and str((npc_variant as Dictionary).get("id", "")) == npc_id:
+                return str((npc_variant as Dictionary).get("name", npc_id))
+    return ""
+
+
+# The place or person it likes most and least, by name. Activities and home
+# are left out: "my favourite is skip_stones" is not something it would say.
+func _mind_favourites() -> Dictionary:
+    var feelings: Dictionary = {}
+    var mind_variant = AppState.profile.get("mind", null)
+    if typeof(mind_variant) == TYPE_DICTIONARY and typeof((mind_variant as Dictionary).get("feelings", null)) == TYPE_DICTIONARY:
+        feelings = (mind_variant as Dictionary)["feelings"]
+    var best := ""
+    var worst := ""
+    for key_variant in feelings.keys():
+        var key := str(key_variant)
+        if key == "place:home" or _subject_display_name(key) == "":
+            continue
+        var value := float(feelings[key_variant])
+        if best == "" or value > float(feelings[best]):
+            best = key
+        if worst == "" or value < float(feelings[worst]):
+            worst = key
+    var result := {"favourite": "", "least": ""}
+    if best != "" and float(feelings[best]) > 0.0:
+        result["favourite"] = _subject_display_name(best)
+    if worst != "" and float(feelings[worst]) < 0.0:
+        result["least"] = _subject_display_name(worst)
+    return result
 
 
 func _ensure_chat_http() -> void:
@@ -2594,13 +2676,14 @@ func _start_chat_request(user_text: String) -> bool:
         if typeof(entry_variant) != TYPE_DICTIONARY:
             continue
         recent.append(str((entry_variant as Dictionary).get("text", "")))
-    var body: String = MindThinker.build_chat_request(_chat_model_name(), _chat_about(), recent, _chat_turns, user_text)
+    var town := {"places": _town_place_names(), "people": _town_people()}
+    var body: String = MindThinker.build_chat_request(_chat_model_name(), _chat_about(), recent, _chat_turns, user_text, town)
     var error: int = _chat_http.request(url, ["Content-Type: application/json"], HTTPClient.METHOD_POST, body)
     if error != OK:
         return false
     _chat_turns.append({"who": "them", "text": user_text})
     _trim_chat_turns()
-    _chat_pending = {"kind": "chat"}
+    _chat_pending = {"kind": "chat", "url": url, "body": body, "retried": false}
     return true
 
 
@@ -2640,11 +2723,29 @@ func _maybe_choose_name() -> void:
         _chat_pending = {"kind": "name"}
 
 
+func _retry_chat_request() -> void:
+    if _chat_http == null or str(_chat_pending.get("kind", "")) != "chat":
+        return
+    var url: String = str(_chat_pending.get("url", ""))
+    var body: String = str(_chat_pending.get("body", ""))
+    if url == "" or _chat_http.request(url, ["Content-Type: application/json"], HTTPClient.METHOD_POST, body) != OK:
+        _chat_pending = {}
+        _buddy_say("I can't find my words right now. My thinking model isn't answering. /help lists what I understand without it.")
+
+
 func _on_chat_http_completed(result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
     var pending := _chat_pending
     _chat_pending = {}
     var kind := str(pending.get("kind", ""))
     if result != HTTPRequest.RESULT_SUCCESS or response_code != 200:
+        # Ollama occasionally answers one request with a server error. Try a
+        # chat line once more before telling the user something is wrong.
+        var transient := result != HTTPRequest.RESULT_SUCCESS or response_code >= 500
+        if kind == "chat" and transient and not bool(pending.get("retried", false)):
+            pending["retried"] = true
+            _chat_pending = pending
+            _retry_chat_request.call_deferred()
+            return
         if kind == "chat":
             if result == HTTPRequest.RESULT_SUCCESS and response_code == 404:
                 _buddy_say("I can't find my words: the model %s isn't installed in Ollama. /help lists what I understand without it." % _chat_model_name())
@@ -2673,6 +2774,8 @@ func _on_chat_http_completed(result: int, response_code: int, _headers: PackedSt
             AppState.profile["mind"]["name"] = chosen
             AppState.flush()
             _refresh_settings_menu()
+            if chat_window != null:
+                chat_window.title = _chat_window_title()
             if not AppState.is_quiet_hours_now() and not _is_dnd_active():
                 _buddy_say("I've been thinking about what to call myself. I'm %s." % chosen)
 
@@ -3631,14 +3734,42 @@ func _format_floor_adjust_text(value: float) -> String:
 func _buddy_say(line: String, source_kind: String = "") -> void:
     if line == "":
         return
-    line = _normalize_buddy_reply(line)
+    # Unprompted lines (check-ins, world prompts, idle remarks) are dropped if
+    # they were said recently. Replies to the user are always said as they are.
+    if source_kind in ["support", "world", "idle"] and _was_said_recently(line):
+        return
+    _remember_buddy_line(line)
     _chat_turn_buddy_count += 1
     if not _chat_window_open and (source_kind == "support" or source_kind == "world"):
         _chat_unread_prompt_count += 1
         _refresh_settings_menu()
     _update_balloon_position()
     chat_balloon.show_text(line)
-    _append_chat_line("Buddy", line, "#F4E9CF")
+    _append_chat_line(_speaker_name(), line, "#F4E9CF")
+
+
+func _remember_buddy_line(line: String) -> void:
+    var normalized := _normalize_for_repeat(line)
+    if normalized == "":
+        return
+    _chat_recent_buddy_norm_lines.append(normalized)
+    if _chat_recent_buddy_norm_lines.size() > CHAT_RECENT_REPLY_MAX:
+        _chat_recent_buddy_norm_lines.remove_at(0)
+
+
+func _was_said_recently(line: String) -> bool:
+    var normalized := _normalize_for_repeat(line)
+    return normalized != "" and _chat_recent_buddy_norm_lines.has(normalized)
+
+
+func _speaker_name() -> String:
+    var buddy_name: String = _buddy_name()
+    return buddy_name if buddy_name != "" else "Buddy"
+
+
+func _chat_window_title() -> String:
+    var buddy_name: String = _buddy_name()
+    return "Chat with %s" % buddy_name if buddy_name != "" else "Buddy Chat"
 
 
 func _append_chat_line(speaker: String, text: String, color_hex: String) -> void:
@@ -3987,49 +4118,12 @@ func _should_ask_follow_up(msg: String) -> bool:
     return words.size() <= 3
 
 
-func _normalize_buddy_reply(line: String) -> String:
-    var normalized := _normalize_for_repeat(line)
-    if normalized == "":
-        return line
-    if _chat_recent_buddy_norm_lines.has(normalized) or _contains_recent_repeat_fragment(normalized):
-        line = _rewrite_repetitive_reply(line)
-        normalized = _normalize_for_repeat(line)
-    _chat_recent_buddy_norm_lines.append(normalized)
-    if _chat_recent_buddy_norm_lines.size() > CHAT_RECENT_REPLY_MAX:
-        _chat_recent_buddy_norm_lines.remove_at(0)
-    return line
-
-
-func _rewrite_repetitive_reply(line: String) -> String:
-    var variants := [
-        "Let me put that a different way: %s",
-        "Another angle: %s",
-        "%s (quick reminder)",
-        "%s Let us keep moving.",
-    ]
-    var template := str(variants[_chat_rewrite_cursor % variants.size()])
-    _chat_rewrite_cursor += 1
-    return template % line
-
-
 func _normalize_for_repeat(text: String) -> String:
     var normalized := text.strip_edges().to_lower()
     var punctuation := [".", ",", "!", "?", ":", ";", "(", ")", "[", "]"]
     for token in punctuation:
         normalized = normalized.replace(token, "")
     return normalized
-
-
-func _contains_recent_repeat_fragment(normalized: String) -> bool:
-    if normalized.length() < 18:
-        return false
-    for prior_variant in _chat_recent_buddy_norm_lines:
-        var prior := str(prior_variant)
-        if prior.length() < 18:
-            continue
-        if normalized.begins_with(prior.left(mini(30, prior.length()))):
-            return true
-    return false
 
 
 func _capture_chat_memory(raw_text: String) -> void:
@@ -6815,11 +6909,20 @@ func _read_text_file(path: String) -> String:
     return content
 
 
+const IDLE_PHRASE_MIN_GAP_SECONDS := 300
+
+
 func _maybe_show_bond_phrase() -> void:
+    # With its own mind on, the buddy speaks for itself (a thought every ten
+    # minutes). Canned idle lines on top of that read as a script on repeat.
+    if bool(AppState.settings.get("autonomyEnabled", true)):
+        return
+    if AppState.is_quiet_hours_now() or _is_dnd_active():
+        return
     var now_unix := int(Time.get_unix_time_from_system())
     if _bond_phrase_active:
         return
-    if now_unix - _last_idle_phrase_unix < 18:
+    if now_unix - _last_idle_phrase_unix < IDLE_PHRASE_MIN_GAP_SECONDS:
         return
     var tier := AppState.get_bond_tier()
     var phrases: Variant = tier.get("idle_phrases", null)
@@ -6831,7 +6934,7 @@ func _maybe_show_bond_phrase() -> void:
     _bond_phrase_active = true
     _last_idle_phrase_unix = now_unix
     _update_balloon_position()
-    _buddy_say(phrase)
+    _buddy_say(phrase, "idle")
     await get_tree().create_timer(4.0).timeout
     chat_balloon.hide_bubble()
     _bond_phrase_active = false
