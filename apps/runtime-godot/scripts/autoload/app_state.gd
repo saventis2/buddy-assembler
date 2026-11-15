@@ -382,6 +382,11 @@ func tick_world_events(now_unix: int) -> Dictionary:
 # Lets the buddy make any self-directed decisions that have come due
 # (including ones from while the app was closed). Returns the resulting
 # journal events, oldest first; empty when nothing was due or autonomy is off.
+func get_town() -> Dictionary:
+    var town = _call_service_with_fallback("world", "get_town", [world_state], {})
+    return town if typeof(town) == TYPE_DICTIONARY else {}
+
+
 func tick_mind(now_unix: int) -> Array:
     if not bool(settings.get("autonomyEnabled", true)):
         return []
@@ -391,11 +396,15 @@ func tick_mind(now_unix: int) -> Array:
         var npcs_variant = (world_variant as Dictionary).get("npcs", [])
         if typeof(npcs_variant) == TYPE_ARRAY:
             npcs = npcs_variant
-    var context := {"is_night": _is_night(), "top_trait": ""}
+    var context := {
+        "is_night": _is_night(),
+        "top_trait": "",
+        "hour": int(Time.get_datetime_dict_from_system().get("hour", 12)),
+    }
     var identity_ctx = _call_service_with_fallback("identity", "get_context", [profile], {})
     if typeof(identity_ctx) == TYPE_DICTIONARY:
         context["top_trait"] = str(identity_ctx.get("top_trait", ""))
-    var result = _call_service_with_fallback("mind", "tick", [profile, npcs, now_unix, context], {})
+    var result = _call_service_with_fallback("mind", "tick", [profile, npcs, now_unix, context, get_town()], {})
     if typeof(result) != TYPE_DICTIONARY:
         return []
     var events = result.get("events", [])
@@ -1168,6 +1177,9 @@ func _default_settings() -> Dictionary:
         "mindModelEnabled": true,
         "mindModelUrl": "http://127.0.0.1:11434",
         "mindModelName": "gemma3:4b",
+        "chatModelEnabled": true,
+        "chatBackend": "ollama",
+        "chatModelName": "gemma3:4b",
         "supportHintsEnabled": true,
         "productivityOptIn": false,
         "focusCelebrateMinutes": 20,

@@ -253,6 +253,18 @@ Tasks:
 - [x] `MindThinkerTest` wired into the required headless suite
 - [ ] Confirm wording and latency with `gemma3:4b` on a real Ollama server
 
+### Plan 13: Town and conversation
+
+Status: `in_progress` (see `PLAN13_TOWN_AND_CONVERSATION.md`)
+
+- [x] A1 town as data
+- [x] B1 conversation and self-chosen name
+- [ ] B2 graph memory
+- [ ] A2 town map window
+- [ ] A3 changing town, things you leave
+- [ ] B3 talk changes the buddy
+- [ ] Part C: wants, day plans, projects, nightly reflection, making things
+
 ### Plan 12C: Things left for the buddy, visible places
 
 Status: `not started`

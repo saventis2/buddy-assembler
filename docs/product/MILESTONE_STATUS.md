@@ -18,6 +18,12 @@ Updated: 2026-04-23 (Plan 9 inventory/progression/drop coupling)
 - [done] `autonomyEnabled` setting (default on); `MindServiceTest` (8 cases) in required headless suite
 - [open] Notes left for the buddy, visible places: see `PLAN12_AUTONOMOUS_MIND.md`
 
+## Plan 13 (Town and conversation) - 2026-11-16
+
+- [done] A1 town as data: eight places with hours, activities and residents; the mind picks real places and companions
+- [done] B1 conversation: free chat through the local model, the buddy chooses its own name, "Talks back" setting
+- [open] B2 graph memory, A2 town map, A3 changing town, B3 talk changes the buddy, Part C (wants, plans, reflection, making things)
+
 ## Plan 12B (Thinking model via local Ollama) - 2026-11-15
 
 - [done] `mind_thinker.gd`: request builder, strict reply parser and sanitiser

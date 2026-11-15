@@ -1,5 +1,53 @@
 extends RefCounted
 
+const DEFAULT_TOWN := {
+	"home_place": "home",
+	"places": [
+		{"id": "home", "name": "home", "kind": "home", "opens": 0, "closes": 24, "distance": 0, "residents": [],
+			"activities": [
+				{"id": "nap", "label": "had a nap", "satisfies": "energy"},
+				{"id": "tidy", "label": "tidied up", "satisfies": "comfort"},
+				{"id": "think", "label": "sat and thought", "satisfies": "reflection"},
+			]},
+		{"id": "square", "name": "the square", "kind": "square", "opens": 7, "closes": 22, "distance": 1, "residents": ["pip"],
+			"activities": [
+				{"id": "chat", "label": "stopped to chat", "satisfies": "social"},
+				{"id": "people_watch", "label": "watched people go by", "satisfies": "curiosity"},
+			]},
+		{"id": "cafe", "name": "the cafe", "kind": "cafe", "opens": 8, "closes": 20, "distance": 1, "residents": ["tala"],
+			"activities": [
+				{"id": "tea", "label": "had tea", "satisfies": "comfort"},
+				{"id": "catch_up", "label": "caught up over a drink", "satisfies": "social"},
+			]},
+		{"id": "market", "name": "the market lane", "kind": "shop", "opens": 9, "closes": 18, "distance": 2, "residents": ["rook"],
+			"activities": [
+				{"id": "browse", "label": "browsed the stalls", "satisfies": "curiosity"},
+				{"id": "haggle", "label": "haggled a bit", "satisfies": "social"},
+			]},
+		{"id": "library", "name": "the old library", "kind": "library", "opens": 10, "closes": 19, "distance": 2, "residents": ["quill"],
+			"activities": [
+				{"id": "read", "label": "read for a while", "satisfies": "curiosity"},
+				{"id": "quiet_corner", "label": "found a quiet corner", "satisfies": "comfort"},
+			]},
+		{"id": "pond", "name": "the pond", "kind": "park", "opens": 0, "closes": 24, "distance": 2, "residents": ["mira"],
+			"activities": [
+				{"id": "skip_stones", "label": "skipped stones", "satisfies": "curiosity"},
+				{"id": "sit_by_water", "label": "sat by the water", "satisfies": "comfort"},
+				{"id": "walk_together", "label": "walked the bank", "satisfies": "social"},
+			]},
+		{"id": "garden", "name": "the garden", "kind": "park", "opens": 6, "closes": 21, "distance": 1, "residents": [],
+			"activities": [
+				{"id": "potter", "label": "pottered among the beds", "satisfies": "comfort"},
+				{"id": "look_for_bugs", "label": "looked for beetles", "satisfies": "curiosity"},
+			]},
+		{"id": "hill", "name": "the hill path", "kind": "park", "opens": 0, "closes": 24, "distance": 3, "residents": ["fenn"],
+			"activities": [
+				{"id": "climb", "label": "climbed to the top", "satisfies": "curiosity"},
+				{"id": "watch_sky", "label": "watched the sky", "satisfies": "comfort"},
+			]},
+	],
+}
+
 const DEFAULT_NPCS := [
 	{
 		"id": "mira",
@@ -200,6 +248,16 @@ func ensure_world_state(world_state: Dictionary) -> Dictionary:
 	return merged
 
 
+func get_town(world_state: Dictionary) -> Dictionary:
+	var world: Dictionary = ensure_world_state(world_state)["world"]
+	var town = world.get("town", null)
+	if typeof(town) == TYPE_DICTIONARY:
+		var places = (town as Dictionary).get("places", null)
+		if typeof(places) == TYPE_ARRAY and not (places as Array).is_empty():
+			return town
+	return DEFAULT_TOWN.duplicate(true)
+
+
 func configure_from_manifest(world_state: Dictionary, manifest: Dictionary) -> Dictionary:
 	var merged := ensure_world_state(world_state)
 	var world: Dictionary = merged.get("world", {}).duplicate(true)
@@ -208,6 +266,12 @@ func configure_from_manifest(world_state: Dictionary, manifest: Dictionary) -> D
 	if npcs.is_empty():
 		npcs = DEFAULT_NPCS.duplicate(true)
 	world["npcs"] = npcs
+
+	var manifest_town = manifest.get("town", null)
+	if typeof(manifest_town) == TYPE_DICTIONARY and typeof((manifest_town as Dictionary).get("places", null)) == TYPE_ARRAY and not ((manifest_town as Dictionary)["places"] as Array).is_empty():
+		world["town"] = (manifest_town as Dictionary).duplicate(true)
+	else:
+		world["town"] = DEFAULT_TOWN.duplicate(true)
 
 	var quests := _normalize_quests(manifest.get("quests", []))
 	if quests.is_empty():
