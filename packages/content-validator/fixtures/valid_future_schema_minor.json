@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "schemaSemver": "1.9.0",
+  "id": "future-minor-pack",
+  "name": "Future Minor Pack",
+  "version": "0.0.1",
+  "companion": {
+    "id": "semver-buddy",
+    "displayName": "Semver Buddy",
+    "traits": [
+      "calm"
+    ]
+  },
+  "idleActions": [
+    "idle"
+  ],
+  "reactionActions": [
+    "happy"
+  ],
+  "encounterActions": [],
+  "eventRules": [
+    {
+      "id": "wave",
+      "action": "happy",
+      "weight": 1.0,
+      "cooldownSeconds": 30
+    }
+  ]
+}
