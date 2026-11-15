@@ -106,10 +106,23 @@ const ASSEMBLER_STATE_ACTION_MAP := {
     "wander": "walk1",
     "happy": "alert",
     "gift": "alert",
-    "visitor": "alert",
+    # The buddy walks across the screen in this state, so it needs the walk
+    # cycle, not a standing pose.
+    "visitor": "walk1",
     "sit": "sit",
     "sleep": "prone",
 }
+# Frames per source action and how long each is held, as in the source data.
+const ASSEMBLER_ACTION_FRAME_COUNT := {"stand1": 3, "walk1": 4, "alert": 3, "sit": 1, "prone": 1}
+const ASSEMBLER_ACTION_FRAME_SECONDS := {"stand1": 0.5, "walk1": 0.18, "alert": 0.5}
+# These play forwards then backwards (0 1 2 1 0 ...) rather than looping.
+const ASSEMBLER_PING_PONG_ACTIONS := ["stand1", "alert"]
+# Floor height below the navel anchor; matches floor_world_ref in the pack's
+# exported animations so assembled and pack frames stand on the same line.
+const ASSEMBLER_FLOOR_WORLD_REF := 35.0
+# The character art is drawn facing left. _facing_sign is +1 when the buddy
+# should face right, so the sprite is mirrored whenever the two differ.
+const SPRITE_ART_FACING := -1
 const WZ_ICON_ROOT_CANDIDATES := [
     "C:/Users/GGPC/OneDrive/Desktop/83 complete/Base.wz",
     "C:/Users/%s/OneDrive/Desktop/83 complete/Base.wz",
@@ -501,7 +514,7 @@ var _assembler_pending_reason := ""
 var _assembler_thread: Thread = null
 var _assembler_thread_result: Dictionary = {}
 var _assembler_last_status_unix := 0
-var _facing_sign := 1
+var _facing_sign := SPRITE_ART_FACING
 var _equipped_visual_signature := ""
 var _inventory_icon_cache := {}
 var _generated_item_icon_cache := {}
@@ -670,7 +683,13 @@ func _input(event: InputEvent) -> void:
     if event is InputEventMouseButton:
         var button_event := event as InputEventMouseButton
         if button_event.button_index == MOUSE_BUTTON_LEFT:
-            if button_event.pressed and _hit_test(button_event.position):
+            if button_event.pressed and button_event.double_click and _hit_test(button_event.position):
+                # The menu holds chat, stats, inventory, wardrobe and pause;
+                # without this the only way in is the F10 hotkey.
+                _dragging = false
+                if not _settings_menu_open:
+                    _toggle_settings_menu()
+            elif button_event.pressed and _hit_test(button_event.position):
                 var before := AppState.get_telemetry_snapshot()
                 _dragging = true
                 _drag_offset = DisplayServer.mouse_get_position() - DisplayServer.window_get_position()
@@ -2416,7 +2435,7 @@ func _update_window_roam(delta: float) -> void:
 
     if not roam_state:
         if _state == "sleep":
-            _facing_sign = 1
+            _facing_sign = SPRITE_ART_FACING
         var floor_locked := _clamp_window_to_screen(current_pos, current_screen)
         if floor_locked.y != floor_y and (_floor_settle_active or current_pos.y != floor_y):
             var dir := 1 if floor_locked.y < floor_y else -1
@@ -4981,7 +5000,7 @@ func _assemble_cache_key(part_ids: Dictionary) -> String:
         var key := str(key_variant)
         pairs.append("%s=%d" % [key, int(part_ids.get(key, -1))])
     pairs.append("pack=%s" % _active_pack_id)
-    pairs.append("ver=2")
+    pairs.append("ver=3")
     return String("|".join(pairs)).sha256_text()
 
 
@@ -5091,55 +5110,85 @@ func _assembler_thread_main(payload: Dictionary) -> Dictionary:
     for state_variant in ASSEMBLER_STATE_ACTION_MAP.keys():
         var state_id := str(state_variant)
         var action_id := str(ASSEMBLER_STATE_ACTION_MAP.get(state_variant, "stand1"))
-        var output_png := cache_dir.path_join("%s.png" % state_id)
-        var output_json := cache_dir.path_join("%s.json" % state_id)
-        var args := PackedStringArray()
-        args.append(script_path)
-        args.append("--base-wz")
-        args.append(base_wz)
-        args.append("--action")
-        args.append(action_id)
-        args.append("--frame")
-        args.append("0")
-        args.append("--output-png")
-        args.append(output_png)
-        args.append("--output-json")
-        args.append(output_json)
-        args.append("--hair-mode")
-        args.append("auto")
-        for key_variant in key_to_flag.keys():
-            var key := str(key_variant)
-            var value := int(part_ids.get(key, -1))
-            if value <= 0:
-                continue
-            args.append(str(key_to_flag.get(key, "")))
-            args.append(str(value))
-        var output_lines: Array = []
-        var exit_code := OS.execute("python", args, output_lines, true)
-        if exit_code != OK:
-            output_lines.clear()
-            exit_code = OS.execute("py", args, output_lines, true)
-        if exit_code != OK:
-            return {
-                "ok": false,
-                "error": "state:%s code:%d details:%s" % [state_id, exit_code, "\n".join(output_lines)],
-                "cache_key": cache_key,
-            }
-        manifest[state_id] = output_png
+        var frame_rows: Array = []
+        for frame_index in range(int(ASSEMBLER_ACTION_FRAME_COUNT.get(action_id, 1))):
+            var frame_error := _assembler_render_frame(
+                script_path, base_wz, cache_dir, state_id, action_id, frame_index, part_ids, key_to_flag, frame_rows
+            )
+            if frame_error != "":
+                return {"ok": false, "error": frame_error, "cache_key": cache_key}
+        manifest[state_id] = {"action": action_id, "frames": frame_rows}
     return {"ok": true, "cache_key": cache_key, "manifest": manifest}
+
+
+# Renders one frame with the wardrobe renderer. Runs on the assembler thread.
+# Appends {"png", "json"} to frame_rows and returns "" on success.
+func _assembler_render_frame(
+    script_path: String,
+    base_wz: String,
+    cache_dir: String,
+    state_id: String,
+    action_id: String,
+    frame_index: int,
+    part_ids: Dictionary,
+    key_to_flag: Dictionary,
+    frame_rows: Array
+) -> String:
+    var output_png := cache_dir.path_join("%s_%d.png" % [state_id, frame_index])
+    var output_json := cache_dir.path_join("%s_%d.json" % [state_id, frame_index])
+    var args := PackedStringArray()
+    args.append(script_path)
+    args.append("--base-wz")
+    args.append(base_wz)
+    args.append("--action")
+    args.append(action_id)
+    args.append("--frame")
+    args.append(str(frame_index))
+    args.append("--output-png")
+    args.append(output_png)
+    args.append("--output-json")
+    args.append(output_json)
+    args.append("--hair-mode")
+    args.append("auto")
+    for key_variant in key_to_flag.keys():
+        var key := str(key_variant)
+        var value := int(part_ids.get(key, -1))
+        if value <= 0:
+            continue
+        args.append(str(key_to_flag.get(key, "")))
+        args.append(str(value))
+    var output_lines: Array = []
+    var exit_code := OS.execute("python", args, output_lines, true)
+    if exit_code != OK:
+        output_lines.clear()
+        exit_code = OS.execute("py", args, output_lines, true)
+    if exit_code != OK:
+        return "state:%s frame:%d code:%d details:%s" % [state_id, frame_index, exit_code, "\n".join(output_lines)]
+    frame_rows.append({"png": output_png, "json": output_json})
+    return ""
 
 
 func _apply_assembled_cache_manifest(manifest: Dictionary, cache_key: String) -> bool:
     var next_overrides := {}
     for state_variant in ASSEMBLER_STATE_ACTION_MAP.keys():
         var state_id := str(state_variant)
-        var png_path := str(manifest.get(state_id, ""))
-        if png_path == "":
+        var row_variant = manifest.get(state_id, null)
+        if typeof(row_variant) != TYPE_DICTIONARY:
             continue
-        var tex := _load_texture_from_file(png_path)
-        if tex == null:
-            return false
-        next_overrides[state_id] = tex
+        var row: Dictionary = row_variant
+        var textures: Array = []
+        var pivots: Array = []
+        for frame_variant in row.get("frames", []):
+            if typeof(frame_variant) != TYPE_DICTIONARY:
+                return false
+            var tex := _load_texture_from_file(str((frame_variant as Dictionary).get("png", "")))
+            if tex == null:
+                return false
+            textures.append(tex)
+            pivots.append(_assembled_frame_pivot(str((frame_variant as Dictionary).get("json", ""))))
+        if textures.is_empty():
+            continue
+        next_overrides[state_id] = {"action": str(row.get("action", "")), "frames": textures, "pivots": pivots}
     if next_overrides.is_empty():
         return false
     _assembled_state_texture_overrides = next_overrides
@@ -5533,7 +5582,14 @@ func _draw_sit_chair(center: Vector2) -> void:
     var scale := maxf(0.2, _sprite_scale)
     var draw_size := tex_size * scale
     var top_left := center - (_sit_chair_origin_px * scale)
-    draw_texture_rect(_sit_chair_texture, Rect2(top_left, draw_size), false)
+    if _facing_sign != SPRITE_ART_FACING:
+        # Mirror the chair with the sitter, or the buddy ends up sitting on
+        # it back to front.
+        draw_set_transform(center, 0.0, Vector2(-1.0, 1.0))
+        draw_texture_rect(_sit_chair_texture, Rect2(top_left - center, draw_size), false)
+        draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+    else:
+        draw_texture_rect(_sit_chair_texture, Rect2(top_left, draw_size), false)
 
 
 func _load_sit_chair_assets(pack_id: String) -> void:
@@ -5777,12 +5833,57 @@ func _auto_adjust_floor_padding_to_loaded_pivots() -> void:
     _floor_padding = maxf(2.0, _floor_padding - required_delta)
 
 
+# Where the floor contact point sits inside a rendered frame, from the
+# renderer's metadata. Every frame is placed by this point, so frames of
+# different sizes (a wide swing, a narrow step) do not jump around.
+func _assembled_frame_pivot(json_path: String) -> Vector2:
+    var parsed: Variant = JSON.parse_string(_read_text_file(json_path))
+    if typeof(parsed) != TYPE_DICTIONARY:
+        return NO_PIVOT
+    var bounds_variant = (parsed as Dictionary).get("frame_bounds_world", null)
+    if typeof(bounds_variant) != TYPE_DICTIONARY:
+        return NO_PIVOT
+    var bounds: Dictionary = bounds_variant
+    return Vector2(-float(bounds.get("left", 0.0)), ASSEMBLER_FLOOR_WORLD_REF - float(bounds.get("top", 0.0)))
+
+
+func _assembled_override() -> Dictionary:
+    var override_variant = _assembled_state_texture_overrides.get(_state, null)
+    if typeof(override_variant) != TYPE_DICTIONARY:
+        return {}
+    var entry: Dictionary = override_variant
+    var frames: Array = entry.get("frames", [])
+    if frames.is_empty():
+        return {}
+    var count := frames.size()
+    var action_id := str(entry.get("action", ""))
+    var seconds := float(ASSEMBLER_ACTION_FRAME_SECONDS.get(action_id, 0.5))
+    var step := int(_bob_time / maxf(0.05, seconds))
+    var index := step % count
+    if count > 2 and ASSEMBLER_PING_PONG_ACTIONS.has(action_id):
+        var cycle := (count * 2) - 2
+        index = step % cycle
+        if index >= count:
+            index = cycle - index
+    var pivots: Array = entry.get("pivots", [])
+    var pivot := NO_PIVOT
+    if index < pivots.size() and pivots[index] is Vector2:
+        pivot = pivots[index]
+    return {"texture": frames[index], "pivot": pivot}
+
+
 func _selected_texture() -> Texture2D:
-    if _assembled_state_texture_overrides.has(_state):
-        var override_variant = _assembled_state_texture_overrides.get(_state, null)
-        if override_variant is Texture2D:
-            return override_variant
+    var override := _assembled_override()
+    if override.get("texture", null) is Texture2D:
+        return override["texture"]
     return _current_texture
+
+
+func _selected_pivot() -> Vector2:
+    var override := _assembled_override()
+    if override.get("pivot", null) is Vector2:
+        return override["pivot"]
+    return NO_PIVOT
 
 
 func _presentation_texture() -> Texture2D:
@@ -5803,7 +5904,7 @@ func _presentation_texture() -> Texture2D:
 
 func _presentation_rect(center: Vector2, texture: Texture2D) -> Rect2:
     if texture == _selected_texture():
-        return _sprite_rect_for_texture(center, texture)
+        return _sprite_rect_for_texture(center, texture, _selected_pivot())
     return PortableBuddyFallback.fitted_asset_rect(
         get_viewport_rect().size,
         texture.get_size(),
@@ -5821,7 +5922,7 @@ func _draw_character_sprite(center: Vector2, texture: Texture2D) -> bool:
         return false
 
     _current_sprite_rect = _presentation_rect(center, texture)
-    if _facing_sign < 0:
+    if _facing_sign != SPRITE_ART_FACING:
         var local_rect := Rect2(_current_sprite_rect.position - center, _current_sprite_rect.size)
         draw_set_transform(center, 0.0, Vector2(-1.0, 1.0))
         draw_texture_rect(texture, local_rect, false)
@@ -5870,7 +5971,7 @@ func _draw_face_overlay() -> bool:
         _current_sprite_rect.position + Vector2(local_top_left.x * scale_x, local_top_left.y * scale_y),
         Vector2(face_size.x * scale_x, face_size.y * scale_y)
     )
-    if _facing_sign < 0:
+    if _facing_sign != SPRITE_ART_FACING:
         var center := _draw_center
         var local_rect := Rect2(draw_rect.position - center, draw_rect.size)
         draw_set_transform(center, 0.0, Vector2(-1.0, 1.0))
@@ -6012,7 +6113,7 @@ func _face_variant_candidates(default_path: String, variant: String) -> Array[St
     return candidates
 
 
-func _sprite_rect_for_texture(center: Vector2, texture: Texture2D) -> Rect2:
+func _sprite_rect_for_texture(center: Vector2, texture: Texture2D, pivot_override: Vector2 = NO_PIVOT) -> Rect2:
     var tex_size: Vector2 = texture.get_size()
     if tex_size.x <= 0.0 or tex_size.y <= 0.0:
         return Rect2(center, Vector2.ZERO)
@@ -6020,11 +6121,12 @@ func _sprite_rect_for_texture(center: Vector2, texture: Texture2D) -> Rect2:
     var viewport_size: Vector2 = get_viewport_rect().size
     var scale := _fit_scale_for_viewport(tex_size, viewport_size)
     var draw_size: Vector2 = tex_size * scale
-    var use_pivot := _current_frame_pivot_px.y >= 0.0
+    var frame_pivot := pivot_override if pivot_override.y >= 0.0 else _current_frame_pivot_px
+    var use_pivot := frame_pivot.y >= 0.0
     var top_left := Vector2.ZERO
     var effective_pivot_y := tex_size.y
     if use_pivot:
-        var pivot_to_use := _current_frame_pivot_px
+        var pivot_to_use := frame_pivot
         if pivot_to_use.y > tex_size.y:
             var overflow := pivot_to_use.y - tex_size.y
             var overflow_blend := _pivot_overflow_blend_for_action(_current_visual_action)

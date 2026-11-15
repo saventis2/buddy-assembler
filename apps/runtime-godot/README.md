@@ -55,6 +55,7 @@ click-only path: open it once and Pause/Resume, Quiet strictness, content
 pack, Restart, and Quit are all buttons, no hotkeys required.
 
 - Left click + drag: move companion
+- Double click: open the Game Menu (chat, stats, inventory, wardrobe, pause)
 - Right click: sleep/pause toggle (also a "Pause Buddy" / "Resume Buddy"
   button in the `F10` settings popout)
 - `F6`: toggle telemetry overlay

@@ -26,6 +26,13 @@ var settings := {}
 var profile := {}
 var world_state := {}
 var _services: Dictionary = {}
+# Content hash of what was last written per save file, so an unchanged file
+# is not rewritten, and a debounce for saves requested every frame.
+var _saved_digest: Dictionary = {}
+var _deferred_save_pending := false
+var _deferred_save_seconds := 0.0
+
+const DEFERRED_SAVE_DELAY_SECONDS := 1.5
 
 
 func _ready() -> void:
@@ -81,9 +88,50 @@ func load_state() -> void:
 
 
 func flush() -> void:
-    SaveStore.write_json(SETTINGS_PATH, settings)
-    SaveStore.write_json(PROFILE_PATH, profile)
-    SaveStore.write_json(WORLD_STATE_PATH, world_state)
+    _deferred_save_pending = false
+    _write_if_changed(SETTINGS_PATH, settings)
+    _write_if_changed(PROFILE_PATH, profile)
+    _write_if_changed(WORLD_STATE_PATH, _persistable_world_state())
+
+
+# Saves soon rather than now. For callers that fire every frame (the window
+# position while the buddy walks or is dragged), where writing each time
+# stalls rendering.
+func flush_soon() -> void:
+    if not _deferred_save_pending:
+        _deferred_save_seconds = 0.0
+    _deferred_save_pending = true
+
+
+func _process(delta: float) -> void:
+    if not _deferred_save_pending:
+        return
+    _deferred_save_seconds += delta
+    if _deferred_save_seconds >= DEFERRED_SAVE_DELAY_SECONDS:
+        flush()
+
+
+func _notification(what: int) -> void:
+    if what == NOTIFICATION_WM_CLOSE_REQUEST or what == NOTIFICATION_PREDELETE:
+        if _deferred_save_pending:
+            flush()
+
+
+# The item catalogue is a copy of the content pack's item list (thousands of
+# rows, several megabytes). It is rebuilt from the pack on every launch by
+# apply_loaded_pack, so it is left out of the save file.
+func _persistable_world_state() -> Dictionary:
+    var slim := world_state.duplicate(false)
+    slim.erase("item_catalog")
+    return slim
+
+
+func _write_if_changed(path: String, data: Dictionary) -> void:
+    var digest := JSON.stringify(data).md5_text()
+    if str(_saved_digest.get(path, "")) == digest and FileAccess.file_exists(path):
+        return
+    if SaveStore.write_json(path, data):
+        _saved_digest[path] = digest
 
 
 func record_interaction(kind: String) -> void:
@@ -196,7 +244,7 @@ func try_consume_event_budget(event_id: String, per_hour: int, per_day: int) -> 
 func set_window_state(screen_index: int, window_pos: Vector2i) -> void:
     settings["preferredScreen"] = screen_index
     settings["lastWindowPosition"] = [window_pos.x, window_pos.y]
-    flush()
+    flush_soon()
 
 
 func get_window_state() -> Dictionary:

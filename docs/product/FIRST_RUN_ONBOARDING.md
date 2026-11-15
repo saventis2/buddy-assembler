@@ -33,6 +33,7 @@ safe-mode fallback.
 | Control             | How to use                                         |
 |---------------------|----------------------------------------------------|
 | Move buddy          | Left-click and drag                                |
+| Open the menu       | Double-click the buddy (or `F10`)                  |
 | Sleep / wake        | Right-click the buddy                              |
 | Quiet hours         | Edit `settings.json` → `quietHoursStart` / `End`; or toggle `quietHoursEnabled` |
 | Event frequency     | Press **F7** in-app to cycle low → normal → high   |
