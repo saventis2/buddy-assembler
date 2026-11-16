@@ -515,7 +515,9 @@ func _decide(
 	if typeof(intention) == TYPE_DICTIONARY and not (intention as Dictionary).is_empty():
 		if int((intention as Dictionary).get("until", 0)) <= decision_unix:
 			mind["intention"] = {}
-		elif not is_night:
+		# Worn out, it rests first: "later" for tiredness promised to go after
+		# a rest, so nothing it agreed to is done while it is still this tired.
+		elif not is_night and float(mods["energy_strain"]) < TIRED_LIMIT:
 			honoured = _honour_intention(intention, mind["feelings"], open_places, subjects, scores, rng, mind["wants"])
 			if not honoured.is_empty():
 				mind["intention"] = {}
