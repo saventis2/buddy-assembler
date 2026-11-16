@@ -190,6 +190,14 @@ func _test_invalid_facts_are_dropped() -> Variant:
 	typed = _svc.append_turn(typed, "you", "I will keep your password safe", T0 + 1)
 	if typed["memory"]["turns"].size() != 0:
 		return "a secret typed in chat was saved with the talk: %s" % str(typed["memory"]["turns"])
+	var job := _consolidate(_base(), [_fact("them", "does", "night shifts"), _fact("their sister Ana", "does", "yoga")], "", T0)
+	var job_rows: Array = []
+	for row in _svc.list_about_user(job, T0):
+		job_rows.append(str(row["text"]))
+	if not job_rows.has("You do night shifts") or not job_rows.has("Your sister Ana does yoga"):
+		return "does facts do not read as sentences: %s" % str(job_rows)
+	if not _any_contains(_svc.recall(job, "hi", T0)["facts"], "they do night shifts"):
+		return "does facts in the prompt: %s" % str(_svc.recall(job, "hi", T0)["facts"])
 	# The instruction filter is narrow: ordinary facts that share a word pass.
 	var real := _consolidate(_base(), [_fact("them", "is", "a systems engineer"), _fact("them", "likes", "tabletop roleplay games")], "", T0)
 	if _edges(real).size() != 2:

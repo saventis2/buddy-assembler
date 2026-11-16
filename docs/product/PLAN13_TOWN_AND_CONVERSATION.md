@@ -87,7 +87,19 @@ Measured with `gemma3:4b` on Ollama 0.40.16, in two processes a "day" apart
 - Asked "How are you today?" it brought nothing up by itself. A new talk now
   opens with one memory it may ask after.
 - Loading `gemma3:12b` from E: after Windows had dropped it from its file
-  cache took 64 s (about 10 s when cached). A chat line waits up to 120 s.
+  cache took 64 s (about 10 s when cached). A chat line waits up to 120 s;
+  in one cold start the first two lines got no reply.
+- Final run, with the name and the opening memory, on `gemma3:4b`. It
+  learned "they are called Sam". Asked "How are you today?" it said
+  "Biscuit sounds like a lovely addition to your life". It answered the shoe
+  question with "Oh dear, Sam! ... Biscuit must be a mischievous little
+  thing", and still suggested the strawberry tea.
+- The same script on `gemma3:12b`. It filed facts under the person correctly
+  and asked after their tiredness unprompted. But it ignored the remembered
+  strawberry tea ("tea from the cafe") and blamed Pip for the shoes, so the
+  larger model is not better at using memories.
+- Both models sometimes give "does" a noun ("night shifts"); such facts now
+  read "they do night shifts".
 
 Measured with `gemma3:4b` on Ollama 0.40.16:
 - About 1 reply in 20 ends with a curly quote that leaves the JSON open; the

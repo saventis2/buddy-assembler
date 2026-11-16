@@ -43,8 +43,11 @@ const MAX_DIGITS_IN_A_FACT := 5
 # A fact remembers as many of its talks as are kept, so forgetting it can
 # always drop every summary that still carries it.
 const MAX_TALKS_PER_FACT := MAX_EPISODES
-const VERB_PLURAL := {"likes": "like", "dislikes": "dislike", "is": "are", "has": "have", "does": "", "wants": "want", "lives_in": "live in", "is_called": "are called"}
-const VERB_SINGULAR := {"likes": "likes", "dislikes": "dislikes", "is": "is", "has": "has", "does": "", "wants": "wants", "lives_in": "lives in", "is_called": "is called"}
+# "does" keeps its verb: small models often give a noun ("night shifts"), and
+# "they do night shifts" still reads as a sentence where "they night shifts"
+# did not.
+const VERB_PLURAL := {"likes": "like", "dislikes": "dislike", "is": "are", "has": "have", "does": "do", "wants": "want", "lives_in": "live in", "is_called": "are called"}
+const VERB_SINGULAR := {"likes": "likes", "dislikes": "dislikes", "is": "is", "has": "has", "does": "does", "wants": "wants", "lives_in": "lives in", "is_called": "is called"}
 
 
 # --- Profile shape -----------------------------------------------------------
