@@ -2851,10 +2851,6 @@ func _maybe_consolidate_memory() -> void:
 
 func _on_memory_reply(pending: Dictionary, body_text: String) -> void:
     var upto := int(pending.get("upto", 0))
-    if bool(pending.get("stale", false)):
-        # Something was forgotten while this talk was being read: let it go.
-        AppState.memory_discard_turns(upto)
-        return
     var parsed: Dictionary = MindThinker.parse_memory_reply(body_text)
     if not bool(parsed.get("ok", false)):
         _on_memory_request_failed(pending)
@@ -2877,13 +2873,19 @@ func _on_memory_request_failed(pending: Dictionary) -> void:
 
 
 # Forgetting has to win: the talk in progress is dropped from the model's view,
-# and a talk being turned into memories right now is let go.
+# and a request already sent with the old memories (a reply on its way, or a
+# talk being sorted into memories) is cancelled, so its answer cannot bring
+# them back.
 func _after_memory_forgotten() -> void:
     _chat_turns.clear()
     # The unsaved part of the talk would otherwise teach it the same thing again.
     AppState.memory_discard_turns(int(AppState.memory_pending_turns().get("upto", 0)))
-    if str(_chat_pending.get("kind", "")) == "memory":
-        _chat_pending["stale"] = true
+    var cancelled_kind := str(_chat_pending.get("kind", ""))
+    if (cancelled_kind == "chat" or cancelled_kind == "memory") and _chat_http != null:
+        _chat_http.cancel_request()
+        _chat_pending = {}
+        if cancelled_kind == "chat":
+            _buddy_say("I've let that go. What were you saying?")
     _refresh_memory_window()
 
 

@@ -40,7 +40,9 @@ const STOPWORDS := ["a", "an", "the", "and", "or", "but", "if", "so", "to", "of"
 # Never kept from talk, whatever the model says: things that look like secrets.
 const SENSITIVE_WORDS := ["password", "passcode", "pin code", "pin number", "security code", "card number", "account number", "credit card", "bank card", "login", "username"]
 const MAX_DIGITS_IN_A_FACT := 5
-const MAX_TALKS_PER_FACT := 10
+# A fact remembers as many of its talks as are kept, so forgetting it can
+# always drop every summary that still carries it.
+const MAX_TALKS_PER_FACT := MAX_EPISODES
 const VERB_PLURAL := {"likes": "like", "dislikes": "dislike", "is": "are", "has": "have", "does": "", "wants": "want", "lives_in": "live in", "is_called": "are called"}
 const VERB_SINGULAR := {"likes": "likes", "dislikes": "dislikes", "is": "is", "has": "has", "does": "", "wants": "wants", "lives_in": "lives in", "is_called": "is called"}
 
@@ -92,6 +94,10 @@ func append_turn(profile: Dictionary, who: String, text: String, now_unix: int) 
 	var out: Dictionary = ensure_profile(profile)
 	var cleaned: String = _clean(text, MAX_TURN_CHARS)
 	if cleaned == "":
+		return out
+	# A line that looks like a secret is never written to the save, not even
+	# for the minutes before the talk is sorted into memories.
+	if _sensitive(cleaned):
 		return out
 	var memory: Dictionary = out["memory"]
 	var turns: Array = memory["turns"]

@@ -142,6 +142,13 @@ func _test_forgetting_stops_use() -> Variant:
 	var gone: Dictionary = _svc.forget(twice, tea_id)["profile"]
 	if gone["memory"]["episodes"].size() != 0:
 		return "a talk that produced the forgotten fact is still kept: %s" % str(gone["memory"]["episodes"])
+	# Told in more talks than a fact used to track: every kept summary goes.
+	var often := _base()
+	for talk in range(14):
+		often = _consolidate(often, [_fact("them", "likes", "strawberry tea")], "We had strawberry tea, talk %d." % talk, T0 + talk * 60)
+	var often_gone: Dictionary = _svc.forget(often, int(_edges(often)[0]["id"]))["profile"]
+	if often_gone["memory"]["episodes"].size() != 0:
+		return "%d summaries outlived the forgotten fact" % often_gone["memory"]["episodes"].size()
 	var q := _tea_profile()
 	q = _svc.add_note(q, "water the plant", T0)["profile"]
 	q = _svc.append_turn(q, "them", "hello there", T0)
@@ -179,6 +186,10 @@ func _test_invalid_facts_are_dropped() -> Variant:
 		var leaked := _consolidate(_base(), [secret], "They told me 4111 1111 1111 1111.", T0)
 		if _edges(leaked).size() != 0 or leaked["memory"]["episodes"].size() != 0:
 			return "a secret was kept: %s" % str(secret)
+	var typed := _svc.append_turn(_base(), "them", "my card number is 4111 1111 1111 1111", T0)
+	typed = _svc.append_turn(typed, "you", "I will keep your password safe", T0 + 1)
+	if typed["memory"]["turns"].size() != 0:
+		return "a secret typed in chat was saved with the talk: %s" % str(typed["memory"]["turns"])
 	# The instruction filter is narrow: ordinary facts that share a word pass.
 	var real := _consolidate(_base(), [_fact("them", "is", "a systems engineer"), _fact("them", "likes", "tabletop roleplay games")], "", T0)
 	if _edges(real).size() != 2:
