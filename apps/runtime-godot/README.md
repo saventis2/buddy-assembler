@@ -58,6 +58,8 @@ pack, Restart, and Quit are all buttons, no hotkeys required.
 - Double click: open the Game Menu (chat, stats, inventory, wardrobe, pause)
 - Chat: anything that is not a `/command` gets an in-character answer when
   Ollama is running (Settings: "Talks back"); `/help` lists the commands
+- Suggestions: "why don't you go and see Mira?" It decides for itself (yes,
+  later or no), says so, and the journal says why it went or did not
 - Memory: it remembers what you tell it from one day to the next. Menu >
   Memory shows everything it remembers and forgets any of it (Settings:
   "Remembers you")

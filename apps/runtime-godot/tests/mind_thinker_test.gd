@@ -29,6 +29,7 @@ func _run_all() -> void:
 	_case("unknown_want_is_dropped", func(): return _test_unknown_want_is_dropped())
 	_case("thought_rewrites_journal_entry", func(): return _test_thought_rewrites_journal_entry())
 	_case("wish_nudges_one_decision", func(): return _test_wish_nudges_one_decision())
+	_case("reason_follows_the_person", func(): return _test_reason_follows_the_person())
 
 
 func _case(name: String, body: Callable) -> void:
@@ -237,4 +238,23 @@ func _test_wish_nudges_one_decision() -> Variant:
 			changed = true
 	if not changed:
 		return "a wish never changed any decision across 30 histories"
+	return null
+
+
+func _test_reason_follows_the_person() -> Variant:
+	var cases := {"suggestion": "they suggested it", "talk": "they mentioned it when you talked", "": "you wanted company"}
+	for because in cases.keys():
+		var event := {"intent": "visit", "place_name": "the pond", "activity_label": "walked the bank", "valence": 0.4}
+		if str(because) != "":
+			event["because"] = because
+		var parsed: Variant = JSON.parse_string(MindThinker.build_request("m", event, [], ""))
+		var facts: Variant = JSON.parse_string(str((parsed as Dictionary)["messages"][1]["content"]))
+		if str((facts as Dictionary).get("why", "")) != str(cases[because]):
+			return "reason for because=%s is %s" % [because, (facts as Dictionary).get("why", "")]
+	var unloading: Variant = JSON.parse_string(MindThinker.build_request("m", {"intent": "rest"}, [], "", "0s"))
+	if str((unloading as Dictionary).get("keep_alive", "")) != "0s":
+		return "keep_alive was not passed through"
+	var usual: Variant = JSON.parse_string(MindThinker.build_request("m", {"intent": "rest"}, [], ""))
+	if str((usual as Dictionary).get("keep_alive", "")) != MindThinker.KEEP_ALIVE:
+		return "default keep_alive changed"
 	return null

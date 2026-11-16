@@ -57,6 +57,11 @@ func _run_all() -> void:
 	_case("feelings_split_by_place_activity_npc", func(): return _test_feelings_split_by_place_activity_npc())
 	_case("location_follows_decisions", func(): return _test_location_follows_decisions())
 	_case("no_town_falls_back_to_home", func(): return _test_no_town_falls_back_to_home())
+	_case("suggestion_is_found_in_chat", func(): return _test_suggestion_is_found_in_chat())
+	_case("suggestion_yes_steers_next_decision", func(): return _test_suggestion_yes_steers_next_decision())
+	_case("suggestion_no_or_later", func(): return _test_suggestion_no_or_later())
+	_case("talk_is_an_event", func(): return _test_talk_is_an_event())
+	_case("news_to_share", func(): return _test_news_to_share())
 
 
 func _case(name: String, body: Callable) -> void:
@@ -278,4 +283,144 @@ func _test_no_town_falls_back_to_home() -> Variant:
 		for event in result["events"]:
 			if str(event.get("place_id", "")) != "home":
 				return "without a town every decision should be at home: %s" % [event]
+	return null
+
+
+func _talk_profile(feelings: Dictionary = {}, strain: float = 0.2) -> Dictionary:
+	var profile := _profile({"energy_strain": strain, "social_fulfillment": 0.5})
+	profile["mind"] = {"feelings": feelings}
+	return profile
+
+
+func _test_suggestion_is_found_in_chat() -> Variant:
+	var svc := MindService.new()
+	var mira := svc.find_target("go see Mira", TOWN, NPCS)
+	if str(mira.get("kind", "")) != "npc" or str(mira.get("id", "")) != "mira":
+		return "expected npc mira, got %s" % [mira]
+	var cafe := svc.find_target("you should try the cafe", TOWN, NPCS)
+	if str(cafe.get("kind", "")) != "place" or str(cafe.get("id", "")) != "cafe" or str(cafe.get("name", "")) != "the cafe":
+		return "expected place cafe, got %s" % [cafe]
+	if not svc.find_target("I got home late", TOWN, NPCS).is_empty():
+		return "home must never be a target"
+	if not svc.find_target("the pondering continues", TOWN, NPCS).is_empty():
+		return "matches must be whole words"
+	if not svc.is_suggestion("why don't you go to the pond"):
+		return "cue not recognised"
+	if svc.is_suggestion("I like the pond"):
+		return "plain mention is not a suggestion"
+	return null
+
+
+func _test_suggestion_yes_steers_next_decision() -> Variant:
+	var svc := MindService.new()
+	var target := {"kind": "place", "id": "pond", "name": "the pond"}
+	var answer := svc.consider(_talk_profile(), target, NOW, 12, TOWN, NPCS)
+	if str(answer["answer"]) != "yes":
+		return "expected yes, got %s" % [answer]
+	var intention: Dictionary = answer["profile"]["mind"]["intention"]
+	if str(intention.get("id", "")) != "pond" or str(intention.get("from", "")) != "suggestion":
+		return "intention not set: %s" % [intention]
+	if int(intention.get("until", 0)) != NOW + MindService.INTENTION_HOURS * 3600:
+		return "intention expiry wrong"
+	var result := svc.tick(answer["profile"], NPCS, NOW + MindService.DECISION_INTERVAL_SECONDS, {"hour": 12}, TOWN)
+	var event: Dictionary = (result["events"] as Array)[0]
+	if str(event.get("place_id", "")) != "pond":
+		return "did not go to the pond: %s" % [event]
+	if not str(event.get("text", "")).begins_with("You suggested the pond, so I went. "):
+		return "text missing the suggestion prefix: %s" % str(event.get("text", ""))
+	if str(event.get("because", "")) != "suggestion":
+		return "event should carry because=suggestion"
+	var after: Dictionary = result["profile"]["mind"]["intention"]
+	if not after.is_empty():
+		return "intention should be cleared once honoured"
+	return null
+
+
+func _test_suggestion_no_or_later() -> Variant:
+	var svc := MindService.new()
+	var pond := {"kind": "place", "id": "pond", "name": "the pond"}
+	var cafe := {"kind": "place", "id": "cafe", "name": "the cafe"}
+	var no := svc.consider(_talk_profile({"place:pond": -0.6}), pond, NOW, 12, TOWN, NPCS)
+	if str(no["answer"]) != "no":
+		return "expected no, got %s" % [no]
+	var journal: Array = no["profile"]["mind"]["journal"]
+	var last: Dictionary = journal[journal.size() - 1]
+	if str(last.get("kind", "")) != "suggestion" or not str(last.get("text", "")).contains("didn't feel like it"):
+		return "refusal not journaled: %s" % [last]
+	if not (no["profile"]["mind"]["intention"] as Dictionary).is_empty():
+		return "a refusal must not set an intention"
+
+	var late := svc.consider(_talk_profile(), pond, NOW, 23, TOWN, NPCS)
+	if str(late["answer"]) != "later" or (late["profile"]["mind"]["intention"] as Dictionary).is_empty():
+		return "night should be later with the intention kept: %s" % [late]
+
+	var closed := svc.consider(_talk_profile(), cafe, NOW, 21, TOWN, NPCS)
+	if str(closed["answer"]) != "later":
+		return "closed cafe should be later, got %s" % [closed]
+	var held := svc.tick(closed["profile"], NPCS, NOW + MindService.DECISION_INTERVAL_SECONDS, {"hour": 21}, TOWN)
+	var held_event: Dictionary = (held["events"] as Array)[0]
+	if held_event.has("because"):
+		return "must not honour a closed place: %s" % [held_event]
+	if (held["profile"]["mind"]["intention"] as Dictionary).is_empty():
+		return "intention should survive while closed"
+
+	var expired := svc.consider(_talk_profile(), pond, NOW, 12, TOWN, NPCS)
+	var past := NOW + (MindService.INTENTION_HOURS + 1) * 3600
+	var gone := svc.tick(expired["profile"], NPCS, past, {"hour": 12}, TOWN)
+	if not (gone["profile"]["mind"]["intention"] as Dictionary).is_empty():
+		return "expired intention should be cleared"
+	if (gone["events"] as Array)[0].has("because"):
+		return "expired intention must not be honoured"
+	return null
+
+
+func _test_talk_is_an_event() -> Variant:
+	var svc := MindService.new()
+	var profile := svc.note_talk(_talk_profile(), "They told me about the pond.", ["I love the pond"], NOW, TOWN, NPCS)
+	var social := float(profile["mood_modifiers"]["social_fulfillment"])
+	if not is_equal_approx(social, 0.75):
+		return "social fulfillment should rise by 0.25, got %s" % social
+	var journal: Array = profile["mind"]["journal"]
+	var last: Dictionary = journal[journal.size() - 1]
+	if str(last.get("kind", "")) != "talk" or str(last.get("text", "")) != "We talked. They told me about the pond.":
+		return "talk not journaled: %s" % [last]
+	var intention: Dictionary = profile["mind"]["intention"]
+	if str(intention.get("id", "")) != "pond" or str(intention.get("from", "")) != "talk":
+		return "talk should leave an intention for the pond: %s" % [intention]
+	var result := svc.tick(profile, NPCS, NOW + MindService.DECISION_INTERVAL_SECONDS, {"hour": 12}, TOWN)
+	var event: Dictionary = (result["events"] as Array)[0]
+	if str(event.get("place_id", "")) != "pond":
+		return "did not go to the pond: %s" % [event]
+	if not str(event.get("text", "")).begins_with("You mentioned the pond, so I went."):
+		return "text missing the talk prefix: %s" % str(event.get("text", ""))
+
+	var plain := svc.note_talk(_talk_profile(), "", ["hello"], NOW, TOWN, NPCS)
+	var plain_journal: Array = plain["mind"]["journal"]
+	if str((plain_journal[plain_journal.size() - 1] as Dictionary).get("text", "")) != "We talked for a while.":
+		return "empty summary wording wrong"
+	if not (plain["mind"]["intention"] as Dictionary).is_empty():
+		return "nothing mentioned, so no intention"
+	return null
+
+
+func _test_news_to_share() -> Variant:
+	var svc := MindService.new()
+	var profile := _talk_profile()
+	for step in range(3):
+		profile = svc.tick(profile, NPCS, NOW + step * MindService.DECISION_INTERVAL_SECONDS, {"hour": 12}, TOWN)["profile"]
+	var big_t := NOW + 100000
+	var journal: Array = profile["mind"]["journal"]
+	journal.append({"t": big_t, "intent": "visit", "valence": 0.8, "text": "Something wonderful happened."})
+	journal.append({"t": big_t + 10, "intent": "visit", "valence": 0.95, "kind": "talk", "text": "We talked."})
+	journal.append({"t": big_t + 20, "intent": "reflect", "valence": -0.95, "kind": "suggestion", "text": "No."})
+	var news := svc.pick_news(profile)
+	if int(news.get("t", 0)) != big_t:
+		return "expected the 0.8 entry, got %s" % [news]
+	var shared := svc.mark_shared(profile, big_t)
+	if not svc.pick_news(shared).is_empty():
+		return "shared news should not be offered again: %s" % [svc.pick_news(shared)]
+
+	var talked := svc.note_talk(profile, "Chat.", [], big_t + 500, TOWN, NPCS)
+	if not svc.pick_news(talked).is_empty():
+		return "entries older than the last talk should not be news: %s" % [svc.pick_news(talked)]
 	return null

@@ -23,6 +23,15 @@ const INTENT_ACTIONS := {
 	"tend_home": "sit",
 	"reflect": "idle",
 }
+const INTENTION_HOURS := 12
+const TALK_SOCIAL_BONUS := 0.25
+const DISLIKE_LIMIT := -0.35
+const TIRED_LIMIT := 0.75
+const SUGGESTION_CUES := [
+	"go to", "go see", "go and see", "go visit", "visit", "head to", "head over", "pop over",
+	"pop into", "drop by", "try the", "check out", "you should", "why don't you", "why not go",
+	"how about", "say hi to", "say hello to",
+]
 const INTENT_NEEDS := {
 	"rest": "energy",
 	"visit": "social",
@@ -48,6 +57,11 @@ const MIND_DEFAULTS := {
 	"wish": "",
 	"feelings": {},
 	"journal": [],
+	# Something the buddy agreed to do, from a suggestion or a place mentioned in
+	# a talk: {"kind": "place"|"npc", "id", "name", "from": "suggestion"|"talk", "t", "until"}.
+	"intention": {},
+	"last_talk_unix": 0,
+	"last_shared_t": 0,
 }
 
 
@@ -159,6 +173,210 @@ func get_preferences(profile: Dictionary) -> Dictionary:
 	return {"favourite": favourite, "least": least}
 
 
+# The first town character or place named in `text`, as whole words. Town
+# characters are checked before places; home is never a target.
+func find_target(text: String, town: Dictionary, npcs: Array) -> Dictionary:
+	var lowered := text.to_lower()
+	for npc_variant in npcs:
+		if typeof(npc_variant) != TYPE_DICTIONARY:
+			continue
+		var npc: Dictionary = npc_variant
+		var npc_id := str(npc.get("id", "")).strip_edges()
+		var npc_name := str(npc.get("name", "")).strip_edges()
+		if npc_id == "" or npc_name == "":
+			continue
+		if _has_whole_word(lowered, npc_name.to_lower()):
+			return {"kind": "npc", "id": npc_id, "name": npc_name}
+	for place_variant in _usable_places(town):
+		var place: Dictionary = place_variant
+		var place_id := str(place.get("id", "")).strip_edges()
+		var place_name := str(place.get("name", "")).strip_edges()
+		if place_id == "" or place_name == "" or place_id == "home":
+			continue
+		var bare := place_name.to_lower()
+		if bare.begins_with("the "):
+			bare = bare.substr(4)
+		if bare != "" and _has_whole_word(lowered, bare):
+			return {"kind": "place", "id": place_id, "name": place_name}
+	return {}
+
+
+func is_suggestion(text: String) -> bool:
+	var lowered := text.to_lower()
+	for cue in SUGGESTION_CUES:
+		if lowered.contains(str(cue)):
+			return true
+	return false
+
+
+# The buddy's answer to a suggestion: "yes", "later" or "no", with its reason.
+# Yes and later both become an intention; no is noted in the journal instead.
+func consider(
+	profile: Dictionary, target: Dictionary, now_unix: int, hour: int, town: Dictionary, npcs: Array
+) -> Dictionary:
+	var merged := ensure_profile(profile)
+	var mind: Dictionary = merged["mind"]
+	var kind := str(target.get("kind", ""))
+	var target_id := str(target.get("id", ""))
+	var target_name := str(target.get("name", target_id))
+	var is_npc := kind == "npc"
+	var key := ("npc:" if is_npc else "place:") + target_id
+	var feelings: Dictionary = mind["feelings"]
+	var f := float(feelings.get(key, 0.0))
+	var night := hour < 7 or hour >= 22
+	var mods := _mood_modifiers(merged)
+
+	var reachable := false
+	if is_npc:
+		for place_variant in _usable_places(town):
+			var place: Dictionary = place_variant
+			var residents = place.get("residents", [])
+			if _place_is_open(place, hour) and typeof(residents) == TYPE_ARRAY and (residents as Array).has(target_id):
+				reachable = true
+	else:
+		var found := false
+		for place_variant in _usable_places(town):
+			var place: Dictionary = place_variant
+			if str(place.get("id", "")) == target_id:
+				found = true
+				reachable = _place_is_open(place, hour)
+		if not found:
+			return {"profile": merged, "answer": "no", "reason": "you have not heard of it"}
+
+	var answer := "yes"
+	var reason := ""
+	if f <= DISLIKE_LIMIT:
+		answer = "no"
+		reason = "you don't like it there"
+		if is_npc:
+			reason = "you and %s don't really get on" % target_name
+	elif night:
+		answer = "later"
+		reason = "it's late, so you'll go tomorrow"
+	elif float(mods["energy_strain"]) >= TIRED_LIMIT:
+		answer = "later"
+		reason = "you're tired, so you'll go after a rest"
+	elif not reachable:
+		answer = "later"
+		reason = "it's closed right now, so you'll go when it opens"
+		if is_npc:
+			reason = "%s isn't around right now, so you'll go when they are" % target_name
+	elif f >= 0.2:
+		reason = "you like it there"
+		if is_npc:
+			reason = "you like %s's company" % target_name
+	else:
+		reason = "it sounds nice"
+		if is_npc:
+			reason = "it would be nice to see %s" % target_name
+
+	if answer == "no":
+		var text := "You suggested %s, but I didn't feel like it." % target_name
+		if is_npc:
+			text = "You said I should see %s, but I didn't feel like it." % target_name
+		_append_journal(mind, {
+			"t": now_unix,
+			"intent": "reflect",
+			"subject_id": key,
+			"subject_name": target_name,
+			"valence": 0.0,
+			"kind": "suggestion",
+			"text": text,
+		})
+	else:
+		mind["intention"] = _make_intention(kind, target_id, target_name, "suggestion", now_unix)
+	merged["mind"] = mind
+	return {"profile": merged, "answer": answer, "reason": reason}
+
+
+# A finished conversation is an event in the buddy's day: it lifts the mood,
+# lands in the journal, and a place or person mentioned in it may become
+# something the buddy plans to go and see.
+func note_talk(
+	profile: Dictionary, summary: String, lines: Array, now_unix: int, town: Dictionary, npcs: Array
+) -> Dictionary:
+	var merged := ensure_profile(profile)
+	var mind: Dictionary = merged["mind"]
+	var mods_variant = merged.get("mood_modifiers", null)
+	var mods: Dictionary = {}
+	if typeof(mods_variant) == TYPE_DICTIONARY:
+		mods = (mods_variant as Dictionary).duplicate(true)
+	mods["social_fulfillment"] = _clamp01(float(_mood_modifiers(merged)["social_fulfillment"]) + TALK_SOCIAL_BONUS)
+	merged["mood_modifiers"] = mods
+
+	var text := "We talked for a while."
+	if summary.strip_edges() != "":
+		text = "We talked. " + summary.strip_edges()
+	if text.length() > MAX_THOUGHT_CHARS:
+		text = text.substr(0, MAX_THOUGHT_CHARS)
+	_append_journal(mind, {
+		"t": now_unix,
+		"intent": "visit",
+		"subject_id": "you",
+		"subject_name": "you",
+		"valence": 0.3,
+		"kind": "talk",
+		"text": text,
+	})
+	mind["last_talk_unix"] = now_unix
+
+	var intention = mind.get("intention", {})
+	var live := false
+	if typeof(intention) == TYPE_DICTIONARY and not (intention as Dictionary).is_empty():
+		live = int((intention as Dictionary).get("until", 0)) > now_unix
+	if not live:
+		for line in lines:
+			# A suggestion was already answered when it was made (see consider);
+			# a "no" must not turn into a plan here.
+			if typeof(line) != TYPE_STRING or is_suggestion(str(line)):
+				continue
+			var target := find_target(line, town, npcs)
+			if not target.is_empty():
+				mind["intention"] = _make_intention(
+					str(target["kind"]), str(target["id"]), str(target["name"]), "talk", now_unix
+				)
+				break
+	merged["mind"] = mind
+	return merged
+
+
+# The journal entry most worth telling the person about when they open the
+# chat: newer than the last talk or share, and either strongly felt or
+# involving someone. Returns {} when there is nothing.
+func pick_news(profile: Dictionary) -> Dictionary:
+	var mind: Dictionary = ensure_profile(profile)["mind"]
+	var floor_t := maxi(int(mind.get("last_shared_t", 0)), int(mind.get("last_talk_unix", 0)))
+	var best := {}
+	var best_strength := -1.0
+	var best_t := 0
+	for entry_variant in mind["journal"]:
+		if typeof(entry_variant) != TYPE_DICTIONARY:
+			continue
+		var entry: Dictionary = entry_variant
+		var t := int(entry.get("t", 0))
+		if t <= floor_t:
+			continue
+		var kind := str(entry.get("kind", ""))
+		if kind == "talk" or kind == "suggestion":
+			continue
+		var strength := absf(float(entry.get("valence", 0.0)))
+		if strength < 0.15 and str(entry.get("companion_name", "")) == "" and not entry.has("because"):
+			continue
+		if strength > best_strength or (is_equal_approx(strength, best_strength) and t >= best_t):
+			best = entry
+			best_strength = strength
+			best_t = t
+	return best.duplicate(true)
+
+
+func mark_shared(profile: Dictionary, t: int) -> Dictionary:
+	var merged := ensure_profile(profile)
+	var mind: Dictionary = merged["mind"]
+	mind["last_shared_t"] = maxi(int(mind.get("last_shared_t", 0)), t)
+	merged["mind"] = mind
+	return merged
+
+
 func _decide(
 	merged: Dictionary, npcs: Array, decision_unix: int, context: Dictionary, town: Dictionary = {}
 ) -> Dictionary:
@@ -198,21 +416,40 @@ func _decide(
 	if str(context.get("top_trait", "")) == "curiosity":
 		scores["explore"] = float(scores["explore"]) + 0.2
 
+	# Something agreed to earlier (see consider / note_talk). Expired ones are
+	# dropped; at night the buddy sleeps on it; otherwise it is honoured if the
+	# place is open / the person is around, and kept for later if not.
+	var honoured := {}
+	var intention = mind.get("intention", {})
+	if typeof(intention) == TYPE_DICTIONARY and not (intention as Dictionary).is_empty():
+		if int((intention as Dictionary).get("until", 0)) <= decision_unix:
+			mind["intention"] = {}
+		elif not is_night:
+			honoured = _honour_intention(intention, mind["feelings"], open_places, subjects, scores, rng)
+			if not honoured.is_empty():
+				mind["intention"] = {}
+
 	var intent := "reflect"
 	var best := -1.0
-	for candidate in INTENTS:
-		var score := float(scores[candidate]) + rng.randf_range(-0.15, 0.15)
-		if candidate == str(mind.get("last_intent", "")):
-			score *= 0.5
-		if score > best:
-			best = score
-			intent = candidate
+	if not honoured.is_empty():
+		intent = str(honoured["intent"])
+	else:
+		for candidate in INTENTS:
+			var score := float(scores[candidate]) + rng.randf_range(-0.15, 0.15)
+			if candidate == str(mind.get("last_intent", "")):
+				score *= 0.5
+			if score > best:
+				best = score
+				intent = candidate
 
 	# Where, and doing what, to meet the need behind the intent.
 	var candidates := _candidates_for_need(open_places, str(INTENT_NEEDS[intent]))
 	var place: Dictionary = {}
 	var activity: Dictionary = {}
-	if candidates.is_empty():
+	if not honoured.is_empty():
+		place = honoured["place"]
+		activity = honoured["activity"]
+	elif candidates.is_empty():
 		intent = "reflect"
 		for home_variant in places:
 			if str(home_variant.get("id", "")) == "home":
@@ -226,7 +463,9 @@ func _decide(
 		activity = chosen["activity"]
 
 	var companion := {}
-	if intent == "visit":
+	if not honoured.is_empty():
+		companion = honoured["companion"]
+	elif intent == "visit":
 		var local_subjects: Array = []
 		var residents_variant = place.get("residents", [])
 		if typeof(residents_variant) == TYPE_ARRAY:
@@ -274,6 +513,9 @@ func _decide(
 		"activity_label": str(activity.get("label", "")),
 		"companion_name": companion_name,
 	}
+	if not honoured.is_empty():
+		entry["text"] = str(honoured["prefix"]) + str(entry["text"])
+		entry["because"] = str(honoured["because"])
 	var journal: Array = mind["journal"]
 	journal.append(entry)
 	if journal.size() > JOURNAL_LIMIT:
@@ -287,6 +529,150 @@ func _decide(
 	var event := entry.duplicate(true)
 	event["action"] = str(INTENT_ACTIONS.get(intent, "idle"))
 	return event
+
+
+# Works out how to act on an intention right now. Returns {} when it cannot be
+# done yet (closed, nobody around); otherwise the intent, place, activity,
+# companion, and the wording for the journal. Only draws from rng when picking
+# a companion for a visit.
+func _honour_intention(
+	intention: Dictionary, feelings: Dictionary, open_places: Array, subjects: Array,
+	scores: Dictionary, rng: RandomNumberGenerator
+) -> Dictionary:
+	var kind := str(intention.get("kind", ""))
+	var target_id := str(intention.get("id", ""))
+	var target_name := str(intention.get("name", target_id))
+	var source := str(intention.get("from", ""))
+	var prefix := "You mentioned %s, so I went. " % target_name
+	if source == "suggestion":
+		prefix = "You suggested %s, so I went. " % target_name
+		if kind == "npc":
+			prefix = "You said I should see %s, so I did. " % target_name
+	var result := {"intent": "", "place": {}, "activity": {}, "companion": {}, "prefix": prefix, "because": source}
+
+	if kind == "npc":
+		var npc_place: Dictionary = {}
+		var best_feeling := -INF
+		for place_variant in open_places:
+			var row: Dictionary = place_variant
+			var residents = row.get("residents", [])
+			if typeof(residents) != TYPE_ARRAY or not (residents as Array).has(target_id):
+				continue
+			if _first_activity(row, "").is_empty():
+				continue
+			var feeling := float(feelings.get("place:%s" % str(row.get("id", "")), 0.0))
+			if feeling > best_feeling:
+				best_feeling = feeling
+				npc_place = row
+		if npc_place.is_empty():
+			return {}
+		var npc_activity := _first_activity(npc_place, "social")
+		if npc_activity.is_empty():
+			npc_activity = _first_activity(npc_place, "")
+		var npc_companion := {"id": "npc:" + target_id, "name": target_name}
+		for subject_row in subjects:
+			if str(subject_row["id"]) == "npc:" + target_id:
+				npc_companion = subject_row
+		result["intent"] = "visit"
+		result["place"] = npc_place
+		result["activity"] = npc_activity
+		result["companion"] = npc_companion
+		return result
+
+	if kind == "place":
+		var target_place: Dictionary = {}
+		for place_variant in open_places:
+			if str((place_variant as Dictionary).get("id", "")) == target_id:
+				target_place = place_variant
+		if target_place.is_empty():
+			return {}
+		var chosen_intent := ""
+		var chosen_activity: Dictionary = {}
+		var best_score := -INF
+		for activity_variant in target_place["activities"]:
+			if typeof(activity_variant) != TYPE_DICTIONARY:
+				continue
+			var candidate := ""
+			for intent_key in INTENTS:
+				if str(INTENT_NEEDS[intent_key]) == str((activity_variant as Dictionary).get("satisfies", "")):
+					candidate = str(intent_key)
+			if candidate == "":
+				continue
+			if float(scores[candidate]) > best_score:
+				best_score = float(scores[candidate])
+				chosen_intent = candidate
+				chosen_activity = activity_variant
+		if chosen_intent == "":
+			return {}
+		var place_companion := {}
+		if chosen_intent == "visit":
+			var local_subjects: Array = []
+			var residents_variant = target_place.get("residents", [])
+			if typeof(residents_variant) == TYPE_ARRAY:
+				for subject_row in subjects:
+					if (residents_variant as Array).has(str(subject_row["id"]).trim_prefix("npc:")):
+						local_subjects.append(subject_row)
+			place_companion = _pick_by_feeling(local_subjects, feelings, rng)
+		result["intent"] = chosen_intent
+		result["place"] = target_place
+		result["activity"] = chosen_activity
+		result["companion"] = place_companion
+		return result
+	return {}
+
+
+# The first activity at a place that satisfies `need` ("" means any), or {}.
+func _first_activity(place: Dictionary, need: String) -> Dictionary:
+	var activities = place.get("activities", [])
+	if typeof(activities) != TYPE_ARRAY:
+		return {}
+	for activity_variant in activities:
+		if typeof(activity_variant) != TYPE_DICTIONARY:
+			continue
+		if need == "" or str((activity_variant as Dictionary).get("satisfies", "")) == need:
+			return activity_variant
+	return {}
+
+
+func _make_intention(kind: String, target_id: String, target_name: String, source: String, now_unix: int) -> Dictionary:
+	return {
+		"kind": kind,
+		"id": target_id,
+		"name": target_name,
+		"from": source,
+		"t": now_unix,
+		"until": now_unix + INTENTION_HOURS * 3600,
+	}
+
+
+func _append_journal(mind: Dictionary, entry: Dictionary) -> void:
+	var journal: Array = mind["journal"]
+	journal.append(entry)
+	if journal.size() > JOURNAL_LIMIT:
+		journal = journal.slice(journal.size() - JOURNAL_LIMIT, journal.size())
+	mind["journal"] = journal
+
+
+func _is_ascii_letter(ch: String) -> bool:
+	if ch == "":
+		return false
+	var code := ch.unicode_at(0)
+	return (code >= 65 and code <= 90) or (code >= 97 and code <= 122)
+
+
+# True when `word` appears in `text` with no ASCII letter touching either end.
+func _has_whole_word(text: String, word: String) -> bool:
+	var start := 0
+	while true:
+		var at := text.find(word, start)
+		if at < 0:
+			return false
+		var before := text.substr(at - 1, 1) if at > 0 else ""
+		var after := text.substr(at + word.length(), 1)
+		if not _is_ascii_letter(before) and not _is_ascii_letter(after):
+			return true
+		start = at + 1
+	return false
 
 
 func _mood_modifiers(profile: Dictionary) -> Dictionary:

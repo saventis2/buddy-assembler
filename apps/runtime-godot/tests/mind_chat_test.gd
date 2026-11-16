@@ -29,6 +29,8 @@ func _run_all() -> void:
 	_case("memory_request_is_well_formed", func(): return _test_memory_request_is_well_formed())
 	_case("memory_reply_is_validated", func(): return _test_memory_reply_is_validated())
 	_case("chat_request_carries_memories", func(): return _test_chat_request_carries_memories())
+	_case("decision_reaches_the_reply", func(): return _test_decision_reaches_the_reply())
+	_case("greeting_request_is_well_formed", func(): return _test_greeting_request_is_well_formed())
 
 
 func _case(name: String, body: Callable) -> void:
@@ -333,4 +335,51 @@ func _test_chat_request_carries_memories() -> Variant:
 		return "nothing to bring up should be an empty string"
 	if not (plain.get("what_you_remember", null) is Array) or not (plain.get("what_you_remember", []) as Array).is_empty():
 		return "a chat request without memories should carry an empty list"
+	return null
+
+
+func _test_decision_reaches_the_reply() -> Variant:
+	var decision := "They suggested you go to the pond. You said yes, because you like it there."
+	var say := "Tell them yes: you are going to the pond in a few minutes, not later."
+	var parsed: Variant = JSON.parse_string(MindThinker.build_chat_request("m", {}, [], [], "go to the pond", {}, {}, decision, say))
+	if typeof(parsed) != TYPE_DICTIONARY:
+		return "chat request with a decision is not a JSON object"
+	var request: Dictionary = parsed
+	var facts := _facts(request)
+	if str(facts.get("your_decision", "")) != decision:
+		return "the decision is missing: %s" % [facts]
+	if not str(facts.get("your_task", "")).begins_with(MindThinker.CHAT_TASK_REMINDER) or not str(facts.get("your_task", "")).ends_with(say):
+		return "the reply task must end with what to tell them: %s" % [facts.get("your_task", "")]
+	var content := str(request["messages"][1]["content"])
+	if content.rfind("\"your_task\"") < content.rfind("\"your_decision\""):
+		return "the reply reminder must stay last"
+	if str(_facts(_request("hello")).get("your_decision", "x")) != "":
+		return "no decision should be an empty string"
+	return null
+
+
+func _test_greeting_request_is_well_formed() -> Variant:
+	var memory := {"facts": ["they like tea"], "talks": ["yesterday: We talked about tea."], "bring_up": "they work night shifts"}
+	var parsed: Variant = JSON.parse_string(MindThinker.build_greeting_request("m", {"name": "Moss"}, ["I went to the pond."], {"places": ["the pond"], "people": ["Mira the mentor"]}, memory, "I went to the pond and saw Mira. " + "x".repeat(400)))
+	if typeof(parsed) != TYPE_DICTIONARY:
+		return "greeting request is not a JSON object"
+	var request: Dictionary = parsed
+	var format: Variant = request.get("format", null)
+	if typeof(format) != TYPE_DICTIONARY or not (format.get("required", []) as Array).has("reply"):
+		return "greeting must use the reply schema"
+	var messages: Array = request.get("messages", [])
+	if messages.size() != 2 or str(messages[0].get("content", "")) != MindThinker.CHAT_SYSTEM_PROMPT:
+		return "greeting must be the chat system prompt plus one fact sheet"
+	var facts := _facts(request)
+	if str(facts.get("they_said", "x")) != "" or not (facts.get("conversation", null) is Array) or not (facts.get("conversation", []) as Array).is_empty():
+		return "nobody has said anything yet in a greeting: %s" % [facts]
+	if not str(facts.get("your_news", "")).begins_with("I went to the pond") or str(facts.get("your_news", "")).length() > MindThinker.MAX_THOUGHT_CHARS + 3:
+		return "news missing or not capped: %s" % [facts.get("your_news", "")]
+	if str(facts.get("bring_up", "")) != "they work night shifts" or (facts.get("what_you_remember", []) as Array).size() != 1:
+		return "memories missing from the greeting: %s" % [facts]
+	if str(facts.get("your_task", "")) != MindThinker.GREETING_TASK_REMINDER:
+		return "greeting task missing"
+	var content := str(messages[1]["content"])
+	if content.rfind("\"your_task\"") < content.rfind("\"your_news\""):
+		return "the greeting task must stay last"
 	return null
