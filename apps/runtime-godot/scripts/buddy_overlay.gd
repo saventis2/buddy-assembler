@@ -29,6 +29,21 @@ const CHAT_MEMORY_MAX_NOTES := 10
 # Memory (Plan 13 B2): a failed talk-to-memory request is retried after ten
 # minutes, and let go after three failures in a row.
 const MEMORY_RETRY_SECONDS := 600
+const MAPLE_LAYOUT_TOWN := {
+    "base_size": Vector2i(580, 560),
+    "min_size": Vector2i(460, 440),
+    "offset": Vector2i(72, 40),
+    "margins": [12, 10, 12, 10],
+}
+# Tile colours on the town map, by kind of place.
+const TOWN_TILE_COLOURS := {
+    "home": Color(0.55, 0.36, 0.22),
+    "square": Color(0.40, 0.40, 0.50),
+    "cafe": Color(0.60, 0.38, 0.30),
+    "shop": Color(0.56, 0.46, 0.20),
+    "library": Color(0.36, 0.32, 0.56),
+    "park": Color(0.24, 0.48, 0.30),
+}
 const MEMORY_MAX_FAILURES := 3
 const MAPLE_LAYOUT_MEMORY := {
     "base_size": Vector2i(460, 480),
@@ -53,8 +68,8 @@ const MAPLE_LAYOUT_SETTINGS := {
     "margins": [14, 12, 14, 14],
 }
 const MAPLE_LAYOUT_SETTINGS_MAIN := {
-    "base_size": Vector2i(250, 430),
-    "min_size": Vector2i(250, 430),
+    "base_size": Vector2i(250, 530),
+    "min_size": Vector2i(250, 530),
     "offset": Vector2i(56, 56),
     "margins": [14, 12, 14, 14],
 }
@@ -510,6 +525,12 @@ var _memory_intro: Label = null
 var _memory_btn_toggle: Button = null
 var _memory_btn_forget_all: Button = null
 var _memory_forget_all_armed_until := 0
+var _town_window: Window = null
+var _town_map: Control = null
+var _town_heading: Label = null
+var _town_info: Label = null
+var _town_selected := ""
+var _town_tiles: Dictionary = {}
 var _chat_unread_prompt_count := 0
 var _chat_cmd_latency_last_ms := 0
 var _chat_cmd_latency_total_ms := 0
@@ -937,6 +958,7 @@ func _ensure_settings_main_menu_ui() -> void:
     _main_menu_btn_chat = _add_main_menu_button("Chat", "Talk to your buddy and see what it has said.", _toggle_chat_window)
     _add_main_menu_button("Journal", "Read what your buddy has been doing on its own.", _open_journal)
     _add_main_menu_button("Memory", "What your buddy remembers about you. You can make it forget anything.", _toggle_memory_window)
+    _add_main_menu_button("Town", "Where your buddy is, and the town it lives in.", _toggle_town_window)
     _main_menu_btn_stats = _add_main_menu_button("Stats", "Level, bond and stat points.", _toggle_stats_menu)
     _add_main_menu_button("Inventory", "Items your buddy has collected.", _toggle_inventory_menu)
     _add_main_menu_button("Wardrobe", "Change what your buddy wears.", _toggle_wardrobe_menu)
@@ -2456,6 +2478,8 @@ func _on_tick_timer_timeout() -> void:
 func _apply_mind_events(events: Array, context: Dictionary) -> void:
     if events.is_empty():
         return
+    if _town_window != null and _town_window.visible:
+        _refresh_town_window()
     for event_variant in events:
         if typeof(event_variant) == TYPE_DICTIONARY and (event_variant as Dictionary).has("buy_want"):
             # It may have put on something it bought.
@@ -3153,6 +3177,243 @@ func _on_forget_all_pressed() -> void:
         return
     _memory_forget_all_armed_until = now_unix + 5
     _refresh_memory_window()
+
+
+# --- Town window (Plan 13 A2) -------------------------------------------------
+# A map of the town drawn in code: places as tiles joined by paths, the
+# buddy's marker where it is now, who is about at each open place, and a
+# darker map at night. Click a place to read about it.
+func _toggle_town_window() -> void:
+    _ensure_town_window()
+    var opening := not _town_window.visible
+    if opening:
+        _refresh_town_window()
+    _layout_popup_window(_town_window, opening, MAPLE_LAYOUT_TOWN)
+
+
+func _ensure_town_window() -> void:
+    if _town_window != null:
+        return
+    var window := Window.new()
+    window.name = "TownWindow"
+    window.title = "Town"
+    window.visible = false
+    window.always_on_top = true
+    window.wrap_controls = true
+    add_child(window)
+    _town_window = window
+    window.close_requested.connect(func() -> void:
+        window.hide()
+    )
+    _ensure_maple_window_background(window)
+    var margin := MarginContainer.new()
+    margin.name = "MarginContainer"
+    margin.anchor_right = 1.0
+    margin.anchor_bottom = 1.0
+    window.add_child(margin)
+    var root := VBoxContainer.new()
+    root.add_theme_constant_override("separation", 8)
+    margin.add_child(root)
+    _town_heading = MapleTheme.heading("")
+    root.add_child(_town_heading)
+    _town_map = Control.new()
+    _town_map.custom_minimum_size = Vector2(540, 340)
+    _town_map.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    _town_map.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    _town_map.mouse_filter = Control.MOUSE_FILTER_STOP
+    _town_map.draw.connect(_draw_town_map)
+    _town_map.gui_input.connect(_on_town_map_input)
+    root.add_child(_town_map)
+    _town_info = Label.new()
+    _town_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    _town_info.custom_minimum_size = Vector2(300, 84)
+    root.add_child(_town_info)
+
+
+func _refresh_town_window() -> void:
+    if _town_window == null:
+        return
+    _town_window.title = "%s's town" % _speaker_name()
+    _town_heading.text = _where_is_it_now_line()
+    if _town_selected == "":
+        _town_info.text = "Click a place to see who is there and what %s thinks of it." % _speaker_name()
+    else:
+        _town_info.text = _town_place_details(_town_selected)
+    _town_map.queue_redraw()
+
+
+func _town_hour() -> int:
+    return int(Time.get_datetime_dict_from_system().get("hour", 12))
+
+
+func _town_place_open(place: Dictionary, hour: int) -> bool:
+    return int(place.get("opens", 0)) <= hour and hour < int(place.get("closes", 24))
+
+
+func _town_npc_name(npc_id: String) -> String:
+    for npc_variant in _town_npcs():
+        if typeof(npc_variant) == TYPE_DICTIONARY and str((npc_variant as Dictionary).get("id", "")) == npc_id:
+            return str((npc_variant as Dictionary).get("name", npc_id))
+    return npc_id.capitalize()
+
+
+# Town characters about at a place now: its residents, while it is open and
+# it is not the middle of the night.
+func _town_people_at(place: Dictionary, hour: int) -> Array:
+    var people: Array = []
+    if not _town_place_open(place, hour) or hour < 7 or hour >= 22:
+        return people
+    var residents_variant = place.get("residents", [])
+    if typeof(residents_variant) == TYPE_ARRAY:
+        for npc_id in residents_variant:
+            people.append(_town_npc_name(str(npc_id)))
+    return people
+
+
+func _buddy_location() -> String:
+    var mind_variant = AppState.profile.get("mind", null)
+    if typeof(mind_variant) != TYPE_DICTIONARY:
+        return "home"
+    return str((mind_variant as Dictionary).get("location", "home"))
+
+
+func _where_is_it_now_line() -> String:
+    var place_id := _buddy_location()
+    var place_name := _place_display_name(place_id)
+    if place_id == "home" or place_name == "":
+        return "%s is at home." % _speaker_name()
+    return "%s is at %s." % [_speaker_name(), place_name]
+
+
+func _town_point(positions: Dictionary, inner: Rect2, place_id: String) -> Vector2:
+    var unit: Vector2 = positions.get(place_id, Vector2(0.5, 0.5))
+    return inner.position + unit * inner.size
+
+
+func _draw_town_map() -> void:
+    var map := _town_map
+    var area := Rect2(Vector2.ZERO, map.size)
+    var hour := _town_hour()
+    var night := hour < 7 or hour >= 22
+    map.draw_rect(area, Color(0.07, 0.09, 0.15) if night else Color(0.17, 0.27, 0.20))
+    var layout: Dictionary = AppState.get_town_map()
+    var positions_variant = layout.get("positions", {})
+    var positions: Dictionary = positions_variant if typeof(positions_variant) == TYPE_DICTIONARY else {}
+    var inner := area.grow(-48.0)
+    var path_colour := Color(0.35, 0.36, 0.45) if night else Color(0.62, 0.55, 0.40)
+    var paths_variant = layout.get("paths", [])
+    if typeof(paths_variant) == TYPE_ARRAY:
+        for path_variant in paths_variant:
+            if typeof(path_variant) == TYPE_ARRAY and (path_variant as Array).size() == 2:
+                map.draw_line(
+                    _town_point(positions, inner, str(path_variant[0])), _town_point(positions, inner, str(path_variant[1])),
+                    path_colour, 5.0, true
+                )
+    _town_tiles.clear()
+    var font: Font = map.get_theme_default_font()
+    var here := _buddy_location()
+    for place_variant in _town_places():
+        if typeof(place_variant) != TYPE_DICTIONARY:
+            continue
+        var place: Dictionary = place_variant
+        var place_id := str(place.get("id", ""))
+        if not positions.has(place_id):
+            continue
+        var centre := _town_point(positions, inner, place_id)
+        var label := str(place.get("name", place_id))
+        var text_width: float = font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x
+        var tile := Rect2(centre - Vector2(text_width / 2.0 + 10.0, 14.0), Vector2(text_width + 20.0, 28.0))
+        var open := _town_place_open(place, hour)
+        var fill: Color = TOWN_TILE_COLOURS.get(str(place.get("kind", "")), MapleTheme.BUTTON)
+        if not open:
+            fill = fill.darkened(0.45)
+        var selected := place_id == _town_selected
+        map.draw_style_box(MapleTheme.flat(fill, MapleTheme.SELECTION if selected else MapleTheme.FRAME_DIM, 6, 2 if selected else 1, 0, 0), tile)
+        map.draw_string(font, tile.position + Vector2(10.0, 19.0), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, MapleTheme.TEXT if open else MapleTheme.TEXT_DIM)
+        _town_tiles[place_id] = tile
+        # Who is about: a small rounded marker with their initial. (Map
+        # markers are UI tiles; the overlay never draws the character itself.)
+        var people := _town_people_at(place, hour)
+        for index in range(people.size()):
+            var dot := Vector2(tile.position.x + 12.0 + index * 18.0, tile.end.y + 10.0)
+            map.draw_style_box(MapleTheme.flat(Color(0.86, 0.81, 0.70), Color(0.30, 0.28, 0.24), 8, 1, 0, 0), Rect2(dot - Vector2(8.0, 8.0), Vector2(16.0, 16.0)))
+            map.draw_string(font, dot + Vector2(-4.0, 4.0), str(people[index]).substr(0, 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(0.15, 0.15, 0.2))
+        if place_id == here:
+            var marker := Vector2(tile.get_center().x, tile.position.y - 12.0)
+            map.draw_style_box(MapleTheme.flat(MapleTheme.HEADING, Color(0.45, 0.32, 0.08), 10, 1, 0, 0), Rect2(marker - Vector2(10.0, 10.0), Vector2(20.0, 20.0)))
+            map.draw_string(font, marker + Vector2(-4.0, 5.0), _speaker_name().substr(0, 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.2, 0.15, 0.05))
+
+
+func _on_town_map_input(event: InputEvent) -> void:
+    if not (event is InputEventMouseButton):
+        return
+    var click := event as InputEventMouseButton
+    if not click.pressed or click.button_index != MOUSE_BUTTON_LEFT:
+        return
+    for place_id in _town_tiles.keys():
+        if (_town_tiles[place_id] as Rect2).has_point(click.position):
+            _town_selected = str(place_id)
+            _refresh_town_window()
+            return
+
+
+# Who is there, what the buddy thinks of it, and what happened there last.
+func _town_place_details(place_id: String) -> String:
+    var place: Dictionary = {}
+    for place_variant in _town_places():
+        if typeof(place_variant) == TYPE_DICTIONARY and str((place_variant as Dictionary).get("id", "")) == place_id:
+            place = place_variant
+    if place.is_empty():
+        return ""
+    var hour := _town_hour()
+    var opens := int(place.get("opens", 0))
+    var closes := int(place.get("closes", 24))
+    var title := str(place.get("name", place_id))
+    title = title.substr(0, 1).to_upper() + title.substr(1)
+    var hours := "open all day" if opens <= 0 and closes >= 24 else "open %d:00 to %d:00, %s now" % [opens, closes, "open" if _town_place_open(place, hour) else "shut"]
+    var lines: Array = ["%s: %s." % [title, hours]]
+    var people := _town_people_at(place, hour)
+    if not people.is_empty():
+        lines.append("%s %s here." % [" and ".join(people), "is" if people.size() == 1 else "are"])
+    var speaker := _speaker_name()
+    var feelings: Dictionary = {}
+    var mind_variant = AppState.profile.get("mind", null)
+    if typeof(mind_variant) == TYPE_DICTIONARY and typeof((mind_variant as Dictionary).get("feelings", null)) == TYPE_DICTIONARY:
+        feelings = (mind_variant as Dictionary)["feelings"]
+    var key := "place:%s" % place_id
+    if not feelings.has(key):
+        lines.append("%s hasn't been yet." % speaker)
+    else:
+        var value := float(feelings[key])
+        if value > 0.3:
+            lines.append("%s loves it here." % speaker)
+        elif value > 0.1:
+            lines.append("%s likes it here." % speaker)
+        elif value < -0.3:
+            lines.append("%s doesn't like it much." % speaker)
+        elif value < -0.1:
+            lines.append("%s isn't keen on it." % speaker)
+        else:
+            lines.append("%s doesn't mind it." % speaker)
+    var plan_items_variant = AppState.mind_day_plan().get("items", [])
+    if typeof(plan_items_variant) == TYPE_ARRAY:
+        for item_variant in plan_items_variant:
+            if typeof(item_variant) == TYPE_DICTIONARY and str((item_variant as Dictionary).get("id", "")) == place_id and not bool((item_variant as Dictionary).get("done", false)):
+                lines.append("It's on today's plan.")
+    if str(place.get("kind", "")) == "shop":
+        var saving: Array = []
+        for want_variant in AppState.mind_wants():
+            if typeof(want_variant) == TYPE_DICTIONARY:
+                saving.append(str((want_variant as Dictionary).get("name", "")))
+        if not saving.is_empty():
+            lines.append("Saving up for: %s." % ", ".join(saving))
+    var last_text := ""
+    for entry_variant in AppState.get_mind_journal(40):
+        if typeof(entry_variant) == TYPE_DICTIONARY and str((entry_variant as Dictionary).get("place_id", "")) == place_id:
+            last_text = str((entry_variant as Dictionary).get("text", ""))
+    if last_text != "":
+        lines.append("Last time: \"%s\"" % last_text)
+    return " ".join(lines)
 
 
 func _build_wants_summary() -> String:
@@ -4036,9 +4297,7 @@ func _refresh_settings_menu() -> void:
         var status_text: String = "%s, bond level %d.\nDouble-click your buddy to open this menu." % [
             str(snapshot.get("mood", "calm")).capitalize(), int(snapshot.get("bond_level", 1))
         ]
-        var buddy_name_text: String = _buddy_name()
-        if buddy_name_text != "":
-            status_text = "%s\n%s" % [buddy_name_text, status_text]
+        status_text = "%s\n%s" % [_where_is_it_now_line(), status_text]
         _main_menu_status.text = status_text
     if _main_menu_btn_chat != null:
         _main_menu_btn_chat.text = "Chat (%d new)" % _chat_unread_prompt_count if _chat_unread_prompt_count > 0 else "Chat"

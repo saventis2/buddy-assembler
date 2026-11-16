@@ -27,6 +27,19 @@ town character's name). Settings: `chatModelEnabled` ("Talks back" in the
 menu), `chatBackend` (only `ollama`), `chatModelName`. The conversation is
 not saved yet; that is B2. `MindChatTest` 9 cases.
 
+**A2 town window: landed 2026-11-16.**
+- **The map.** Menu > Town shows the town as a map drawn in code: places as
+  tiles joined by paths. Positions and paths are part of the town data, so
+  a pack can supply its own; a town without them gets a ring round home.
+- **On the map.** The buddy's marker sits where it is now. Each town
+  character about at an open place shows as an initial. Shut places are
+  dimmed, and the map is darker at night.
+- **Clicking a place** says when it is open, who is there and what the buddy
+  thinks of it. It also says whether the place is on today's plan, what it
+  is saving for (at the shop), and the last journal line from there.
+- **Where it is now** is the first line of the main menu.
+- `WorldVarietyTest` 3 cases.
+
 **B2 memory: landed 2026-11-16.** A small knowledge graph in the buddy's own
 save (`profile.memory`, kept by `memory_service.gd`). Facts are
 subject-relation-object edges between nodes: the person, the buddy, the

@@ -11,7 +11,7 @@
     {"id": "world-economy-flow", "scene": "res://tests/WorldEconomyFlowTest.tscn", "pass_marker": "world_economy_flow_test: PASS (6 cases)"},
     {"id": "companion-depth", "scene": "res://tests/CompanionDepthTest.tscn", "pass_marker": "companion_depth_test: PASS (5 cases)"},
     {"id": "economy-tuning", "scene": "res://tests/EconomyTuningTest.tscn", "pass_marker": "economy_tuning_test: PASS (5 cases)"},
-    {"id": "world-variety", "scene": "res://tests/WorldVarietyTest.tscn", "pass_marker": "world_variety_test: PASS (2 cases)"},
+    {"id": "world-variety", "scene": "res://tests/WorldVarietyTest.tscn", "pass_marker": "world_variety_test: PASS (3 cases)"},
     {"id": "prompt-cadence", "scene": "res://tests/PromptCadenceTest.tscn", "pass_marker": "prompt_cadence_test: PASS (3 cases)"},
     {"id": "chat-command-router", "scene": "res://tests/ChatCommandRouterTest.tscn", "pass_marker": "chat_command_router_test: PASS (15 cases)"},
     {"id": "mind-service", "scene": "res://tests/MindServiceTest.tscn", "pass_marker": "mind_service_test: PASS (26 cases)"},
