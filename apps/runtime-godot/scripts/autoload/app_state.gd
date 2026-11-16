@@ -20,6 +20,7 @@ const SERVICE_PATHS := {
     "world": "res://scripts/services/world_service.gd",
     "report": "res://scripts/services/report_service.gd",
     "mind": "res://scripts/services/mind_service.gd",
+    "memory": "res://scripts/services/memory_service.gd",
 }
 
 var settings := {}
@@ -413,6 +414,9 @@ func tick_mind(now_unix: int) -> Array:
     var next_profile = result.get("profile", null)
     if typeof(next_profile) == TYPE_DICTIONARY:
         profile = next_profile
+        # Where it went and who it saw are facts, so the memory graph links
+        # them with what the person says about the same places and people.
+        _call_profile_service("memory", "record_town_events", [profile, events])
         flush()
     return events
 
@@ -425,6 +429,106 @@ func apply_mind_thought(decision_unix: int, thought: String, want: String) -> vo
     if typeof(result) == TYPE_DICTIONARY:
         profile = result
         flush()
+
+
+# --- Memory (Plan 13 B2) -------------------------------------------------
+# What the buddy remembers about the person lives in profile["memory"]. The
+# memoryEnabled setting stops anything new being kept or used; what is
+# already kept can still be listed and forgotten.
+func memory_enabled() -> bool:
+    return bool(settings.get("memoryEnabled", true))
+
+
+func _memory_roster() -> Dictionary:
+    var npcs: Array = []
+    var world_variant = world_state.get("world", null)
+    if typeof(world_variant) == TYPE_DICTIONARY:
+        var npcs_variant = (world_variant as Dictionary).get("npcs", [])
+        if typeof(npcs_variant) == TYPE_ARRAY:
+            npcs = npcs_variant
+    var places_variant = get_town().get("places", [])
+    return {"places": places_variant if typeof(places_variant) == TYPE_ARRAY else [], "npcs": npcs}
+
+
+func _now_unix() -> int:
+    return int(Time.get_unix_time_from_system())
+
+
+func memory_note_turn(who: String, text: String) -> void:
+    if not memory_enabled():
+        return
+    _call_profile_service("memory", "append_turn", [profile, who, text, _now_unix()])
+    flush()
+
+
+func memory_live_turns() -> Array:
+    if not memory_enabled():
+        return []
+    var turns = _call_service_with_fallback("memory", "live_turns", [profile, _now_unix()], [])
+    return turns if typeof(turns) == TYPE_ARRAY else []
+
+
+func memory_should_consolidate(chat_open: bool) -> bool:
+    if not memory_enabled():
+        return false
+    return bool(_call_service_with_fallback("memory", "should_consolidate", [profile, _now_unix(), chat_open], false))
+
+
+func memory_pending_turns() -> Dictionary:
+    var pending = _call_service_with_fallback("memory", "pending_turns", [profile], {})
+    return pending if typeof(pending) == TYPE_DICTIONARY else {}
+
+
+func memory_apply_consolidation(facts: Array, summary: String, upto: int) -> void:
+    if not memory_enabled():
+        return
+    _call_profile_service("memory", "apply_consolidation", [profile, facts, summary, upto, _now_unix(), _memory_roster()])
+    flush()
+
+
+func memory_discard_turns(upto: int) -> void:
+    _call_profile_service("memory", "discard_turns", [profile, upto])
+    flush()
+
+
+func memory_recall(text: String) -> Dictionary:
+    if not memory_enabled():
+        return {}
+    var recalled = _call_service_with_fallback("memory", "recall", [profile, text, _now_unix()], {})
+    return recalled if typeof(recalled) == TYPE_DICTIONARY else {}
+
+
+# Returns {"ok": bool, "id": int, "reason": String}.
+func memory_add_note(text: String) -> Dictionary:
+    if not memory_enabled():
+        return {"ok": false, "id": 0, "reason": "memory_off"}
+    var result = _call_service_with_fallback("memory", "add_note", [profile, text, _now_unix()], {})
+    if typeof(result) != TYPE_DICTIONARY:
+        return {"ok": false, "id": 0, "reason": "service_failure"}
+    if bool(result.get("ok", false)) and typeof(result.get("profile", null)) == TYPE_DICTIONARY:
+        profile = result["profile"]
+        flush()
+    return {"ok": bool(result.get("ok", false)), "id": int(result.get("id", 0)), "reason": str(result.get("reason", ""))}
+
+
+func memory_forget(memory_id: int) -> bool:
+    var result = _call_service_with_fallback("memory", "forget", [profile, memory_id], {})
+    if typeof(result) != TYPE_DICTIONARY or not bool(result.get("ok", false)):
+        return false
+    if typeof(result.get("profile", null)) == TYPE_DICTIONARY:
+        profile = result["profile"]
+        flush()
+    return true
+
+
+func memory_forget_all() -> void:
+    _call_profile_service("memory", "forget_all", [profile])
+    flush()
+
+
+func memory_list() -> Array:
+    var rows = _call_service_with_fallback("memory", "list_about_user", [profile, _now_unix()], [])
+    return rows if typeof(rows) == TYPE_ARRAY else []
 
 
 func get_mind_preferences() -> Dictionary:
@@ -916,6 +1020,7 @@ func _ensure_profile_modules(input_profile: Dictionary) -> Dictionary:
     merged = _call_profile_service("bond", "ensure_profile", [merged], false)
     merged = _call_profile_service("growth", "ensure_profile", [merged], false)
     merged = _call_profile_service("mind", "ensure_profile", [merged], false)
+    merged = _call_profile_service("memory", "ensure_profile", [merged], false)
     return merged
 
 
@@ -1180,6 +1285,7 @@ func _default_settings() -> Dictionary:
         "chatModelEnabled": true,
         "chatBackend": "ollama",
         "chatModelName": "gemma3:4b",
+        "memoryEnabled": true,
         "supportHintsEnabled": true,
         "productivityOptIn": false,
         "focusCelebrateMinutes": 20,

@@ -22,7 +22,8 @@ Updated: 2026-04-23 (Plan 9 inventory/progression/drop coupling)
 
 - [done] A1 town as data: eight places with hours, activities and residents; the mind picks real places and companions
 - [done] B1 conversation: free chat through the local model, the buddy chooses its own name, "Talks back" setting
-- [open] B2 graph memory, A2 town map, A3 changing town, B3 talk changes the buddy, Part C (wants, plans, reflection, making things)
+- [done] B2 graph memory: facts and talk summaries in the save, recalled into chat, Menu > Memory to see and forget them, "Remembers you" setting
+- [open] A2 town map, A3 changing town, B3 talk changes the buddy, Part C (wants, plans, reflection, making things)
 
 ## Plan 12B (Thinking model via local Ollama) - 2026-11-15
 

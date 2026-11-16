@@ -259,7 +259,7 @@ Status: `in_progress` (see `PLAN13_TOWN_AND_CONVERSATION.md`)
 
 - [x] A1 town as data
 - [x] B1 conversation and self-chosen name
-- [ ] B2 graph memory
+- [x] B2 graph memory
 - [ ] A2 town map window
 - [ ] A3 changing town, things you leave
 - [ ] B3 talk changes the buddy
