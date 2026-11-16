@@ -2,6 +2,7 @@ extends Node
 
 const SaveStore = preload("res://scripts/persistence/save_store.gd")
 const SchemaMigrations = preload("res://scripts/persistence/schema_migrations.gd")
+const MindServiceScript = preload("res://scripts/services/mind_service.gd")
 const UnlockTable = preload("res://scripts/progression/unlock_table.gd")
 const ContentLoader = preload("res://scripts/content/content_loader.gd")
 
@@ -479,6 +480,10 @@ func _buy_want(want_id: String, decision_unix: int) -> void:
         if typeof(row) == TYPE_DICTIONARY and str((row as Dictionary).get("id", "")) == want_id:
             want = row
     if want.is_empty():
+        return
+    # The wallet may have changed since the trip was planned: keep the reserve.
+    if int(get_inventory_snapshot().get("meso", 0)) < int(want.get("price", 0)) + MindServiceScript.WANT_RESERVE_MESO:
+        _call_profile_service("mind", "cannot_buy", [profile, want_id, decision_unix])
         return
     var spent = _call_service_with_fallback(
         "economy", "spend_meso", [world_state, "purchase:%s" % want_id, int(want.get("price", 0))], {}

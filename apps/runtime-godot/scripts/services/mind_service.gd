@@ -120,15 +120,23 @@ func tick(profile: Dictionary, npcs: Array, now_unix: int, context: Dictionary, 
 			due_times.append(now_unix - remaining * DECISION_INTERVAL_SECONDS)
 
 	var events: Array = []
+	# Catch-up decisions are worked out together, before any purchase is paid
+	# for, so each one is told what the trips before it have already spent.
+	var meso_left := int(context.get("meso", 0))
 	for index in range(due_times.size()):
 		var decision_unix := int(due_times[index])
 		var decision_context := context.duplicate(true)
+		if decision_context.has("meso"):
+			decision_context["meso"] = meso_left
 		if index < due_times.size() - 1:
 			# Past decisions happened unobserved; the live clock's day/night
 			# reading only applies to the one happening right now.
 			decision_context["is_night"] = _hour_is_night(decision_unix)
 			decision_context["hour"] = _local_hour(decision_unix)
-		events.append(_decide(merged, npcs, decision_unix, decision_context, town))
+		var event := _decide(merged, npcs, decision_unix, decision_context, town)
+		if event.has("buy_want"):
+			meso_left -= _want_price(merged["mind"], str(event["buy_want"]))
+		events.append(event)
 	return {"profile": merged, "events": events}
 
 
@@ -430,6 +438,7 @@ func cannot_buy(profile: Dictionary, want_id: String, t: int) -> Dictionary:
 			continue
 		var want: Dictionary = want_variant
 		var name := str(want.get("name", ""))
+		want["status"] = "saving"
 		_append_journal(mind, {
 			"t": t + 1,
 			"intent": "reflect",
@@ -444,13 +453,20 @@ func cannot_buy(profile: Dictionary, want_id: String, t: int) -> Dictionary:
 	return merged
 
 
-# What it is saving for, oldest first.
+# What it is saving for (or on its way to buy), oldest first.
 func get_wants(profile: Dictionary) -> Array:
 	var rows: Array = []
 	for want_variant in ensure_profile(profile)["mind"]["wants"]:
-		if typeof(want_variant) == TYPE_DICTIONARY and str((want_variant as Dictionary).get("status", "")) == "saving":
+		if typeof(want_variant) == TYPE_DICTIONARY and str((want_variant as Dictionary).get("status", "")) in ["saving", "buying"]:
 			rows.append((want_variant as Dictionary).duplicate(true))
 	return rows
+
+
+func _want_price(mind: Dictionary, want_id: String) -> int:
+	for want_variant in mind.get("wants", []):
+		if typeof(want_variant) == TYPE_DICTIONARY and str((want_variant as Dictionary).get("id", "")) == want_id:
+			return int((want_variant as Dictionary).get("price", 0))
+	return 0
 
 
 func get_day_plan(profile: Dictionary) -> Dictionary:
@@ -515,14 +531,17 @@ func _decide(
 	if typeof(intention) == TYPE_DICTIONARY and not (intention as Dictionary).is_empty():
 		if int((intention as Dictionary).get("until", 0)) <= decision_unix:
 			mind["intention"] = {}
-		elif not is_night:
+		# Worn out, it rests first: "later" for tiredness promised to go after
+		# a rest, so nothing it agreed to is done while it is still this tired.
+		elif not is_night and float(mods["energy_strain"]) < TIRED_LIMIT:
 			honoured = _honour_intention(intention, mind["feelings"], open_places, subjects, scores, rng, mind["wants"])
 			if not honoured.is_empty():
 				mind["intention"] = {}
 
 	# Saved up enough for something it wants: head for the shop.
 	var intention_now = mind.get("intention", {})
-	if honoured.is_empty() and not is_night and typeof(intention_now) == TYPE_DICTIONARY and (intention_now as Dictionary).is_empty():
+	var rested := float(mods["energy_strain"]) < TIRED_LIMIT
+	if honoured.is_empty() and not is_night and rested and typeof(intention_now) == TYPE_DICTIONARY and (intention_now as Dictionary).is_empty():
 		var meso := int(context.get("meso", 0))
 		var wanted := {}
 		for want_variant in mind["wants"]:
@@ -543,7 +562,7 @@ func _decide(
 					mind["intention"] = {}
 
 	# Today's plan: do the item for this part of the day if nothing else is steering.
-	if plans_on and honoured.is_empty() and not is_night:
+	if plans_on and honoured.is_empty() and not is_night and rested:
 		var plan_items_variant = (mind["day_plan"] as Dictionary).get("items", [])
 		var plan_items: Array = plan_items_variant if typeof(plan_items_variant) == TYPE_ARRAY else []
 		for item_index in range(plan_items.size()):
@@ -655,6 +674,7 @@ func _decide(
 			for want_variant in mind["wants"]:
 				if typeof(want_variant) == TYPE_DICTIONARY and str((want_variant as Dictionary).get("id", "")) == str(honoured["want_id"]):
 					entry["buy_item"] = str((want_variant as Dictionary).get("name", ""))
+					(want_variant as Dictionary)["status"] = "buying"
 
 	# Seeing something in a shop it would like to own. Drawn last, so none of the
 	# earlier rng draws move.
@@ -857,6 +877,10 @@ func _update_day_plan(
 ) -> void:
 	var day := _local_day(decision_unix)
 	var plan: Dictionary = mind["day_plan"]
+	# Yesterday's unfinished items are written off before today's plan
+	# replaces them, so the journal still says what it never got round to.
+	if not plan.is_empty() and int(plan.get("day", day)) < day:
+		_write_off_missed(mind, plan, day, hour, decision_unix)
 	if not is_night and hour >= 7 and int(plan.get("day", -1)) != day:
 		var journal: Array = mind["journal"]
 		var feelings: Dictionary = mind["feelings"]
@@ -936,7 +960,12 @@ func _update_day_plan(
 				"text": "Today I'd like to " + joined + ".",
 			})
 
-	# Parts of the day that ended with the item undone.
+	_write_off_missed(mind, plan, day, hour, decision_unix)
+
+
+# Items whose part of the day ended undone (or whose day is over) are marked
+# missed and noted once in the journal.
+func _write_off_missed(mind: Dictionary, plan: Dictionary, day: int, hour: int, decision_unix: int) -> void:
 	var plan_day := int(plan.get("day", day))
 	var current_items = plan.get("items", [])
 	if typeof(current_items) != TYPE_ARRAY:
