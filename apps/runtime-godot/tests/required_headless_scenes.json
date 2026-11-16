@@ -16,7 +16,8 @@
     {"id": "chat-command-router", "scene": "res://tests/ChatCommandRouterTest.tscn", "pass_marker": "chat_command_router_test: PASS (14 cases)"},
     {"id": "mind-service", "scene": "res://tests/MindServiceTest.tscn", "pass_marker": "mind_service_test: PASS (14 cases)"},
     {"id": "mind-thinker", "scene": "res://tests/MindThinkerTest.tscn", "pass_marker": "mind_thinker_test: PASS (9 cases)"},
-    {"id": "mind-chat", "scene": "res://tests/MindChatTest.tscn", "pass_marker": "mind_chat_test: PASS (9 cases)"},
+    {"id": "mind-chat", "scene": "res://tests/MindChatTest.tscn", "pass_marker": "mind_chat_test: PASS (12 cases)"},
+    {"id": "memory-service", "scene": "res://tests/MemoryServiceTest.tscn", "pass_marker": "memory_service_test: PASS (13 cases)"},
     {"id": "manual-verification-report", "scene": "res://tests/ManualVerificationReportTest.tscn", "pass_marker": "manual_verification_report_test: PASS (2 cases)"}
   ]
 }

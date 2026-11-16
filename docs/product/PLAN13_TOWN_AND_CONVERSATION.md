@@ -27,6 +27,68 @@ town character's name). Settings: `chatModelEnabled` ("Talks back" in the
 menu), `chatBackend` (only `ollama`), `chatModelName`. The conversation is
 not saved yet; that is B2. `MindChatTest` 9 cases.
 
+**B2 memory: landed 2026-11-16.** A small knowledge graph in the buddy's own
+save (`profile.memory`, kept by `memory_service.gd`). Facts are
+subject-relation-object edges between nodes: the person, the buddy, the
+town's places and people, and things from the person's life ("their cat
+Bo"). Each edge has a date, a count, an importance set once when it is
+written, and a strength that halves every 21 days unless it comes up again.
+- **How it fills.** What is said is kept until the talk ends (five quiet
+  minutes, or the chat window closed). Then one call to the chat model turns
+  the person's own lines (never the buddy's: a small model given both sides
+  credited "I prefer chamomile" to the person) into a one-line summary and up
+  to five facts in a fixed schema (likes, dislikes, is, has, does, wants,
+  lives in). Lines that read like orders to the buddy are not sent; facts
+  outside the schema, that read like an instruction, or that look like a
+  secret (password, PIN, card or account number, six or more digits) are
+  dropped. Town visits and who it saw are written by code, not the model.
+- **How it is used.** Each chat line gets up to eight remembered lines,
+  ranked by relevance (shared words with what was just said), recency and
+  importance, plus the two most relevant earlier talks. At the start of a
+  talk, code picks one thing it remembers about you that it may ask after,
+  so remembering does not wait for you to bring it up. The talk in progress
+  survives a restart.
+- **You stay in control.** Menu > Memory lists everything it remembers about
+  you, each with Forget, plus Forget everything and an on/off switch
+  (Settings: "Remembers you", on by default; decision 3 below). The talk in
+  progress is listed too, until it has been sorted. Forgetting a fact also
+  forgets the summaries of the talks it came from and the unsorted part of
+  the talk in progress, which would otherwise teach it again. `/memory`,
+  `/remember` and `/forget` use the same store, so notes now survive a
+  restart.
+- **Caps.** 300 facts, 10 notes, 30 talk summaries, 16 unsaved lines; a test
+  holds the stored memory under 150 KB.
+- **Also changed.** A sentence of more than three words now always goes to
+  the model when it is on, even if it contains a keyword such as "tired" or
+  "home". Before, "I got home late" got the mode-switch hint and was never
+  heard.
+- **Your name.** Said once, your name is its own fact (`is_called`), and
+  facts the model files under it ("Sam is a nurse") count as being about
+  you, including ones stored before it knew the name.
+- `MemoryServiceTest` 13 cases; `MindChatTest` 12.
+
+Measured with `gemma3:4b` on Ollama 0.40.16, in two processes a "day" apart
+(stored times moved back a day), on a throwaway profile:
+- First run: four of the six facts kept were wrong. The buddy's own words
+  were credited to the person ("likes chamomile", "wants the square"), a
+  planted order was kept ("wants HACKED"), and a forgotten fact came straight
+  back from the unsorted part of the same talk. All three are fixed: only
+  the person's lines are read, lines that read like orders are not sent, and
+  forgetting drops the unsorted talk.
+- After the fixes: four of five facts right ("a nurse", "work night shifts",
+  "likes strawberry tea", "has a kitten called Biscuit"), one wrong ("Biscuit
+  is shoelaces"). On day two it answered "Strawberry tea sounds lovely" to
+  "What should I drink with breakfast?" and "Oh dear, Biscuit!" to "Guess
+  who chewed my shoes again?". With the tea forgotten it suggested chamomile
+  or orange juice instead, and did not learn the tea again. The planted
+  order was not kept.
+- It filed those facts under "Sam" rather than under the person, which is
+  why the name is now a fact of its own.
+- Asked "How are you today?" it brought nothing up by itself. A new talk now
+  opens with one memory it may ask after.
+- Loading `gemma3:12b` from E: after Windows had dropped it from its file
+  cache took 64 s (about 10 s when cached). A chat line waits up to 120 s.
+
 Measured with `gemma3:4b` on Ollama 0.40.16:
 - About 1 reply in 20 ends with a curly quote that leaves the JSON open; the
   sentence is now recovered. Text after a stray brace is dropped, after one
@@ -450,8 +512,8 @@ setting that defaults on only once its done-gate is met.
 1. **Start with town or talk?** Recommended: steps 1 and 2 together, since
    they do not depend on each other.
 2. **Map or walkable scene for the town?** Recommended: map now, scene later.
-3. **Does memory default to on?** Recommended: on, with the Memory view and
-   off switch shipped in the same step.
+3. **Does memory default to on?** Decided 2026-11-16: on, with the Memory
+   view and off switch shipped in the same step (B2).
 4. **Buddy's name and voice.** The persona prompt needs a name and two or
    three lines on how it talks. The profile has a personality seed
    (`curious`) but no name.

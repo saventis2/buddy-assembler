@@ -26,6 +26,16 @@ const CHAT_SEPARATOR_IDLE_SECONDS := 600
 const CHAT_RECENT_REPLY_MAX := 20
 const CHAT_FOLLOW_UP_MIN_TURNS := 3
 const CHAT_MEMORY_MAX_NOTES := 10
+# Memory (Plan 13 B2): a failed talk-to-memory request is retried after ten
+# minutes, and let go after three failures in a row.
+const MEMORY_RETRY_SECONDS := 600
+const MEMORY_MAX_FAILURES := 3
+const MAPLE_LAYOUT_MEMORY := {
+    "base_size": Vector2i(460, 480),
+    "min_size": Vector2i(360, 320),
+    "offset": Vector2i(72, 48),
+    "margins": [14, 12, 14, 12],
+}
 const CHAT_FONT_SIZE_M := 13
 const CHAT_FONT_SIZE_L := 16
 const SETTINGS_CHANGE_HISTORY_MAX := 20
@@ -395,7 +405,7 @@ var _is_paused := false
 var _mind_http: HTTPRequest = null
 var _mind_pending := {}
 var _chat_http: HTTPRequest = null
-var _chat_pending := {}          # {"kind": "chat" | "name"}
+var _chat_pending := {}          # {"kind": "chat" | "name" | "memory"}
 var _chat_turns: Array = []      # {"who": "you" | "them", "text": String}
 var _mind_model_status := "not tried yet"
 var _dragging := false
@@ -470,6 +480,7 @@ var _main_menu_btn_stats: Button = null
 var _settings_btn_autonomy: Button = null
 var _settings_btn_model: Button = null
 var _settings_btn_chat_model: Button = null
+var _settings_btn_memory: Button = null
 var _settings_debug_box: Control = null
 var _settings_btn_debug_toggle: Button = null
 var _inventory_maple_canvas: Control = null
@@ -489,19 +500,16 @@ var _chat_last_reason_code := ""
 var _chat_last_line_unix := 0
 var _chat_recent_buddy_norm_lines: Array = []
 var _chat_last_followup_turn := -100
-var _chat_memory_tag_counts := {
-    "goal": 0,
-    "mood": 0,
-    "task": 0,
-    "reward": 0,
-    "world": 0,
-    "support": 0,
-}
-var _chat_memory_turn_tags: Array = []
-var _chat_memory_notes: Array = []
-var _chat_memory_next_note_id := 1
 var _chat_memory_pending_forget_id := -1
 var _chat_memory_pending_forget_until := 0
+var _memory_next_attempt_unix := 0
+var _memory_failures := 0
+var _memory_window: Window = null
+var _memory_rows: VBoxContainer = null
+var _memory_intro: Label = null
+var _memory_btn_toggle: Button = null
+var _memory_btn_forget_all: Button = null
+var _memory_forget_all_armed_until := 0
 var _chat_unread_prompt_count := 0
 var _chat_cmd_latency_last_ms := 0
 var _chat_cmd_latency_total_ms := 0
@@ -595,6 +603,7 @@ func _ready() -> void:
     _configure_wardrobe_window()
     _configure_menu_rebuild_window()
     _configure_chat_window()
+    _chat_turns = AppState.memory_live_turns()
     _capture_stats_session_baseline()
     _refresh_equipped_visual_state()
     _load_assembler_default_parts()
@@ -927,6 +936,7 @@ func _ensure_settings_main_menu_ui() -> void:
     _settings_main_menu_box.add_child(_main_menu_status)
     _main_menu_btn_chat = _add_main_menu_button("Chat", "Talk to your buddy and see what it has said.", _toggle_chat_window)
     _add_main_menu_button("Journal", "Read what your buddy has been doing on its own.", _open_journal)
+    _add_main_menu_button("Memory", "What your buddy remembers about you. You can make it forget anything.", _toggle_memory_window)
     _main_menu_btn_stats = _add_main_menu_button("Stats", "Level, bond and stat points.", _toggle_stats_menu)
     _add_main_menu_button("Inventory", "Items your buddy has collected.", _toggle_inventory_menu)
     _add_main_menu_button("Wardrobe", "Change what your buddy wears.", _toggle_wardrobe_menu)
@@ -1001,12 +1011,15 @@ func _build_settings_sections() -> void:
     _settings_btn_chat_model.pressed.connect(func() -> void:
         _toggle_bool_setting("chatModelEnabled")
     )
+    _settings_btn_memory = Button.new()
+    _settings_btn_memory.tooltip_text = "When on, your buddy remembers what you tell it from one day to the next: a few facts and a line about each talk, kept in this PC's save. To pick those out, each finished talk is sent once more to the Ollama server in settings (this PC by default). Menu > Memory shows everything it remembers."
+    _settings_btn_memory.pressed.connect(_toggle_memory_setting)
 
     _add_settings_section(sections, "How busy your buddy is", [
         settings_btn_event_freq, settings_btn_prompt_freq, settings_btn_intensity, settings_btn_quiet,
     ])
     _add_settings_section(sections, "Do not disturb", [settings_btn_dnd_15, settings_btn_dnd_30, settings_btn_dnd_off], 3)
-    _add_settings_section(sections, "Its own mind", [_settings_btn_autonomy, _settings_btn_model, _settings_btn_chat_model])
+    _add_settings_section(sections, "Its own mind", [_settings_btn_autonomy, _settings_btn_model, _settings_btn_chat_model, _settings_btn_memory])
     _add_settings_section(sections, "Look and place", [settings_btn_mode, settings_btn_pack])
 
     _settings_btn_debug_toggle = Button.new()
@@ -2434,6 +2447,7 @@ func _on_tick_timer_timeout() -> void:
     _refresh_telemetry()
     if _state == "idle":
         _maybe_show_bond_phrase()
+    _maybe_consolidate_memory()
 
 
 # The buddy's own decisions. The latest one is acted out (unless something
@@ -2677,12 +2691,24 @@ func _start_chat_request(user_text: String) -> bool:
             continue
         recent.append(str((entry_variant as Dictionary).get("text", "")))
     var town := {"places": _town_place_names(), "people": _town_people()}
-    var body: String = MindThinker.build_chat_request(_chat_model_name(), _chat_about(), recent, _chat_turns, user_text, town)
+    var memory: Dictionary = AppState.memory_recall(user_text)
+    if _chat_turns.is_empty():
+        # Start of a talk: code picks one thing it remembers about you that
+        # it may ask after, so remembering does not wait for you to bring it up.
+        var facts_variant = memory.get("facts", [])
+        if typeof(facts_variant) == TYPE_ARRAY:
+            for line_variant in facts_variant:
+                var line: String = str(line_variant)
+                if line.begins_with("they ") and not line.begins_with("they asked you to remember") and not line.begins_with("they are called"):
+                    memory["bring_up"] = line
+                    break
+    var body: String = MindThinker.build_chat_request(_chat_model_name(), _chat_about(), recent, _chat_turns, user_text, town, memory)
     var error: int = _chat_http.request(url, ["Content-Type: application/json"], HTTPClient.METHOD_POST, body)
     if error != OK:
         return false
     _chat_turns.append({"who": "them", "text": user_text})
     _trim_chat_turns()
+    AppState.memory_note_turn("them", user_text)
     _chat_pending = {"kind": "chat", "url": url, "body": body, "retried": false}
     return true
 
@@ -2738,6 +2764,9 @@ func _on_chat_http_completed(result: int, response_code: int, _headers: PackedSt
     _chat_pending = {}
     var kind := str(pending.get("kind", ""))
     if result != HTTPRequest.RESULT_SUCCESS or response_code != 200:
+        if kind == "memory":
+            _on_memory_request_failed(pending)
+            return
         # Ollama occasionally answers one request with a server error. Try a
         # chat line once more before telling the user something is wrong.
         var transient := result != HTTPRequest.RESULT_SUCCESS or response_code >= 500
@@ -2758,9 +2787,12 @@ func _on_chat_http_completed(result: int, response_code: int, _headers: PackedSt
             var reply_text: String = str(reply.get("reply", ""))
             _chat_turns.append({"who": "you", "text": reply_text})
             _trim_chat_turns()
+            AppState.memory_note_turn("you", reply_text)
             _buddy_say(reply_text)
         else:
             _buddy_say("I lost my train of thought. Say that again?")
+    elif kind == "memory":
+        _on_memory_reply(pending, body.get_string_from_utf8())
     elif kind == "name":
         var named: Dictionary = MindThinker.parse_name_reply(body.get_string_from_utf8())
         if bool(named.get("ok", false)):
@@ -2778,6 +2810,234 @@ func _on_chat_http_completed(result: int, response_code: int, _headers: PackedSt
                 chat_window.title = _chat_window_title()
             if not AppState.is_quiet_hours_now() and not _is_dnd_active():
                 _buddy_say("I've been thinking about what to call myself. I'm %s." % chosen)
+
+
+# --- Memory (Plan 13 B2) ----------------------------------------------------
+# When a talk has ended (five quiet minutes, or the chat window closed), one
+# request turns it into a short summary and a few facts about the person. It
+# shares the chat request slot, so it never runs while a reply is on its way.
+func _maybe_consolidate_memory() -> void:
+    if not _chat_pending.is_empty():
+        return
+    var now_unix := int(Time.get_unix_time_from_system())
+    if now_unix < _memory_next_attempt_unix:
+        return
+    if not AppState.memory_should_consolidate(_chat_window_open):
+        return
+    var url: String = _chat_model_ready_url()
+    if url == "":
+        return
+    var pending: Dictionary = AppState.memory_pending_turns()
+    var turns_variant = pending.get("turns", [])
+    var turns: Array = turns_variant if typeof(turns_variant) == TYPE_ARRAY else []
+    var heard_them := false
+    for turn_variant in turns:
+        if typeof(turn_variant) == TYPE_DICTIONARY and str((turn_variant as Dictionary).get("who", "")) != "you":
+            heard_them = true
+            break
+    if not heard_them:
+        # Nothing of theirs worth reading (only lines that read like orders to
+        # the buddy, which are never sent): let the talk go.
+        AppState.memory_discard_turns(int(pending.get("upto", 0)))
+        return
+    _ensure_chat_http()
+    var body: String = MindThinker.build_memory_request(_chat_model_name(), turns)
+    if _chat_http.request(url, ["Content-Type: application/json"], HTTPClient.METHOD_POST, body) != OK:
+        return
+    _chat_pending = {"kind": "memory", "upto": int(pending.get("upto", 0))}
+    # Set now, so a failed attempt waits before the same talk is tried again.
+    _memory_next_attempt_unix = now_unix + MEMORY_RETRY_SECONDS
+
+
+func _on_memory_reply(pending: Dictionary, body_text: String) -> void:
+    var upto := int(pending.get("upto", 0))
+    if bool(pending.get("stale", false)):
+        # Something was forgotten while this talk was being read: let it go.
+        AppState.memory_discard_turns(upto)
+        return
+    var parsed: Dictionary = MindThinker.parse_memory_reply(body_text)
+    if not bool(parsed.get("ok", false)):
+        _on_memory_request_failed(pending)
+        return
+    var facts_variant = parsed.get("facts", [])
+    AppState.memory_apply_consolidation(
+        facts_variant if typeof(facts_variant) == TYPE_ARRAY else [], str(parsed.get("summary", "")), upto
+    )
+    _memory_failures = 0
+    _memory_next_attempt_unix = 0
+    _refresh_memory_window()
+
+
+# After a few failed tries the talk is let go rather than retried forever.
+func _on_memory_request_failed(pending: Dictionary) -> void:
+    _memory_failures += 1
+    if _memory_failures >= MEMORY_MAX_FAILURES:
+        AppState.memory_discard_turns(int(pending.get("upto", 0)))
+        _memory_failures = 0
+
+
+# Forgetting has to win: the talk in progress is dropped from the model's view,
+# and a talk being turned into memories right now is let go.
+func _after_memory_forgotten() -> void:
+    _chat_turns.clear()
+    # The unsaved part of the talk would otherwise teach it the same thing again.
+    AppState.memory_discard_turns(int(AppState.memory_pending_turns().get("upto", 0)))
+    if str(_chat_pending.get("kind", "")) == "memory":
+        _chat_pending["stale"] = true
+    _refresh_memory_window()
+
+
+func _toggle_memory_setting() -> void:
+    _toggle_bool_setting("memoryEnabled")
+    if not AppState.memory_enabled():
+        # Off means nothing new is kept, including the talk in progress.
+        AppState.memory_discard_turns(int(AppState.memory_pending_turns().get("upto", 0)))
+    _refresh_memory_window()
+
+
+func _toggle_memory_window() -> void:
+    _ensure_memory_window()
+    var opening := not _memory_window.visible
+    if opening:
+        _refresh_memory_window()
+    _layout_popup_window(_memory_window, opening, MAPLE_LAYOUT_MEMORY)
+
+
+func _ensure_memory_window() -> void:
+    if _memory_window != null:
+        return
+    var window := Window.new()
+    window.name = "MemoryWindow"
+    window.title = "Memory"
+    window.visible = false
+    window.always_on_top = true
+    window.wrap_controls = true
+    add_child(window)
+    _memory_window = window
+    window.close_requested.connect(func() -> void:
+        window.hide()
+    )
+    _ensure_maple_window_background(window)
+
+    var margin := MarginContainer.new()
+    margin.name = "MarginContainer"
+    margin.anchor_right = 1.0
+    margin.anchor_bottom = 1.0
+    window.add_child(margin)
+    var root := VBoxContainer.new()
+    root.add_theme_constant_override("separation", 8)
+    margin.add_child(root)
+
+    _memory_intro = Label.new()
+    _memory_intro.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    _memory_intro.custom_minimum_size = Vector2(300, 0)
+    root.add_child(_memory_intro)
+
+    var scroll := ScrollContainer.new()
+    scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+    root.add_child(scroll)
+    _memory_rows = VBoxContainer.new()
+    _memory_rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    _memory_rows.add_theme_constant_override("separation", 4)
+    scroll.add_child(_memory_rows)
+
+    var buttons := HBoxContainer.new()
+    buttons.add_theme_constant_override("separation", 8)
+    root.add_child(buttons)
+    _memory_btn_toggle = Button.new()
+    _memory_btn_toggle.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    _memory_btn_toggle.tooltip_text = "Off: nothing new is kept or used. What is already here stays until you forget it."
+    _memory_btn_toggle.pressed.connect(_toggle_memory_setting)
+    buttons.add_child(_memory_btn_toggle)
+    _memory_btn_forget_all = Button.new()
+    _memory_btn_forget_all.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    _memory_btn_forget_all.tooltip_text = "Forget everything it knows about you. Click twice."
+    _memory_btn_forget_all.pressed.connect(_on_forget_all_pressed)
+    MapleTheme.make_danger(_memory_btn_forget_all)
+    buttons.add_child(_memory_btn_forget_all)
+
+    var note := Label.new()
+    note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    note.custom_minimum_size = Vector2(300, 0)
+    note.add_theme_color_override("font_color", MapleTheme.TEXT_DIM)
+    note.add_theme_font_size_override("font_size", 12)
+    note.text = "Kept only in this PC's save. To pick out what to keep, each finished talk is sent once to the thinking model at the address in settings."
+    root.add_child(note)
+
+
+func _refresh_memory_window() -> void:
+    if _memory_window == null or _memory_rows == null:
+        return
+    _memory_window.title = "What %s remembers" % _speaker_name()
+    for child in _memory_rows.get_children():
+        _memory_rows.remove_child(child)
+        child.queue_free()
+    var rows: Array = AppState.memory_list()
+    var enabled := AppState.memory_enabled()
+    # What you said in a talk that has not been sorted into memories yet is
+    # kept too, so it is listed (and can be forgotten) like everything else.
+    var pending: Dictionary = AppState.memory_pending_turns()
+    var pending_turns_variant = pending.get("turns", [])
+    var pending_count: int = (pending_turns_variant as Array).size() if typeof(pending_turns_variant) == TYPE_ARRAY else 0
+    if pending_count > 0:
+        rows.push_front({
+            "id": 0,
+            "kind": "pending",
+            "text": "Our talk in progress: %d line%s I haven't sorted into memories yet." % [pending_count, "" if pending_count == 1 else "s"],
+        })
+    if rows.is_empty():
+        _memory_intro.text = (
+            "Nothing yet. Talk to me in chat, or give me something to keep with /remember <note>."
+            if enabled else "Remembering is off, and I'm not keeping anything about you."
+        )
+    else:
+        _memory_intro.text = "What I remember about you. Forget removes one for good."
+        if not enabled:
+            _memory_intro.text += " Remembering is off, so nothing new is kept."
+    for row_variant in rows:
+        if typeof(row_variant) != TYPE_DICTIONARY:
+            continue
+        var row: Dictionary = row_variant
+        var memory_id := int(row.get("id", 0))
+        var line := HBoxContainer.new()
+        line.add_theme_constant_override("separation", 6)
+        var label := Label.new()
+        label.text = str(row.get("text", ""))
+        label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+        label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+        label.custom_minimum_size = Vector2(240, 0)
+        line.add_child(label)
+        var forget := Button.new()
+        forget.text = "Forget"
+        forget.tooltip_text = "Forget this for good."
+        forget.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+        if str(row.get("kind", "")) == "pending":
+            forget.pressed.connect(func() -> void:
+                _after_memory_forgotten()
+            )
+        else:
+            forget.pressed.connect(func() -> void:
+                if AppState.memory_forget(memory_id):
+                    _after_memory_forgotten()
+            )
+        line.add_child(forget)
+        _memory_rows.add_child(line)
+    _memory_btn_toggle.text = "Remembering: %s" % ("on" if enabled else "off")
+    var armed := int(Time.get_unix_time_from_system()) <= _memory_forget_all_armed_until
+    _memory_btn_forget_all.text = "Click again to forget all" if armed else "Forget everything"
+    _memory_btn_forget_all.disabled = rows.is_empty()
+
+
+func _on_forget_all_pressed() -> void:
+    var now_unix := int(Time.get_unix_time_from_system())
+    if now_unix <= _memory_forget_all_armed_until:
+        _memory_forget_all_armed_until = 0
+        AppState.memory_forget_all()
+        _after_memory_forgotten()
+        return
+    _memory_forget_all_armed_until = now_unix + 5
+    _refresh_memory_window()
 
 
 func _build_journal_summary() -> String:
@@ -3662,6 +3922,8 @@ func _refresh_settings_menu() -> void:
         _settings_btn_model.text = "Thinking model: %s" % ("on" if bool(AppState.settings.get("mindModelEnabled", true)) else "off")
     if _settings_btn_chat_model != null:
         _settings_btn_chat_model.text = "Talks back: %s" % ("on" if bool(AppState.settings.get("chatModelEnabled", true)) else "off")
+    if _settings_btn_memory != null:
+        _settings_btn_memory.text = "Remembers you: %s" % ("on" if AppState.memory_enabled() else "off")
     if _settings_btn_debug_toggle != null and _settings_debug_box != null:
         _settings_btn_debug_toggle.text = "Hide developer tools" if _settings_debug_box.visible else "Show developer tools"
     settings_btn_event_freq.text = "World events: %s" % str(AppState.settings.get("eventFrequency", "normal"))
@@ -3802,7 +4064,6 @@ func _send_chat_input() -> void:
     chat_input.text = ""
     _chat_turn_user_count += 1
     _append_chat_line("You", raw, "#9FD9FF")
-    _capture_chat_memory(raw)
     AppState.record_interaction("chat_reply")
     _productivity.note_user_activity(int(Time.get_unix_time_from_system()))
 
@@ -3885,9 +4146,11 @@ func _execute_resolved_chat(raw_text: String, resolved: Dictionary) -> Dictionar
         return _execute_chat_command(action_id, params)
 
     if kind == "intent" and ok:
-        # "hi" or "thanks" gets the instant built-in reply. A whole sentence
-        # that merely contains one of those words is conversation.
-        if action_id in ["greeting", "thanks"] and raw_text.strip_edges().split(" ", false).size() > 3:
+        # A word or three ("hi", "thanks", "tired?") gets the instant built-in
+        # reply. A whole sentence that happens to contain one of those words
+        # ("I got home late", "I'm tired after work") is conversation, and is
+        # what the buddy needs to hear to remember anything about you.
+        if raw_text.strip_edges().split(" ", false).size() > 3:
             _ensure_chat_http()
             if _start_chat_request(raw_text):
                 return _action_result(true, "chat.pending", "", "ok")
@@ -3897,6 +4160,8 @@ func _execute_resolved_chat(raw_text: String, resolved: Dictionary) -> Dictionar
     if _start_chat_request(raw_text):
         return _action_result(true, "chat.pending", "", "ok")
     if not _chat_pending.is_empty():
+        if str(_chat_pending.get("kind", "")) == "memory":
+            return _action_result(true, "chat.busy", "One moment, I'm just tucking our last chat away. Say that again?", "ok")
         return _action_result(true, "chat.busy", "One moment, I'm still thinking.", "ok")
     return _action_result(false, "intent.unknown", "I did not catch that. Try /help.", "unknown_intent")
 
@@ -4126,83 +4391,41 @@ func _normalize_for_repeat(text: String) -> String:
     return normalized
 
 
-func _capture_chat_memory(raw_text: String) -> void:
-    var tags := _extract_memory_tags(raw_text)
-    for tag in tags:
-        var count := int(_chat_memory_tag_counts.get(tag, 0))
-        _chat_memory_tag_counts[tag] = count + 1
-    _chat_memory_turn_tags.append(
-        {
-            "turn": _chat_turn_user_count,
-            "text": raw_text.strip_edges(),
-            "tags": tags,
-            "ts": int(Time.get_unix_time_from_system()),
-        }
-    )
-    if _chat_memory_turn_tags.size() > 40:
-        _chat_memory_turn_tags.remove_at(0)
-
-
-func _extract_memory_tags(raw_text: String) -> Array:
-    var msg := raw_text.to_lower()
-    var tags: Array = []
-    var rules := {
-        "goal": ["plan", "goal", "next", "later", "todo"],
-        "mood": ["tired", "stressed", "happy", "sad", "upset", "excited"],
-        "task": ["work", "task", "finish", "start", "focus", "meeting"],
-        "reward": ["reward", "box", "crystal", "meso", "item", "loot"],
-        "world": ["quest", "encounter", "world", "village", "npc"],
-        "support": ["help", "remind", "check", "support"],
-    }
-    for tag_key in rules.keys():
-        var keys: Array = rules[tag_key]
-        for key_variant in keys:
-            var key := str(key_variant)
-            if msg.find(key) >= 0:
-                tags.append(tag_key)
-                break
-    return tags
-
-
 func _build_memory_summary() -> String:
-    var tag_order := ["goal", "task", "world", "support", "mood", "reward"]
-    var tag_pairs := []
-    for key_variant in tag_order:
-        var key := str(key_variant)
-        var value := int(_chat_memory_tag_counts.get(key, 0))
-        if value > 0:
-            tag_pairs.append("%s:%d" % [key, value])
-    if tag_pairs.is_empty():
-        tag_pairs.append("none")
-
-    var note_total := _chat_memory_notes.size()
-    var notes_preview := []
-    var keep := mini(3, note_total)
-    for i in range(keep):
-        var note: Dictionary = _chat_memory_notes[note_total - keep + i]
-        notes_preview.append("#%d %s" % [int(note.get("id", 0)), str(note.get("text", ""))])
-    if notes_preview.is_empty():
-        notes_preview.append("none")
-
-    return "Memory: tags[%s] notes(%d/%d)[%s]" % [
-        ", ".join(tag_pairs),
-        note_total,
-        CHAT_MEMORY_MAX_NOTES,
-        " ; ".join(notes_preview),
+    var rows: Array = AppState.memory_list()
+    var enabled := AppState.memory_enabled()
+    if rows.is_empty():
+        if not enabled:
+            return "I'm not keeping memories right now (Settings: Remembers you)."
+        return "I don't remember anything about you yet. Tell me about yourself, or use /remember <note>."
+    var parts: Array = []
+    for row_variant in rows:
+        if parts.size() >= 6:
+            break
+        if typeof(row_variant) != TYPE_DICTIONARY:
+            continue
+        var row: Dictionary = row_variant
+        parts.append("#%d %s" % [int(row.get("id", 0)), str(row.get("text", ""))])
+    var more := ""
+    if rows.size() > parts.size():
+        more = " (+%d more)" % (rows.size() - parts.size())
+    var off_note := "" if enabled else " Remembering is off, so nothing new is kept."
+    return "I remember %d things: %s%s. Menu > Memory shows them all; /forget <id> removes one.%s" % [
+        rows.size(), "; ".join(parts), more, off_note
     ]
 
 
 func _remember_note(note_text: String) -> Dictionary:
-    if _chat_memory_notes.size() >= CHAT_MEMORY_MAX_NOTES:
-        return _action_result(false, "command.remember", "Memory notes are full (10). Forget one first.", "memory_full")
-    var note := {
-        "id": _chat_memory_next_note_id,
-        "text": note_text,
-        "ts": int(Time.get_unix_time_from_system()),
-    }
-    _chat_memory_notes.append(note)
-    _chat_memory_next_note_id += 1
-    return _action_result(true, "command.remember", "Saved note #%d." % int(note.get("id", 0)), "ok")
+    var result: Dictionary = AppState.memory_add_note(note_text)
+    if bool(result.get("ok", false)):
+        _refresh_memory_window()
+        return _action_result(true, "command.remember", "Saved note #%d. I'll remember that." % int(result.get("id", 0)), "ok")
+    var reason: String = str(result.get("reason", ""))
+    if reason == "memory_full":
+        return _action_result(false, "command.remember", "Memory notes are full (%d). Forget one first." % CHAT_MEMORY_MAX_NOTES, "memory_full")
+    if reason == "memory_off":
+        return _action_result(false, "command.remember", "I'm not keeping memories right now (Settings: Remembers you).", "memory_off")
+    return _action_result(false, "command.remember", "I couldn't keep that note.", "invalid_arg")
 
 
 func _forget_note(note_id: int, confirm: bool) -> Dictionary:
@@ -4220,14 +4443,12 @@ func _forget_note(note_id: int, confirm: bool) -> Dictionary:
     var now_unix := int(Time.get_unix_time_from_system())
     if _chat_memory_pending_forget_id != note_id or now_unix > _chat_memory_pending_forget_until:
         return _action_result(false, "command.forget", "Forget confirmation expired. Run /forget <id> again.", "confirm_expired")
-    for i in range(_chat_memory_notes.size()):
-        var note: Dictionary = _chat_memory_notes[i]
-        if int(note.get("id", -1)) == note_id:
-            _chat_memory_notes.remove_at(i)
-            _chat_memory_pending_forget_id = -1
-            _chat_memory_pending_forget_until = 0
-            return _action_result(true, "command.forget", "Forgot note #%d." % note_id, "ok")
-    return _action_result(false, "command.forget", "Note not found.", "missing_note")
+    _chat_memory_pending_forget_id = -1
+    _chat_memory_pending_forget_until = 0
+    if AppState.memory_forget(note_id):
+        _after_memory_forgotten()
+        return _action_result(true, "command.forget", "Forgot #%d." % note_id, "ok")
+    return _action_result(false, "command.forget", "I don't have a memory #%d. /memory lists them." % note_id, "missing_note")
 
 
 func _apply_chat_text_size() -> void:

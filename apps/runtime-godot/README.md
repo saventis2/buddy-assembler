@@ -58,6 +58,9 @@ pack, Restart, and Quit are all buttons, no hotkeys required.
 - Double click: open the Game Menu (chat, stats, inventory, wardrobe, pause)
 - Chat: anything that is not a `/command` gets an in-character answer when
   Ollama is running (Settings: "Talks back"); `/help` lists the commands
+- Memory: it remembers what you tell it from one day to the next. Menu >
+  Memory shows everything it remembers and forgets any of it (Settings:
+  "Remembers you")
 - Right click: sleep/pause toggle (also a "Pause Buddy" / "Resume Buddy"
   button in the `F10` settings popout)
 - `F6`: toggle telemetry overlay
