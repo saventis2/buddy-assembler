@@ -679,6 +679,16 @@ func mind_mark_shared(entry_t: int) -> void:
     flush()
 
 
+func get_town_map() -> Dictionary:
+    var layout = _call_service_with_fallback("world", "town_map", [get_town()], {})
+    return layout if typeof(layout) == TYPE_DICTIONARY else {}
+
+
+func mind_day_plan() -> Dictionary:
+    var plan = _call_service_with_fallback("mind", "get_day_plan", [profile], {})
+    return plan if typeof(plan) == TYPE_DICTIONARY else {}
+
+
 func get_mind_preferences() -> Dictionary:
     var preferences = _call_service_with_fallback("mind", "get_preferences", [profile], {})
     return preferences if typeof(preferences) == TYPE_DICTIONARY else {}

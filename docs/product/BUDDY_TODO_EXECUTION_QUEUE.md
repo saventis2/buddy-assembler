@@ -260,7 +260,7 @@ Status: `in_progress` (see `PLAN13_TOWN_AND_CONVERSATION.md`)
 - [x] A1 town as data
 - [x] B1 conversation and self-chosen name
 - [x] B2 graph memory
-- [ ] A2 town map window
+- [x] A2 town map window
 - [ ] A3 changing town, things you leave
 - [x] B3 talk changes the buddy
 - [x] Part C, C1+C2 part 1: wants it saves for and buys, a day plan
