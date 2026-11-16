@@ -2461,6 +2461,11 @@ func _on_tick_timer_timeout() -> void:
 func _apply_mind_events(events: Array, context: Dictionary) -> void:
     if events.is_empty():
         return
+    for event_variant in events:
+        if typeof(event_variant) == TYPE_DICTIONARY and (event_variant as Dictionary).has("buy_want"):
+            # It may have put on something it bought.
+            _refresh_equipped_visual_state()
+            break
     var latest_variant = events[events.size() - 1]
     if typeof(latest_variant) != TYPE_DICTIONARY:
         return
@@ -2477,6 +2482,13 @@ func _apply_mind_events(events: Array, context: Dictionary) -> void:
     var suffix := ""
     if events.size() > 1:
         suffix = " (I did %d things while you were away. /journal has the rest.)" % events.size()
+    if latest.has("buy_want"):
+        # It just bought something it saved for: say that, in plain words,
+        # rather than have the model word the shop visit and leave it out.
+        var bought: Array = AppState.get_mind_journal(1)
+        if not bought.is_empty() and typeof(bought[0]) == TYPE_DICTIONARY and str((bought[0] as Dictionary).get("kind", "")) == "purchase":
+            _say_mind_line(str((bought[0] as Dictionary).get("text", "")), suffix)
+            return
     if _request_mind_thought(latest, suffix):
         return
     _say_mind_line(str(latest.get("text", "")), suffix)
@@ -3156,6 +3168,18 @@ func _on_forget_all_pressed() -> void:
         return
     _memory_forget_all_armed_until = now_unix + 5
     _refresh_memory_window()
+
+
+func _build_wants_summary() -> String:
+    var wants: Array = AppState.mind_wants()
+    if wants.is_empty():
+        return "I'm not saving up for anything right now."
+    var parts: Array = []
+    for want_variant in wants:
+        if typeof(want_variant) == TYPE_DICTIONARY:
+            var want: Dictionary = want_variant
+            parts.append("%s, %d meso (%s)" % [str(want.get("name", "")), int(want.get("price", 0)), str(want.get("reason", ""))])
+    return "I'm saving up for: %s. I have %d meso so far." % ["; ".join(parts), int(AppState.get_inventory_snapshot().get("meso", 0))]
 
 
 func _build_journal_summary() -> String:
@@ -4291,7 +4315,7 @@ func _execute_chat_command(command: String, params: Dictionary) -> Dictionary:
         return _action_result(
             true,
             "command.help",
-            "Commands: /help /status /pending /mode home|overlay /reward /world engage|skip|complete /quiet lenient|balanced|strict /freq low|normal|high /dnd <minutes|off> /chat close|clear [confirm]|text m|l /memory /journal /remember <note> /forget <id> [confirm] /snapshot /cadence /debug chat /settings-check /preset cozy|balanced|deep|idle /settings reset [confirm]|undo",
+            "Commands: /help /status /pending /mode home|overlay /reward /world engage|skip|complete /quiet lenient|balanced|strict /freq low|normal|high /dnd <minutes|off> /chat close|clear [confirm]|text m|l /memory /journal /wants /remember <note> /forget <id> [confirm] /snapshot /cadence /debug chat /settings-check /preset cozy|balanced|deep|idle /settings reset [confirm]|undo",
             "ok"
         )
     if command == "status":
@@ -4400,6 +4424,8 @@ func _execute_chat_command(command: String, params: Dictionary) -> Dictionary:
         return _action_result(true, "command.memory", _build_memory_summary(), "ok")
     if command == "journal":
         return _action_result(true, "command.journal", _build_journal_summary(), "ok")
+    if command == "wants":
+        return _action_result(true, "command.wants", _build_wants_summary(), "ok")
     if command == "remember":
         var note := str(params.get("note", "")).strip_edges()
         if note == "":

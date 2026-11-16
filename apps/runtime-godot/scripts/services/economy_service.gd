@@ -312,6 +312,19 @@ func grant_meso(world_state: Dictionary, source_type: String, amount: int) -> Di
     return merged
 
 
+# Takes meso from the wallet for something the buddy buys for itself.
+# Returns {"ok", "reason", "world_state"}; refuses when there is not enough.
+func spend_meso(world_state: Dictionary, source_type: String, amount: int) -> Dictionary:
+    var merged := ensure_world_state(world_state)
+    var wallet: Dictionary = merged.get("wallet", {}).duplicate(true)
+    var meso := _wallet_get_meso(wallet)
+    if amount < 0 or meso < amount:
+        return {"ok": false, "reason": "insufficient_meso", "world_state": merged}
+    merged["wallet"] = _wallet_set_meso(wallet, meso - amount)
+    _record_tx(merged, source_type, [], -amount)
+    return {"ok": true, "reason": "", "world_state": merged}
+
+
 func grant_item(world_state: Dictionary, source_type: String, item: Dictionary) -> Dictionary:
     var merged := ensure_world_state(world_state)
     var inventory: Array = merged.get("inventory", [])

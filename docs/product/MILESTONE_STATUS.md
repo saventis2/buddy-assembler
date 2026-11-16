@@ -24,7 +24,8 @@ Updated: 2026-04-23 (Plan 9 inventory/progression/drop coupling)
 - [done] B1 conversation: free chat through the local model, the buddy chooses its own name, "Talks back" setting
 - [done] B2 graph memory: facts and talk summaries in the save, recalled into chat, Menu > Memory to see and forget them, "Remembers you" setting
 - [done] B3 talk changes the buddy: suggestions it decides on and carries out, talks as events, a hello with news when the chat opens
-- [open] A2 town map, A3 changing town, Part C (wants, plans, reflection, making things)
+- [done] C1+C2 part 1: wants it notices in town, saves for, buys and wears; a day plan it follows; `/wants`
+- [open] A2 town map, A3 changing town, C1+C2 part 2 (asking you, a Wants window, projects), C4 reflection, C5 making things
 
 ## Plan 12B (Thinking model via local Ollama) - 2026-11-15
 

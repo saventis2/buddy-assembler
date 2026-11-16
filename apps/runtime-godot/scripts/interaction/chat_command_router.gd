@@ -12,6 +12,7 @@ const SUPPORTED_COMMANDS := [
 	"chat",
 	"memory",
 	"journal",
+	"wants",
 	"remember",
 	"forget",
 	"cadence",
@@ -63,7 +64,7 @@ func _resolve_slash(raw: String) -> Dictionary:
 
 
 func _validate_command(command: String, args: Array) -> Dictionary:
-	if command in ["help", "status", "pending", "reward", "memory", "journal", "cadence", "settings-check", "snapshot"]:
+	if command in ["help", "status", "pending", "reward", "memory", "journal", "wants", "cadence", "settings-check", "snapshot"]:
 		if not args.is_empty():
 			return _result(false, "command", command, {}, "unexpected_args", 1.0)
 		return _result(true, "command", command, {}, "ok", 1.0)

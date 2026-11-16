@@ -128,6 +128,48 @@ Measured with `gemma3:4b` on Ollama 0.40.16, in two processes a "day" apart
   do-not-disturb, and never the same news twice. Typing takes priority over
   a hello that is still loading.
 - **When it applies.** Only while it acts on its own and talks back.
+
+**C1+C2 part 1, wants and a day plan: landed 2026-11-16.**
+- **Wants.** At a shop (the market lane) the buddy may notice something to
+  wear and want it ("I saw a Red Bandana there. I'd like one."). It keeps up
+  to three wants. The shop stocks an even spread of about 40 wearable
+  catalogue items; the catalogue has no prices for clothes, so a price is set
+  by rarity (common 40 meso up to legendary 500). A want it never gets fades
+  after a week.
+- **Saving up and buying.** It saves from the meso it already earns. Once it
+  can afford a want and still keep 20 meso spare, it goes to the shop ("I'd
+  saved enough for the Red Bandana, so I went to the market lane."), pays
+  from its wallet, and journals it ("I bought the Red Bandana I'd been saving
+  for. I'm wearing it now."). It only puts the item on if nothing is worn in
+  that slot, so it never undoes an outfit chosen in the Wardrobe. If the
+  money has gone by the time it gets there, it says so. `/wants` lists what
+  it is saving for.
+- **A day plan.** Each morning it plans its day: a favourite place in the
+  morning, a favourite person in the afternoon, and somewhere it has not
+  been lately in the evening ("Today I'd like to go to the cafe, see Mira and
+  go to the hill path."). A decision in the right window follows the plan
+  ("As I'd planned, I went to the cafe..."), and an item it never got round
+  to is noted.
+- **Order of what it does.** A person's suggestion first, then something it
+  can afford, then its plan, then whatever it feels like.
+- `MindServiceTest` 26 cases; `ChatCommandRouterTest` 15.
+- **Measured** with `gemma3:4b`, in the evening, on a throwaway profile
+  whose copy of the town kept the market open all day:
+  - The shop stocked 40 wearables ("Long Brown Beard", "Purple Round
+    Shades", ...). It noticed a Pink wing bag (a cape, 40 meso) after five
+    visits. With 70 meso it went back, bought it and put it on, leaving 30.
+  - At first the thinking model reworded both decisions without their point
+    ("The lane felt a little too busy today"), because it was not told. It
+    now gets what the buddy saw and why it went ("I enjoyed my brief chat
+    with Rook and the beautiful hairband."). A buying trip is said in plain
+    words ("I bought the Heart Hairband I'd been saving for. I'm wearing it
+    now.") instead of being reworded.
+  - A plan made at 9 pm at first included the morning and afternoon, which
+    were then "missed" straight away. Plans now leave out the parts of the
+    day that are over.
+- **Still to do** (C1+C2 part 2): asking you for things it cannot get
+  itself, a Wants window where you can give it something or say not now,
+  and projects over several days.
 - `MindServiceTest` 19 cases; `MindChatTest` 14; `MindThinkerTest` 10.
 
 Measured on Ollama 0.40.16 at 8 pm, when the library was shut and the pond

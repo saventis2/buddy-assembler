@@ -32,6 +32,12 @@ const SUGGESTION_CUES := [
 	"pop into", "drop by", "try the", "check out", "you should", "why don't you", "why not go",
 	"how about", "say hi to", "say hello to",
 ]
+const MAX_OPEN_WANTS := 3
+const WANT_NOTICE_CHANCE := 0.4
+const WANT_FADE_DAYS := 7
+const WANT_RESERVE_MESO := 20
+const PLAN_WINDOWS := [[7, 12], [12, 17], [17, 22]]
+const PLAN_WINDOW_NAMES := ["this morning", "this afternoon", "this evening"]
 const INTENT_NEEDS := {
 	"rest": "energy",
 	"visit": "social",
@@ -62,6 +68,12 @@ const MIND_DEFAULTS := {
 	"intention": {},
 	"last_talk_unix": 0,
 	"last_shared_t": 0,
+	# Things it saw in a shop and is saving for: {"id", "item_id", "name", "slot",
+	# "price", "reason", "t", "status": "saving"|"bought"|"faded", "place_id"}.
+	"wants": [],
+	# Today's plan: {"day", "items": [{"kind": "place"|"npc", "id", "name", "window",
+	# "done", "missed", "phrase"}]}.
+	"day_plan": {},
 }
 
 
@@ -80,6 +92,10 @@ func ensure_profile(profile: Dictionary) -> Dictionary:
 		mind["feelings"] = {}
 	if typeof(mind.get("journal", null)) != TYPE_ARRAY:
 		mind["journal"] = []
+	if typeof(mind.get("wants", null)) != TYPE_ARRAY:
+		mind["wants"] = []
+	if typeof(mind.get("day_plan", null)) != TYPE_DICTIONARY:
+		mind["day_plan"] = {}
 	merged["mind"] = mind
 	return merged
 
@@ -104,15 +120,23 @@ func tick(profile: Dictionary, npcs: Array, now_unix: int, context: Dictionary, 
 			due_times.append(now_unix - remaining * DECISION_INTERVAL_SECONDS)
 
 	var events: Array = []
+	# Catch-up decisions are worked out together, before any purchase is paid
+	# for, so each one is told what the trips before it have already spent.
+	var meso_left := int(context.get("meso", 0))
 	for index in range(due_times.size()):
 		var decision_unix := int(due_times[index])
 		var decision_context := context.duplicate(true)
+		if decision_context.has("meso"):
+			decision_context["meso"] = meso_left
 		if index < due_times.size() - 1:
 			# Past decisions happened unobserved; the live clock's day/night
 			# reading only applies to the one happening right now.
 			decision_context["is_night"] = _hour_is_night(decision_unix)
 			decision_context["hour"] = _local_hour(decision_unix)
-		events.append(_decide(merged, npcs, decision_unix, decision_context, town))
+		var event := _decide(merged, npcs, decision_unix, decision_context, town)
+		if event.has("buy_want"):
+			meso_left -= _want_price(merged["mind"], str(event["buy_want"]))
+		events.append(event)
 	return {"profile": merged, "events": events}
 
 
@@ -357,7 +381,7 @@ func pick_news(profile: Dictionary) -> Dictionary:
 		if t <= floor_t:
 			continue
 		var kind := str(entry.get("kind", ""))
-		if kind == "talk" or kind == "suggestion":
+		if kind == "talk" or kind == "suggestion" or kind == "plan":
 			continue
 		var strength := absf(float(entry.get("valence", 0.0)))
 		if strength < 0.15 and str(entry.get("companion_name", "")) == "" and not entry.has("because"):
@@ -377,11 +401,90 @@ func mark_shared(profile: Dictionary, t: int) -> Dictionary:
 	return merged
 
 
+# The buddy bought what it was saving for. `equipped` is whether it is now wearing it.
+func complete_want(profile: Dictionary, want_id: String, t: int, equipped: bool) -> Dictionary:
+	var merged := ensure_profile(profile)
+	var mind: Dictionary = merged["mind"]
+	for want_variant in mind["wants"]:
+		if typeof(want_variant) != TYPE_DICTIONARY or str((want_variant as Dictionary).get("id", "")) != want_id:
+			continue
+		var want: Dictionary = want_variant
+		want["status"] = "bought"
+		want["bought_t"] = t
+		var name := str(want.get("name", ""))
+		var text := "I bought the %s I'd been saving for." % name
+		if equipped:
+			text += " I'm wearing it now."
+		_append_journal(mind, {
+			"t": t + 1,
+			"intent": "tend_home",
+			"kind": "purchase",
+			"valence": 0.6,
+			"subject_id": "item:" + str(want.get("item_id", "")),
+			"subject_name": name,
+			"text": text,
+		})
+		break
+	merged["mind"] = mind
+	return merged
+
+
+# The trip to buy it failed for want of meso; the want stays on the list.
+func cannot_buy(profile: Dictionary, want_id: String, t: int) -> Dictionary:
+	var merged := ensure_profile(profile)
+	var mind: Dictionary = merged["mind"]
+	for want_variant in mind["wants"]:
+		if typeof(want_variant) != TYPE_DICTIONARY or str((want_variant as Dictionary).get("id", "")) != want_id:
+			continue
+		var want: Dictionary = want_variant
+		var name := str(want.get("name", ""))
+		want["status"] = "saving"
+		_append_journal(mind, {
+			"t": t + 1,
+			"intent": "reflect",
+			"kind": "purchase",
+			"valence": -0.1,
+			"subject_id": "item:" + str(want.get("item_id", "")),
+			"subject_name": name,
+			"text": "I looked at the %s again, but I didn't have enough saved." % name,
+		})
+		break
+	merged["mind"] = mind
+	return merged
+
+
+# What it is saving for (or on its way to buy), oldest first.
+func get_wants(profile: Dictionary) -> Array:
+	var rows: Array = []
+	for want_variant in ensure_profile(profile)["mind"]["wants"]:
+		if typeof(want_variant) == TYPE_DICTIONARY and str((want_variant as Dictionary).get("status", "")) in ["saving", "buying"]:
+			rows.append((want_variant as Dictionary).duplicate(true))
+	return rows
+
+
+func _want_price(mind: Dictionary, want_id: String) -> int:
+	for want_variant in mind.get("wants", []):
+		if typeof(want_variant) == TYPE_DICTIONARY and str((want_variant as Dictionary).get("id", "")) == want_id:
+			return int((want_variant as Dictionary).get("price", 0))
+	return 0
+
+
+func get_day_plan(profile: Dictionary) -> Dictionary:
+	return (ensure_profile(profile)["mind"]["day_plan"] as Dictionary).duplicate(true)
+
+
 func _decide(
 	merged: Dictionary, npcs: Array, decision_unix: int, context: Dictionary, town: Dictionary = {}
 ) -> Dictionary:
 	var mind: Dictionary = merged["mind"]
 	var count := int(mind.get("decision_count", 0))
+	# Wants it has been saving for too long fade quietly.
+	for want_variant in mind["wants"]:
+		if typeof(want_variant) != TYPE_DICTIONARY:
+			continue
+		var old_want: Dictionary = want_variant
+		if str(old_want.get("status", "")) == "saving" and int(old_want.get("t", 0)) + WANT_FADE_DAYS * 86400 <= decision_unix:
+			old_want["status"] = "faded"
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash("%s|%d|%d" % [str(merged.get("personality_seed_tag", "")), decision_unix, count])
 
@@ -419,6 +522,10 @@ func _decide(
 	# Something agreed to earlier (see consider / note_talk). Expired ones are
 	# dropped; at night the buddy sleeps on it; otherwise it is honoured if the
 	# place is open / the person is around, and kept for later if not.
+	var plans_on := bool(context.get("plans", false))
+	if plans_on:
+		_update_day_plan(mind, npcs, places, decision_unix, hour, is_night)
+
 	var honoured := {}
 	var intention = mind.get("intention", {})
 	if typeof(intention) == TYPE_DICTIONARY and not (intention as Dictionary).is_empty():
@@ -427,9 +534,53 @@ func _decide(
 		# Worn out, it rests first: "later" for tiredness promised to go after
 		# a rest, so nothing it agreed to is done while it is still this tired.
 		elif not is_night and float(mods["energy_strain"]) < TIRED_LIMIT:
-			honoured = _honour_intention(intention, mind["feelings"], open_places, subjects, scores, rng)
+			honoured = _honour_intention(intention, mind["feelings"], open_places, subjects, scores, rng, mind["wants"])
 			if not honoured.is_empty():
 				mind["intention"] = {}
+
+	# Saved up enough for something it wants: head for the shop.
+	var intention_now = mind.get("intention", {})
+	var rested := float(mods["energy_strain"]) < TIRED_LIMIT
+	if honoured.is_empty() and not is_night and rested and typeof(intention_now) == TYPE_DICTIONARY and (intention_now as Dictionary).is_empty():
+		var meso := int(context.get("meso", 0))
+		var wanted := {}
+		for want_variant in mind["wants"]:
+			if typeof(want_variant) != TYPE_DICTIONARY:
+				continue
+			var want_row: Dictionary = want_variant
+			if str(want_row.get("status", "")) == "saving" and int(want_row.get("price", 0)) + WANT_RESERVE_MESO <= meso:
+				wanted = want_row
+				break
+		if not wanted.is_empty():
+			var shop := _shop_for_want(wanted, places)
+			if not shop.is_empty():
+				var trip := _make_intention("place", str(shop.get("id", "")), str(shop.get("name", "")), "want", decision_unix)
+				trip["want_id"] = str(wanted.get("id", ""))
+				mind["intention"] = trip
+				honoured = _honour_intention(trip, mind["feelings"], open_places, subjects, scores, rng, mind["wants"])
+				if not honoured.is_empty():
+					mind["intention"] = {}
+
+	# Today's plan: do the item for this part of the day if nothing else is steering.
+	if plans_on and honoured.is_empty() and not is_night and rested:
+		var plan_items_variant = (mind["day_plan"] as Dictionary).get("items", [])
+		var plan_items: Array = plan_items_variant if typeof(plan_items_variant) == TYPE_ARRAY else []
+		for item_index in range(plan_items.size()):
+			if typeof(plan_items[item_index]) != TYPE_DICTIONARY:
+				continue
+			var plan_item: Dictionary = plan_items[item_index]
+			var window := int(plan_item.get("window", 0))
+			if bool(plan_item.get("done", false)) or window < 0 or window >= PLAN_WINDOWS.size():
+				continue
+			if hour < int(PLAN_WINDOWS[window][0]) or hour >= int(PLAN_WINDOWS[window][1]):
+				continue
+			var plan_intention := _make_intention(
+				str(plan_item.get("kind", "")), str(plan_item.get("id", "")), str(plan_item.get("name", "")), "plan", decision_unix
+			)
+			honoured = _honour_intention(plan_intention, mind["feelings"], open_places, subjects, scores, rng, mind["wants"])
+			if not honoured.is_empty():
+				plan_item["done"] = true
+			break
 
 	var intent := "reflect"
 	var best := -1.0
@@ -518,6 +669,47 @@ func _decide(
 	if not honoured.is_empty():
 		entry["text"] = str(honoured["prefix"]) + str(entry["text"])
 		entry["because"] = str(honoured["because"])
+		if honoured.has("want_id"):
+			entry["buy_want"] = str(honoured["want_id"])
+			for want_variant in mind["wants"]:
+				if typeof(want_variant) == TYPE_DICTIONARY and str((want_variant as Dictionary).get("id", "")) == str(honoured["want_id"]):
+					entry["buy_item"] = str((want_variant as Dictionary).get("name", ""))
+					(want_variant as Dictionary)["status"] = "buying"
+
+	# Seeing something in a shop it would like to own. Drawn last, so none of the
+	# earlier rng draws move.
+	var shop_items = context.get("shop_items", [])
+	if str(place.get("kind", "")) == "shop" and typeof(shop_items) == TYPE_ARRAY and not (shop_items as Array).is_empty():
+		var open_wants := 0
+		for want_variant in mind["wants"]:
+			if typeof(want_variant) == TYPE_DICTIONARY and str((want_variant as Dictionary).get("status", "")) == "saving":
+				open_wants += 1
+		if open_wants < MAX_OPEN_WANTS and rng.randf() < WANT_NOTICE_CHANCE:
+			var seen_variant = (shop_items as Array)[rng.randi_range(0, (shop_items as Array).size() - 1)]
+			if typeof(seen_variant) == TYPE_DICTIONARY:
+				var seen: Dictionary = seen_variant
+				var seen_id := str(seen.get("id", ""))
+				var already := false
+				for want_variant in mind["wants"]:
+					if typeof(want_variant) == TYPE_DICTIONARY and str((want_variant as Dictionary).get("item_id", "")) == seen_id:
+						already = true
+				if not already:
+					var seen_name := str(seen.get("name", seen_id))
+					var new_want := {
+						"id": "want-%d" % decision_unix,
+						"item_id": seen_id,
+						"name": seen_name,
+						"slot": str(seen.get("slot", "")),
+						"price": int(seen.get("price", 0)),
+						"reason": "saw it at %s" % place_name,
+						"t": decision_unix,
+						"status": "saving",
+						"place_id": place_id,
+					}
+					(mind["wants"] as Array).append(new_want)
+					entry["text"] = str(entry["text"]) + " I saw a %s there. I'd like one." % seen_name
+					entry["noticed_want"] = str(new_want["id"])
+					entry["noticed_item"] = seen_name
 	var journal: Array = mind["journal"]
 	journal.append(entry)
 	if journal.size() > JOURNAL_LIMIT:
@@ -539,7 +731,7 @@ func _decide(
 # a companion for a visit.
 func _honour_intention(
 	intention: Dictionary, feelings: Dictionary, open_places: Array, subjects: Array,
-	scores: Dictionary, rng: RandomNumberGenerator
+	scores: Dictionary, rng: RandomNumberGenerator, wants: Array = []
 ) -> Dictionary:
 	var kind := str(intention.get("kind", ""))
 	var target_id := str(intention.get("id", ""))
@@ -550,7 +742,17 @@ func _honour_intention(
 		prefix = "You suggested %s, so I went. " % target_name
 		if kind == "npc":
 			prefix = "You said I should see %s, so I did. " % target_name
+	elif source == "plan":
+		prefix = "As I'd planned, "
+	elif source == "want":
+		var want_name := ""
+		for want_variant in wants:
+			if typeof(want_variant) == TYPE_DICTIONARY and str((want_variant as Dictionary).get("id", "")) == str(intention.get("want_id", "")):
+				want_name = str((want_variant as Dictionary).get("name", ""))
+		prefix = "I'd saved enough for the %s, so I went to %s. " % [want_name, target_name]
 	var result := {"intent": "", "place": {}, "activity": {}, "companion": {}, "prefix": prefix, "because": source}
+	if source == "want":
+		result["want_id"] = str(intention.get("want_id", ""))
 
 	if kind == "npc":
 		var npc_place: Dictionary = {}
@@ -621,6 +823,184 @@ func _honour_intention(
 		result["companion"] = place_companion
 		return result
 	return {}
+
+
+# Local calendar day number, using the same timezone bias as _local_hour.
+func _local_day(unix_time: int) -> int:
+	var local_unix := unix_time + int(Time.get_time_zone_from_system().get("bias", 0)) * 60
+	return int(local_unix / 86400)
+
+
+# The shop a want is bought at: where it was seen if that is still in town,
+# otherwise the first shop. {} when the town has none.
+func _shop_for_want(want: Dictionary, places: Array) -> Dictionary:
+	var first_shop := {}
+	for place_variant in places:
+		var row: Dictionary = place_variant
+		if str(row.get("id", "")) == str(want.get("place_id", "")):
+			return row
+		if first_shop.is_empty() and str(row.get("kind", "")) == "shop":
+			first_shop = row
+	return first_shop
+
+
+# When the buddy last went to a place, from the journal; -1 if never.
+func _last_visit(journal: Array, place_id: String) -> int:
+	var latest := -1
+	for entry_variant in journal:
+		if typeof(entry_variant) == TYPE_DICTIONARY and str((entry_variant as Dictionary).get("place_id", "")) == place_id:
+			latest = maxi(latest, int((entry_variant as Dictionary).get("t", 0)))
+	return latest
+
+
+# The place visited longest ago (ties go to town order), skipping home and
+# anything in `taken`. {} when nothing is left.
+func _stalest_place(places: Array, journal: Array, taken: Array) -> Dictionary:
+	var best := {}
+	var best_visit := 0
+	for place_variant in places:
+		var row: Dictionary = place_variant
+		var row_id := str(row.get("id", ""))
+		if row_id == "home" or taken.has(row_id):
+			continue
+		var visit := _last_visit(journal, row_id)
+		if best.is_empty() or visit < best_visit:
+			best = row
+			best_visit = visit
+	return best
+
+
+# Makes the day's plan on the first awake decision of a new local day, and
+# writes off plan items whose part of the day is over. Draws no rng.
+func _update_day_plan(
+	mind: Dictionary, npcs: Array, places: Array, decision_unix: int, hour: int, is_night: bool
+) -> void:
+	var day := _local_day(decision_unix)
+	var plan: Dictionary = mind["day_plan"]
+	# Yesterday's unfinished items are written off before today's plan
+	# replaces them, so the journal still says what it never got round to.
+	if not plan.is_empty() and int(plan.get("day", day)) < day:
+		_write_off_missed(mind, plan, day, hour, decision_unix)
+	if not is_night and hour >= 7 and int(plan.get("day", -1)) != day:
+		var journal: Array = mind["journal"]
+		var feelings: Dictionary = mind["feelings"]
+		var items: Array = []
+		var taken: Array = []
+
+		# This morning: somewhere it likes, else somewhere it has neglected.
+		var morning := {}
+		var morning_feeling := 0.0
+		for place_variant in places:
+			var row: Dictionary = place_variant
+			var row_id := str(row.get("id", ""))
+			if row_id == "home":
+				continue
+			var f := float(feelings.get("place:%s" % row_id, 0.0))
+			if f > morning_feeling:
+				morning_feeling = f
+				morning = row
+		if morning.is_empty():
+			morning = _stalest_place(places, journal, taken)
+		if not morning.is_empty():
+			taken.append(str(morning["id"]))
+			items.append(_plan_item("place", morning, 0, "go to %s" % str(morning.get("name", morning["id"]))))
+
+		# This afternoon: someone it likes who lives somewhere, else somewhere new.
+		var friend := {}
+		var friend_feeling := 0.0
+		for npc_variant in npcs:
+			if typeof(npc_variant) != TYPE_DICTIONARY:
+				continue
+			var npc: Dictionary = npc_variant
+			var npc_id := str(npc.get("id", "")).strip_edges()
+			if npc_id == "":
+				continue
+			var lives_somewhere := false
+			for place_variant in places:
+				var residents = (place_variant as Dictionary).get("residents", [])
+				if typeof(residents) == TYPE_ARRAY and (residents as Array).has(npc_id):
+					lives_somewhere = true
+			var nf := float(feelings.get("npc:%s" % npc_id, 0.0))
+			if lives_somewhere and nf > friend_feeling:
+				friend_feeling = nf
+				friend = {"id": npc_id, "name": str(npc.get("name", npc_id))}
+		if not friend.is_empty():
+			items.append(_plan_item("npc", friend, 1, "see %s" % str(friend["name"])))
+		else:
+			var afternoon := _stalest_place(places, journal, taken)
+			if not afternoon.is_empty():
+				taken.append(str(afternoon["id"]))
+				items.append(_plan_item("place", afternoon, 1, "go to %s" % str(afternoon.get("name", afternoon["id"]))))
+
+		# This evening: somewhere not already on the list.
+		var evening := _stalest_place(places, journal, taken)
+		if not evening.is_empty():
+			items.append(_plan_item("place", evening, 2, "go to %s" % str(evening.get("name", evening["id"]))))
+
+		# Planned late in the day: leave out the parts of the day already over.
+		items = items.filter(func(planned): return hour < int(PLAN_WINDOWS[int(planned["window"])][1]))
+		plan = {"day": day, "items": items}
+		mind["day_plan"] = plan
+		if not items.is_empty():
+			var phrases: Array = []
+			for planned in items:
+				phrases.append(str(planned["phrase"]))
+			var joined := str(phrases[0])
+			if phrases.size() == 2:
+				joined = "%s and %s" % [phrases[0], phrases[1]]
+			elif phrases.size() > 2:
+				joined = "%s, %s and %s" % [phrases[0], phrases[1], phrases[2]]
+			_append_journal(mind, {
+				"t": decision_unix - 1,
+				"intent": "reflect",
+				"subject_id": "plan",
+				"subject_name": "plan",
+				"valence": 0.1,
+				"kind": "plan",
+				"text": "Today I'd like to " + joined + ".",
+			})
+
+	_write_off_missed(mind, plan, day, hour, decision_unix)
+
+
+# Items whose part of the day ended undone (or whose day is over) are marked
+# missed and noted once in the journal.
+func _write_off_missed(mind: Dictionary, plan: Dictionary, day: int, hour: int, decision_unix: int) -> void:
+	var plan_day := int(plan.get("day", day))
+	var current_items = plan.get("items", [])
+	if typeof(current_items) != TYPE_ARRAY:
+		return
+	for item_variant in current_items:
+		if typeof(item_variant) != TYPE_DICTIONARY:
+			continue
+		var item: Dictionary = item_variant
+		var window := int(item.get("window", 0))
+		if bool(item.get("done", false)) or window < 0 or window >= PLAN_WINDOWS.size():
+			continue
+		if plan_day < day or (plan_day == day and hour >= int(PLAN_WINDOWS[window][1])):
+			item["done"] = true
+			item["missed"] = true
+			_append_journal(mind, {
+				"t": decision_unix - 1,
+				"kind": "plan",
+				"valence": -0.05,
+				"intent": "reflect",
+				"subject_id": "plan",
+				"subject_name": "plan",
+				"text": "I'd meant to %s %s, but I didn't get round to it." % [str(item.get("phrase", "")), PLAN_WINDOW_NAMES[window]],
+			})
+
+
+func _plan_item(kind: String, target: Dictionary, window: int, phrase: String) -> Dictionary:
+	return {
+		"kind": kind,
+		"id": str(target.get("id", "")),
+		"name": str(target.get("name", target.get("id", ""))),
+		"window": window,
+		"done": false,
+		"missed": false,
+		"phrase": phrase,
+	}
 
 
 # The first activity at a place that satisfies `need` ("" means any), or {}.

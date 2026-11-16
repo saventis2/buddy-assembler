@@ -242,15 +242,18 @@ func _test_wish_nudges_one_decision() -> Variant:
 
 
 func _test_reason_follows_the_person() -> Variant:
-	var cases := {"suggestion": "they suggested it", "talk": "they mentioned it when you talked", "": "you wanted company"}
+	var cases := {"suggestion": "they suggested it", "talk": "they mentioned it when you talked", "want": "you had saved up enough to buy the Red Bandana", "plan": "you planned it this morning", "": "you wanted company"}
 	for because in cases.keys():
-		var event := {"intent": "visit", "place_name": "the pond", "activity_label": "walked the bank", "valence": 0.4}
+		var event := {"intent": "visit", "place_name": "the pond", "activity_label": "walked the bank", "valence": 0.4, "buy_item": "Red Bandana"}
 		if str(because) != "":
 			event["because"] = because
 		var parsed: Variant = JSON.parse_string(MindThinker.build_request("m", event, [], ""))
 		var facts: Variant = JSON.parse_string(str((parsed as Dictionary)["messages"][1]["content"]))
 		if str((facts as Dictionary).get("why", "")) != str(cases[because]):
 			return "reason for because=%s is %s" % [because, (facts as Dictionary).get("why", "")]
+	var seen: Variant = JSON.parse_string(str((JSON.parse_string(MindThinker.build_request("m", {"intent": "explore", "noticed_item": "Blue Cape"}, [], "")) as Dictionary)["messages"][1]["content"]))
+	if str((seen as Dictionary).get("something_you_saw", "")) != "Blue Cape":
+		return "what it saw is missing from the thought request"
 	var unloading: Variant = JSON.parse_string(MindThinker.build_request("m", {"intent": "rest"}, [], "", "0s"))
 	if str((unloading as Dictionary).get("keep_alive", "")) != "0s":
 		return "keep_alive was not passed through"

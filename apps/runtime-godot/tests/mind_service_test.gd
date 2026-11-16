@@ -62,6 +62,15 @@ func _run_all() -> void:
 	_case("suggestion_no_or_later", func(): return _test_suggestion_no_or_later())
 	_case("talk_is_an_event", func(): return _test_talk_is_an_event())
 	_case("news_to_share", func(): return _test_news_to_share())
+	_case("want_noticed_at_the_shop", func(): return _test_want_noticed_at_the_shop())
+	_case("want_bought_when_affordable", func(): return _test_want_bought_when_affordable())
+	_case("no_trip_without_savings", func(): return _test_no_trip_without_savings())
+	_case("wants_fade_after_a_week", func(): return _test_wants_fade_after_a_week())
+	_case("day_plan_made_each_morning", func(): return _test_day_plan_made_each_morning())
+	_case("day_plan_followed_or_missed", func(): return _test_day_plan_followed_or_missed())
+	_case("suggestion_beats_want_and_plan", func(): return _test_suggestion_beats_want_and_plan())
+	_case("catch_up_buys_each_want_once", func(): return _test_catch_up_buys_each_want_once())
+	_case("yesterdays_plan_is_written_off", func(): return _test_yesterdays_plan_is_written_off())
 
 
 func _case(name: String, body: Callable) -> void:
@@ -444,4 +453,301 @@ func _test_news_to_share() -> Variant:
 	var talked := svc.note_talk(profile, "Chat.", [], big_t + 500, TOWN, NPCS)
 	if not svc.pick_news(talked).is_empty():
 		return "entries older than the last talk should not be news: %s" % [svc.pick_news(talked)]
+	return null
+
+
+const SHOP_ITEMS := [
+	{"id": "wz-red-bandana", "name": "Red Bandana", "slot": "hat", "price": 50},
+	{"id": "wz-blue-cape", "name": "Blue Cape", "slot": "cape", "price": 80},
+]
+
+
+# The fixture town plus a market (the fixture has no shop of its own).
+func _shop_town() -> Dictionary:
+	var town := TOWN.duplicate(true)
+	(town["places"] as Array).append({
+		"id": "market", "name": "the market", "kind": "shop", "opens": 9, "closes": 18, "distance": 1,
+		"residents": [],
+		"activities": [{"id": "browse", "label": "browsed the stalls", "satisfies": "curiosity"}],
+	})
+	return town
+
+
+# A unix time that reads as hour:minute local time, `day` days after NOW's day.
+func _local_unix(day: int, hour: int, minute: int = 0) -> int:
+	var bias := int(Time.get_time_zone_from_system().get("bias", 0)) * 60
+	var midnight := int((NOW + bias) / 86400) * 86400 - bias
+	return midnight + day * 86400 + hour * 3600 + minute * 60
+
+
+# One decision at exactly `t`, whatever the profile's last decision was.
+func _decide_at(svc: MindService, profile: Dictionary, t: int, context: Dictionary, town: Dictionary) -> Dictionary:
+	var fresh := svc.ensure_profile(profile)
+	fresh["mind"]["last_decision_unix"] = 0
+	var result := svc.tick(fresh, NPCS, t, context, town)
+	return {"profile": result["profile"], "event": (result["events"] as Array)[0]}
+
+
+func _saving_want(t: int, price: int = 50) -> Dictionary:
+	return {
+		"id": "want-%d" % t, "item_id": "wz-red-bandana", "name": "Red Bandana", "slot": "hat",
+		"price": price, "reason": "saw it at the market", "t": t, "status": "saving", "place_id": "market",
+	}
+
+
+func _profile_with_wants(wants: Array) -> Dictionary:
+	var profile := MindService.new().ensure_profile(_talk_profile())
+	profile["mind"]["wants"] = wants
+	return profile
+
+
+func _test_want_noticed_at_the_shop() -> Variant:
+	var svc := MindService.new()
+	var town := _shop_town()
+	var profile := _talk_profile()
+	var start := _local_unix(0, 12)
+	var context := {"shop_items": SHOP_ITEMS}
+	var noticed := false
+	for step in range(30):
+		var t := start + step * MindService.DECISION_INTERVAL_SECONDS
+		var steered := svc.consider(profile, {"kind": "place", "id": "market", "name": "the market"}, t - 1, 12, town, NPCS)
+		var result := _decide_at(svc, steered["profile"], t, context, town)
+		profile = result["profile"]
+		var event: Dictionary = result["event"]
+		if svc.get_wants(profile).size() > MindService.MAX_OPEN_WANTS:
+			return "more than %d saving wants" % MindService.MAX_OPEN_WANTS
+		if noticed or not event.has("noticed_want"):
+			continue
+		noticed = true
+		var wants := svc.get_wants(profile)
+		var want: Dictionary = wants[wants.size() - 1]
+		if str(want["id"]) != str(event["noticed_want"]) or str(want["id"]) != "want-%d" % t:
+			return "want id should match the event and the time: %s / %s" % [want, event]
+		if str(want["status"]) != "saving" or str(want["place_id"]) != "market" or int(want["t"]) != t:
+			return "want has the wrong shape: %s" % [want]
+		if str(want["reason"]) != "saw it at the market" or typeof(want["price"]) != TYPE_INT:
+			return "want reason or price wrong: %s" % [want]
+		var matched := false
+		for item in SHOP_ITEMS:
+			if str(item["id"]) == str(want["item_id"]) and str(item["name"]) == str(want["name"]) \
+					and str(item["slot"]) == str(want["slot"]) and int(item["price"]) == int(want["price"]):
+				matched = true
+		if not matched:
+			return "want does not match a shop item: %s" % [want]
+		if not str(event.get("text", "")).contains(" I saw a %s there. I'd like one." % str(want["name"])):
+			return "text should mention the item: %s" % str(event.get("text", ""))
+	if not noticed:
+		return "never noticed a want in 30 decisions at the shop"
+	return null
+
+
+func _test_want_bought_when_affordable() -> Variant:
+	var svc := MindService.new()
+	var town := _shop_town()
+	var t := _local_unix(0, 12)
+	var profile := _profile_with_wants([_saving_want(t - 3600)])
+	var result := _decide_at(svc, profile, t, {"meso": 100}, town)
+	var event: Dictionary = result["event"]
+	if str(event.get("buy_want", "")) != "want-%d" % (t - 3600):
+		return "should have gone to buy the want: %s" % [event]
+	if not str(event.get("text", "")).begins_with("I'd saved enough for the Red Bandana, so I went to"):
+		return "text missing the want prefix: %s" % str(event.get("text", ""))
+	if str(event.get("place_id", "")) != "market" or str(event.get("because", "")) != "want":
+		return "should have gone to the market because of the want: %s" % [event]
+	if not (result["profile"]["mind"]["intention"] as Dictionary).is_empty():
+		return "intention should be cleared once honoured"
+	var bought := svc.complete_want(result["profile"], str(event["buy_want"]), t, true)
+	var wants: Array = bought["mind"]["wants"]
+	if str(wants[0]["status"]) != "bought" or int(wants[0]["bought_t"]) != t:
+		return "want should be bought: %s" % [wants[0]]
+	if not svc.get_wants(bought).is_empty():
+		return "a bought want is no longer being saved for"
+	var journal: Array = bought["mind"]["journal"]
+	var last: Dictionary = journal[journal.size() - 1]
+	if str(last["text"]) != "I bought the Red Bandana I'd been saving for. I'm wearing it now." or str(last["kind"]) != "purchase":
+		return "purchase not journaled: %s" % [last]
+	var unknown := svc.complete_want(result["profile"], "nope", t, false)
+	if JSON.stringify(unknown) != JSON.stringify(result["profile"]):
+		return "an unknown want id must leave the profile alone"
+	return null
+
+
+func _test_no_trip_without_savings() -> Variant:
+	var svc := MindService.new()
+	var town := _shop_town()
+	var t := _local_unix(0, 12)
+	var profile := _profile_with_wants([_saving_want(t - 3600)])
+	var result := _decide_at(svc, profile, t, {"meso": 60}, town)
+	var event: Dictionary = result["event"]
+	if event.has("buy_want") or str(event.get("because", "")) == "want":
+		return "50 + 20 reserve is more than 60, so no trip: %s" % [event]
+	if not (result["profile"]["mind"]["intention"] as Dictionary).is_empty():
+		return "no intention without savings"
+	var sad := svc.cannot_buy(result["profile"], "want-%d" % (t - 3600), t)
+	var journal: Array = sad["mind"]["journal"]
+	if not str((journal[journal.size() - 1] as Dictionary)["text"]).contains("didn't have enough saved"):
+		return "failed purchase not journaled: %s" % [journal[journal.size() - 1]]
+	if svc.get_wants(sad).size() != 1:
+		return "the want should still be saving"
+	return null
+
+
+func _test_wants_fade_after_a_week() -> Variant:
+	var svc := MindService.new()
+	var t := _local_unix(0, 12)
+	var profile := _profile_with_wants([_saving_want(t - 8 * 86400)])
+	var result := _decide_at(svc, profile, t, {}, _shop_town())
+	if str(result["profile"]["mind"]["wants"][0]["status"]) != "faded":
+		return "an 8 day old want should have faded: %s" % [result["profile"]["mind"]["wants"]]
+	if not svc.get_wants(result["profile"]).is_empty():
+		return "get_wants should exclude faded wants"
+	return null
+
+
+func _plan_entries(profile: Dictionary) -> Array:
+	var rows: Array = []
+	for entry in profile["mind"]["journal"]:
+		if str(entry.get("kind", "")) == "plan":
+			rows.append(entry)
+	return rows
+
+
+func _test_day_plan_made_each_morning() -> Variant:
+	var svc := MindService.new()
+	var town := _shop_town()
+	var context := {"plans": true}
+	var first := _decide_at(svc, _talk_profile(), _local_unix(0, 8), context, town)
+	var entries := _plan_entries(first["profile"])
+	if entries.size() != 1 or not str(entries[0]["text"]).begins_with("Today I'd like to "):
+		return "plan not journaled: %s" % [entries]
+	var plan := svc.get_day_plan(first["profile"])
+	var items: Array = plan["items"]
+	if items.size() < 1 or items.size() > 3:
+		return "plan should have 1 to 3 items: %s" % [plan]
+	var previous_window := -1
+	for item in items:
+		if int(item["window"]) <= previous_window:
+			return "windows should ascend: %s" % [plan]
+		previous_window = int(item["window"])
+	var second := _decide_at(svc, first["profile"], _local_unix(0, 8, 30), context, town)
+	if _plan_entries(second["profile"]).size() != 1 or JSON.stringify(svc.get_day_plan(second["profile"])) != JSON.stringify(plan):
+		return "the plan should not be rebuilt the same day"
+	var next_day := _decide_at(svc, second["profile"], _local_unix(1, 8), context, town)
+	if int(svc.get_day_plan(next_day["profile"])["day"]) != int(plan["day"]) + 1 or _plan_entries(next_day["profile"]).size() < 2:
+		return "the next morning should make a new plan: %s" % [svc.get_day_plan(next_day["profile"])]
+	var late := _decide_at(svc, _talk_profile(), _local_unix(0, 13), context, town)
+	for item in svc.get_day_plan(late["profile"])["items"]:
+		if int(item["window"]) == 0:
+			return "a plan made after lunch must not include this morning: %s" % [svc.get_day_plan(late["profile"])]
+	var quiet := _decide_at(svc, _talk_profile(), _local_unix(0, 8), {}, town)
+	if not _plan_entries(quiet["profile"]).is_empty() or not svc.get_day_plan(quiet["profile"]).is_empty():
+		return "no plan unless plans is on"
+	return null
+
+
+func _test_day_plan_followed_or_missed() -> Variant:
+	var svc := MindService.new()
+	var town := _shop_town()
+	var context := {"plans": true}
+	var followed := _decide_at(svc, _talk_profile(), _local_unix(0, 9), context, town)
+	var event: Dictionary = followed["event"]
+	if not str(event.get("text", "")).begins_with("As I'd planned, I went to"):
+		return "should have followed the morning plan: %s" % str(event.get("text", ""))
+	var morning: Dictionary = svc.get_day_plan(followed["profile"])["items"][0]
+	if not bool(morning["done"]) or bool(morning["missed"]):
+		return "morning item should be done: %s" % [morning]
+
+	# 7am: the cafe (the morning item) is still shut, so it is left undone.
+	var early := _decide_at(svc, _talk_profile(), _local_unix(0, 7), context, town)
+	var waiting: Dictionary = svc.get_day_plan(early["profile"])["items"][0]
+	if bool(waiting["done"]):
+		return "a shut place should leave the item undone: %s" % [waiting]
+	var later := _decide_at(svc, early["profile"], _local_unix(0, 13), context, town)
+	var missed: Dictionary = svc.get_day_plan(later["profile"])["items"][0]
+	if not bool(missed["done"]) or not bool(missed["missed"]):
+		return "morning item should be missed by 1pm: %s" % [missed]
+	var found := false
+	for entry in _plan_entries(later["profile"]):
+		if str(entry["text"]).contains("but I didn't get round to it"):
+			found = true
+	if not found:
+		return "the missed item was not journaled: %s" % [_plan_entries(later["profile"])]
+	return null
+
+
+func _test_suggestion_beats_want_and_plan() -> Variant:
+	var svc := MindService.new()
+	var town := _shop_town()
+	var t := _local_unix(0, 9)
+	var profile := _profile_with_wants([_saving_want(t - 3600)])
+	var steered := svc.consider(profile, {"kind": "place", "id": "pond", "name": "the pond"}, t - 1, 9, town, NPCS)
+	if str(steered["answer"]) != "yes":
+		return "expected yes, got %s" % [steered]
+	var context := {"plans": true, "meso": 100}
+	var first := _decide_at(svc, steered["profile"], t, context, town)
+	var event: Dictionary = first["event"]
+	if str(event.get("because", "")) != "suggestion" or str(event.get("place_id", "")) != "pond" or event.has("buy_want"):
+		return "the suggestion should win: %s" % [event]
+	var second := _decide_at(svc, first["profile"], t + MindService.DECISION_INTERVAL_SECONDS, context, town)
+	var next_event: Dictionary = second["event"]
+	if str(next_event.get("buy_want", "")) != "want-%d" % (t - 3600):
+		return "the want trip should come next: %s" % [next_event]
+	return null
+
+
+func _test_catch_up_buys_each_want_once() -> Variant:
+	var svc := MindService.new()
+	var town := _shop_town()
+	var profile := svc.ensure_profile(_talk_profile())
+	profile["mind"]["wants"] = [_saving_want(NOW - 3600, 50)]
+	profile["mind"]["last_decision_unix"] = _local_unix(0, 11) - 3 * MindService.DECISION_INTERVAL_SECONDS
+	# Enough for one purchase, not two: three catch-up decisions, one trip.
+	var result := svc.tick(profile, NPCS, _local_unix(0, 11), {"meso": 100, "shop_items": []}, town)
+	var trips := 0
+	for event in result["events"]:
+		if (event as Dictionary).has("buy_want"):
+			trips += 1
+	if trips != 1:
+		return "one want, one trip: got %d" % trips
+	# Two wants and plenty of money: each bought once, never the same one twice.
+	var two := svc.ensure_profile(_talk_profile())
+	var second := _saving_want(NOW - 1800, 30)
+	second["id"] = "want-second"
+	second["item_id"] = "wz-blue-cape"
+	two["mind"]["wants"] = [_saving_want(NOW - 3600, 30), second]
+	two["mind"]["last_decision_unix"] = _local_unix(0, 11) - 4 * MindService.DECISION_INTERVAL_SECONDS
+	var both := svc.tick(two, NPCS, _local_unix(0, 11), {"meso": 500, "shop_items": []}, town)
+	var bought: Array = []
+	for event in both["events"]:
+		if (event as Dictionary).has("buy_want"):
+			if bought.has(str(event["buy_want"])):
+				return "the same want was bought twice: %s" % [bought]
+			bought.append(str(event["buy_want"]))
+	if bought.size() != 2:
+		return "both wants should get a trip: %s" % [bought]
+	return null
+
+
+func _test_yesterdays_plan_is_written_off() -> Variant:
+	var svc := MindService.new()
+	var town := _shop_town()
+	var context := {"plans": true}
+	var day_one := _decide_at(svc, _talk_profile(), _local_unix(0, 8), context, town)
+	var items: Array = svc.get_day_plan(day_one["profile"])["items"]
+	var undone := 0
+	for item in items:
+		if not bool(item["done"]):
+			undone += 1
+	if undone == 0:
+		return "the test needs an unfinished item from day one"
+	# The app was closed all evening; next morning the old plan is replaced.
+	var day_two := _decide_at(svc, day_one["profile"], _local_unix(1, 8), context, town)
+	var missed := 0
+	for entry in day_two["profile"]["mind"]["journal"]:
+		if str((entry as Dictionary).get("text", "")).contains("but I didn't get round to it"):
+			missed += 1
+	if missed < undone:
+		return "yesterday's unfinished items were lost: %d of %d noted" % [missed, undone]
+	if int(svc.get_day_plan(day_two["profile"])["day"]) != int(svc.get_day_plan(day_one["profile"])["day"]) + 1:
+		return "today's plan should replace yesterday's"
 	return null

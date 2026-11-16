@@ -31,6 +31,7 @@ func _run_all() -> void:
 	_case("failure_matrix", func(): return _test_failure_matrix())
 	_case("unknown_command_rejected", func(): return _test_unknown_command_rejected())
 	_case("journal_command_takes_no_args", func(): return _test_journal_command_takes_no_args())
+	_case("wants_command_takes_no_args", func(): return _test_wants_command_takes_no_args())
 
 
 func _case(name: String, body: Callable) -> void:
@@ -237,4 +238,15 @@ func _test_journal_command_takes_no_args() -> Variant:
 	var bad := router.resolve("/journal extra")
 	if bool(bad.get("ok", false)) or str(bad.get("reason_code", "")) != "unexpected_args":
 		return "expected /journal extra to be rejected as unexpected_args, got %s" % [bad]
+	return null
+
+
+func _test_wants_command_takes_no_args() -> Variant:
+	var router := ChatCommandRouter.new()
+	var ok := router.resolve("/wants")
+	if not bool(ok.get("ok", false)) or str(ok.get("action_id", "")) != "wants":
+		return "expected /wants to resolve, got %s" % [ok]
+	var bad := router.resolve("/wants now")
+	if bool(bad.get("ok", false)) or str(bad.get("reason_code", "")) != "unexpected_args":
+		return "expected /wants now to be rejected as unexpected_args, got %s" % [bad]
 	return null
