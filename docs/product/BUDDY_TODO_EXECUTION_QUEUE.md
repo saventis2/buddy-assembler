@@ -263,7 +263,9 @@ Status: `in_progress` (see `PLAN13_TOWN_AND_CONVERSATION.md`)
 - [ ] A2 town map window
 - [ ] A3 changing town, things you leave
 - [x] B3 talk changes the buddy
-- [ ] Part C: wants, day plans, projects, nightly reflection, making things
+- [x] Part C, C1+C2 part 1: wants it saves for and buys, a day plan
+- [ ] Part C, C1+C2 part 2: asking you for things, a Wants window, projects
+- [ ] Part C: nightly reflection, making things, tastes and relationships
 
 ### Plan 12C: Things left for the buddy, visible places
 

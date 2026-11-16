@@ -34,6 +34,13 @@ var _deferred_save_pending := false
 var _deferred_save_seconds := 0.0
 
 const DEFERRED_SAVE_DELAY_SECONDS := 1.5
+# Things the buddy can notice in a shop and want (Plan 13 C1+C2): wearable
+# catalogue items, priced by rarity where the catalogue has no price.
+const WANT_SLOTS := ["hat", "top", "bottom", "overall", "shoes", "gloves", "cape", "face_accessory", "eye_accessory"]
+const WANT_PRICE_BY_RARITY := {"common": 40, "uncommon": 80, "rare": 150, "epic": 300, "legendary": 500}
+const WANT_SHOP_SIZE := 40
+var _want_shop_cache: Array = []
+var _want_shop_catalog_size := -1
 
 
 func _ready() -> void:
@@ -401,6 +408,9 @@ func tick_mind(now_unix: int) -> Array:
         "is_night": _is_night(),
         "top_trait": "",
         "hour": int(Time.get_datetime_dict_from_system().get("hour", 12)),
+        "meso": int(get_inventory_snapshot().get("meso", 0)),
+        "shop_items": _want_shop_items(),
+        "plans": true,
     }
     var identity_ctx = _call_service_with_fallback("identity", "get_context", [profile], {})
     if typeof(identity_ctx) == TYPE_DICTIONARY:
@@ -417,8 +427,87 @@ func tick_mind(now_unix: int) -> Array:
         # Where it went and who it saw are facts, so the memory graph links
         # them with what the person says about the same places and people.
         _call_profile_service("memory", "record_town_events", [profile, events])
+        for event_variant in events:
+            if typeof(event_variant) == TYPE_DICTIONARY and str((event_variant as Dictionary).get("buy_want", "")) != "":
+                _buy_want(str((event_variant as Dictionary)["buy_want"]), int((event_variant as Dictionary).get("t", 0)))
         flush()
     return events
+
+
+# An even spread of wearable catalogue items for the town's shop, built once
+# per catalogue.
+func _want_shop_items() -> Array:
+    var catalog_variant = world_state.get("item_catalog", {})
+    if typeof(catalog_variant) != TYPE_DICTIONARY:
+        return []
+    var catalog: Dictionary = catalog_variant
+    if catalog.size() == _want_shop_catalog_size:
+        return _want_shop_cache
+    var rows: Array = []
+    var ids: Array = catalog.keys()
+    ids.sort()
+    for id_variant in ids:
+        var item_variant = catalog[id_variant]
+        if typeof(item_variant) != TYPE_DICTIONARY:
+            continue
+        var item: Dictionary = item_variant
+        var slot := str(item.get("equipSlot", "")).strip_edges()
+        var item_name := str(item.get("name", "")).strip_edges()
+        if not WANT_SLOTS.has(slot) or item_name == "" or item_name.length() > 32 or str(item.get("wzId", "")) == "":
+            continue
+        var price := int(item.get("price", 0))
+        if price <= 0:
+            price = int(WANT_PRICE_BY_RARITY.get(str(item.get("rarity", "")).to_lower(), 80))
+        rows.append({"id": str(id_variant), "name": item_name, "slot": slot, "price": price})
+    var shop: Array = []
+    if not rows.is_empty():
+        var step := maxi(1, int(rows.size() / WANT_SHOP_SIZE))
+        for index in range(0, rows.size(), step):
+            shop.append(rows[index])
+            if shop.size() >= WANT_SHOP_SIZE:
+                break
+    _want_shop_cache = shop
+    _want_shop_catalog_size = catalog.size()
+    return shop
+
+
+# The buddy buys something it saved up for. It puts it on only if nothing is
+# worn in that slot, so it never undoes an outfit chosen in the Wardrobe.
+func _buy_want(want_id: String, decision_unix: int) -> void:
+    var want: Dictionary = {}
+    for row in mind_wants():
+        if typeof(row) == TYPE_DICTIONARY and str((row as Dictionary).get("id", "")) == want_id:
+            want = row
+    if want.is_empty():
+        return
+    var spent = _call_service_with_fallback(
+        "economy", "spend_meso", [world_state, "purchase:%s" % want_id, int(want.get("price", 0))], {}
+    )
+    if typeof(spent) != TYPE_DICTIONARY or not bool(spent.get("ok", false)):
+        _call_profile_service("mind", "cannot_buy", [profile, want_id, decision_unix])
+        return
+    world_state = spent["world_state"]
+    var item_id := str(want.get("item_id", ""))
+    var row: Dictionary = {"id": item_id, "name": str(want.get("name", "")), "equipSlot": str(want.get("slot", ""))}
+    var catalog_variant = world_state.get("item_catalog", {})
+    if typeof(catalog_variant) == TYPE_DICTIONARY and typeof((catalog_variant as Dictionary).get(item_id, null)) == TYPE_DICTIONARY:
+        row = ((catalog_variant as Dictionary)[item_id] as Dictionary).duplicate(true)
+        row["id"] = item_id
+    world_state = _call_world_service("economy", "grant_item", [world_state, "purchase:%s" % want_id, row], false)
+    var instance_id := int(world_state.get("next_item_instance_id", 1)) - 1
+    var slots_variant = get_inventory_snapshot().get("equipped_slots", {})
+    var slot_free := true
+    if typeof(slots_variant) == TYPE_DICTIONARY:
+        slot_free = int((slots_variant as Dictionary).get(str(want.get("slot", "")), -1)) <= 0
+    var equipped := false
+    if slot_free:
+        equipped = bool(equip_inventory_item(instance_id).get("ok", false))
+    _call_profile_service("mind", "complete_want", [profile, want_id, decision_unix, equipped])
+
+
+func mind_wants() -> Array:
+    var wants = _call_service_with_fallback("mind", "get_wants", [profile], [])
+    return wants if typeof(wants) == TYPE_ARRAY else []
 
 
 # Stores the thinking model's wording for a decision already in the journal.
