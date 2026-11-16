@@ -4,6 +4,58 @@ Started: 2026-11-16. Status: direction set by the owner (answers below);
 design proposed. Written against `main` at b1cb579 (Plan 13 A1, A2, B1 to B3
 and C1+C2 part 1 merged).
 
+## Progress
+
+**Step 1a, the fast-forward tool: built 2026-11-17.**
+`python apps/runtime-godot/tools/simulate_days.py --godot <4.2.2 binary> --days 90 --seed 7`
+lives a new buddy through 90 days in about 45 seconds and prints its journal,
+each day's firsts and how often it repeated itself. It drives the real
+`AppState.tick_mind` with a supplied clock (`begin_simulation`,
+`set_sim_clock`), so it cannot drift from the app. A process that starts a
+simulation never saves again, and `begin_simulation` refuses to run outside a
+headless process. `LifeSimTest` (8 cases) is in the required suite: the same
+seed gives the same life, different seeds differ, and nothing is saved.
+
+Step 1 is split into three pull requests: 1a this tool; 1b the house and land
+with discovery, behind a setting; 1c the fresh start with backup, which turns
+the new world on.
+
+### What 90 days of today's buddy look like
+
+Seed 7, the Plan 13 town, nobody talking to it. This is the baseline the new
+world has to beat.
+
+- **Everything is found by day 3.** It has been to every place and done all 14
+  activities by day 3, and met four of its six neighbours. After that the only
+  new things are shop items.
+- **75 sentences for 12,960 decisions.** The ten most common lines are 68% of
+  the journal, and "I had a nap at home. It felt good." appears 2,696 times.
+  From day 14 on, 40 days have nothing new at all, including most of the last
+  month.
+- **Its needs never bite.** From day 1 comfort and confidence sit at their
+  maximum and company stays near the top; tiredness is at zero within the
+  week. They stay there for 90 days, so how it feels has nothing to say. It
+  tends its home 9 times in 90 days, visits someone on 3% of decisions, and
+  goes exploring 1,390 times in the middle of the night.
+- **Two neighbours are never met**, although it goes to the places they live
+  more than 1,500 times.
+- **Money means nothing.** It ends with 3,300 meso and has bought all 39 things
+  it ever wanted.
+- **Bond reaches level 15 with nobody there.**
+
+What this changes in the plan:
+
+- **Needs have to fall with time on the world host** (step 2). Today the only
+  thing that tires the buddy or makes it lonely is the desktop animation loop,
+  which this tool does not run and the host will not have.
+- **Two buddies should not live the same life.** The mind seeds its choices
+  from `personality_seed_tag` ("curious" for every buddy), not from
+  `personality_seed`, so two buddies differ only by when their clocks tick.
+  To fix with the discovery work in step 1b.
+- **Targets for the new world**, to pin as tests in step 1b: something new on
+  most of the first 30 days, no need pinned at its limit, and the ten most
+  common lines well under half the journal.
+
 ## Direction (owner, 2026-11-16)
 
 The buddy starts out knowing very little. It does not start in a town full of
@@ -463,11 +515,13 @@ running, fast-forward runs tune toward rough targets:
 
 ## Fast-forward: the tool that makes this tunable
 
-Waiting weeks to find out whether week three is boring is not workable. So
-build a headless tool, `tools/simulate_days`, that runs a fresh buddy for N
-days of simulated time with a fixed seed and prints the journal, what it
-learned and how long it took, what it tried and why it failed, what it built,
-the self-sheet as it grows and its map. Research reads from a stored set of
+Waiting weeks to find out whether week three is boring is not workable. The
+headless tool `apps/runtime-godot/tools/simulate_days.py` (built in step 1a)
+runs a fresh buddy for N days of simulated time with a fixed seed and prints
+the journal, each day's firsts and how often it repeated itself. As the later
+steps land it will also print what it learned and how long it took, what it
+tried and why it failed, what it built, the self-sheet as it grows and its
+map. Research reads from a stored set of
 real articles, so runs are offline and repeatable. It is the world host run
 faster than real time. Then:
 
@@ -517,9 +571,11 @@ met.
 
 | Step | What | Done when |
 |---|---|---|
-| 1 | Fresh start with backup; characters, quests and encounters archived and off; the world becomes house and land; the known filter at `get_town()` and the three people reads; fast-forward tool; D-007 | A 90-day run prints a timeline; the old save is backed up and a fresh buddy starts |
+| 1a | Fast-forward tool (built 2026-11-17) | A 90-day run prints a timeline; the same seed gives the same life; nothing is saved |
+| 1b | The house and land with discovery, behind a setting: land areas, exploring the edge of what it knows, the known filter at `get_town()` and the three people reads; characters, quests and encounters off in the new world | The first 30 days meet the novelty targets in fast-forward, across seeds |
+| 1c | Fresh start with backup; characters, quests and encounters archived; the new world on by default; D-007 | The old save is backed up and a fresh buddy starts |
 | 2 | World host: the world runs headless on GGPC with a watchdog; the desktop app becomes the visit and sends requests; calling it over; D-010 | Close the desktop app for a day; the journal shows it kept living |
-| 3 | Land content and the world's rules: areas, materials and properties, ways of working, building needs, outcomes with reasons; exploring the edge of its land; noticing and naming | Days 1 to 7 band tests pass across seeds; the basics check passes |
+| 3 | The world's rules and the things on the land: materials and properties, ways of working, building needs, outcomes with reasons; noticing and naming | First own names appear in week 1 in fast-forward; the basics check passes |
 | 4 | The 3D view on the desktop: land diorama, the buddy as a card, time of day and weather, mist over unexplored land; D-009 | You can open it and watch the buddy move around its land |
 | 5 | Hardlight: the publish step with the privacy filter, snapshot push to Stratos, the web export of the 3D view; D-011 | Anyone can watch its land on Hardlight; the planted-fact test finds nothing about you |
 | 6 | Learning by trying: beliefs in the fixed form, study time by difficulty, tries with outcomes and reasons, adjusting, skills; learning from you | A failed try changes the belief and a later try succeeds, in simulation |

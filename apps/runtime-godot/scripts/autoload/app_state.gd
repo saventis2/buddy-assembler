@@ -33,6 +33,11 @@ var _services: Dictionary = {}
 var _saved_digest: Dictionary = {}
 var _deferred_save_pending := false
 var _deferred_save_seconds := 0.0
+# Fast-forward simulation (tests/life_sim.gd): a headless process can hand the
+# buddy a clock of its own. Once it does, nothing is saved for the rest of the
+# process, so a simulated life can never touch the real save files.
+var _sim_clock_unix := 0
+var _persistence_enabled := true
 
 const DEFERRED_SAVE_DELAY_SECONDS := 1.5
 # Things the buddy can notice in a shop and want (Plan 13 C1+C2): wearable
@@ -97,6 +102,8 @@ func load_state() -> void:
 
 
 func flush() -> void:
+    if not _persistence_enabled:
+        return
     _deferred_save_pending = false
     _write_if_changed(SETTINGS_PATH, settings)
     _write_if_changed(PROFILE_PATH, profile)
@@ -107,6 +114,8 @@ func flush() -> void:
 # position while the buddy walks or is dragged), where writing each time
 # stalls rendering.
 func flush_soon() -> void:
+    if not _persistence_enabled:
+        return
     if not _deferred_save_pending:
         _deferred_save_seconds = 0.0
     _deferred_save_pending = true
@@ -136,6 +145,8 @@ func _persistable_world_state() -> Dictionary:
 
 
 func _write_if_changed(path: String, data: Dictionary) -> void:
+    if not _persistence_enabled:
+        return
     var digest := JSON.stringify(data).md5_text()
     if str(_saved_digest.get(path, "")) == digest and FileAccess.file_exists(path):
         return
@@ -166,7 +177,7 @@ func record_interaction(kind: String) -> void:
 
 func apply_behavior(action_id: String) -> void:
     world_state["last_action"] = action_id
-    world_state["last_tick_unix"] = Time.get_unix_time_from_system()
+    world_state["last_tick_unix"] = _clock_unix()
 
     if action_id == "gift":
         profile["gifts_seen"] = int(profile.get("gifts_seen", 0)) + 1
@@ -211,7 +222,7 @@ func get_unlocked_actions() -> Array:
 func record_event_trigger(event_id: String, action_id: String) -> void:
     world_state["last_event_id"] = event_id
     world_state["last_event_action"] = action_id
-    world_state["last_event_unix"] = Time.get_unix_time_from_system()
+    world_state["last_event_unix"] = _clock_unix()
     flush()
 
 
@@ -344,11 +355,13 @@ func get_continuity_hint() -> String:
 
 func clear_last_active_summary() -> void:
     profile["last_active_summary"] = ""
+    if not _persistence_enabled:
+        return
     SaveStore.write_json(PROFILE_PATH, profile)
 
 
 func open_reward_box(box_id: String) -> Dictionary:
-    var seed := int(profile.get("personality_seed", 0)) + int(Time.get_unix_time_from_system())
+    var seed := int(profile.get("personality_seed", 0)) + int(_clock_unix())
     var result = _call_service_with_fallback("economy", "open_reward_box", [world_state, box_id, seed], {})
     if typeof(result) != TYPE_DICTIONARY:
         return {"ok": false, "reason": "service_failure"}
@@ -408,7 +421,7 @@ func tick_mind(now_unix: int) -> Array:
     var context := {
         "is_night": _is_night(),
         "top_trait": "",
-        "hour": int(Time.get_datetime_dict_from_system().get("hour", 12)),
+        "hour": int(_clock_datetime().get("hour", 12)),
         "meso": int(get_inventory_snapshot().get("meso", 0)),
         "shop_items": _want_shop_items(),
         "plans": true,
@@ -545,7 +558,85 @@ func _memory_roster() -> Dictionary:
 
 
 func _now_unix() -> int:
-    return int(Time.get_unix_time_from_system())
+    return int(_clock_unix())
+
+
+func is_simulating() -> bool:
+    return not _persistence_enabled
+
+
+func _clock_unix() -> float:
+    if _sim_clock_unix > 0:
+        return float(_sim_clock_unix)
+    return Time.get_unix_time_from_system()
+
+
+func _clock_datetime() -> Dictionary:
+    if _sim_clock_unix > 0:
+        return Time.get_datetime_dict_from_unix_time(_sim_clock_unix)
+    return Time.get_datetime_dict_from_system()
+
+
+func set_sim_clock(unix_time: int) -> void:
+    if not is_simulating() or unix_time <= 0:
+        return
+    _sim_clock_unix = unix_time
+
+
+# The economy deep-copies world_state on every call, so the ~11,000-row item
+# catalogue makes each simulated decision slow. The buddy only ever looks at
+# the shop's items, so a simulation keeps just those rows. The shop list is
+# the same before and after.
+func trim_catalog_for_simulation() -> void:
+    if not is_simulating():
+        return
+    var catalog_variant = world_state.get("item_catalog", {})
+    if typeof(catalog_variant) != TYPE_DICTIONARY:
+        return
+    var catalog: Dictionary = catalog_variant
+    var kept := {}
+    for row in _want_shop_items():
+        var item_id := str((row as Dictionary).get("id", ""))
+        if catalog.has(item_id):
+            kept[item_id] = catalog[item_id]
+    world_state["item_catalog"] = kept
+    _want_shop_cache = []
+    _want_shop_catalog_size = -1
+
+
+# Starts a simulated life for the headless fast-forward tool. One way: the
+# process never saves again. The simulated time is read as plain local time
+# (no time zone), so a run is the same on every machine. Returns false and
+# changes nothing outside a headless process.
+func begin_simulation(seed_value: int, start_unix: int) -> bool:
+    if DisplayServer.get_name() != "headless" or start_unix <= 0:
+        push_error("app_state: begin_simulation needs a headless process and a start time")
+        return false
+    _persistence_enabled = false
+    _deferred_save_pending = false
+    _sim_clock_unix = start_unix
+    _load_services()
+    var mind_service = _services.get("mind", null)
+    if mind_service != null:
+        mind_service.set_time_zone_bias_minutes(0)
+    _want_shop_cache = []
+    _want_shop_catalog_size = -1
+    settings = _default_settings()
+    settings["mindModelEnabled"] = false
+    settings["chatModelEnabled"] = false
+    profile = _default_profile()
+    profile["personality_seed"] = seed_value
+    # The mind seeds its decisions from this tag (not from personality_seed), so
+    # it is what makes one simulated seed live a different life from another.
+    profile["personality_seed_tag"] = "sim-%d" % seed_value
+    world_state = _default_world_state()
+    profile = _ensure_profile_modules(profile)
+    world_state = _ensure_world_modules(world_state)
+    _reconcile_progression_from_xp()
+    _sync_growth_mode_flags()
+    _refresh_unlocks()
+    _prune_event_buckets()
+    return true
 
 
 func memory_note_turn(who: String, text: String) -> void:
@@ -636,7 +727,7 @@ func _world_npcs() -> Array:
 
 
 func _local_hour_now() -> int:
-    return int(Time.get_datetime_dict_from_system().get("hour", 12))
+    return int(_clock_datetime().get("hour", 12))
 
 
 # The town place or character the person is suggesting it go to, if any.
@@ -756,7 +847,7 @@ func resolve_pending_encounter(engage: bool) -> Dictionary:
                 "job_primary_stat": str(profile.get("job_primary_stat", "charisma")),
                 "job_drop_bias": profile.get("job_drop_bias", []),
             }
-            var drop_seed := int(profile.get("personality_seed", 0)) + int(Time.get_unix_time_from_system())
+            var drop_seed := int(profile.get("personality_seed", 0)) + int(_clock_unix())
             var drop_result = _call_service_with_fallback(
                 "economy",
                 "roll_drop_table",
@@ -1141,7 +1232,7 @@ func is_quiet_hours_now() -> bool:
         return false
     var start_hour := int(settings.get("quietHoursStart", 22))
     var end_hour := int(settings.get("quietHoursEnd", 7))
-    var now := Time.get_datetime_dict_from_system()
+    var now := _clock_datetime()
     var hour := int(now.get("hour", 12))
     if start_hour == end_hour:
         return true
@@ -1168,6 +1259,8 @@ func is_first_run() -> bool:
 
 func mark_first_run_seen() -> void:
     settings["firstRunSeen"] = true
+    if not _persistence_enabled:
+        return
     SaveStore.write_json(SETTINGS_PATH, settings)
 
 
@@ -1349,7 +1442,7 @@ func _resolve_reward_item_name(item_id: String) -> String:
 
 
 func _refresh_while_away_report() -> void:
-    var now_unix := Time.get_unix_time_from_system()
+    var now_unix := _clock_unix()
     var report: Dictionary = _call_service_with_fallback(
         "report",
         "generate_while_away_report",
@@ -1370,7 +1463,7 @@ func _append_continuity_line(summary: String, elapsed_minutes: int) -> void:
         {
             "line": summary,
             "elapsed_minutes": elapsed_minutes,
-            "timestamp": Time.get_unix_time_from_system(),
+            "timestamp": _clock_unix(),
         }
     )
     if digest.size() > 10:
@@ -1464,7 +1557,7 @@ func _default_profile() -> Dictionary:
         "schemaVersion": 2,
         "name": "Buddy",
         "base_type": "sprout",
-        "personality_seed": Time.get_unix_time_from_system(),
+        "personality_seed": _clock_unix(),
         "personality_seed_tag": "curious",
         "current_personality_profile": {
             "curiosity": 0.55,
@@ -1558,7 +1651,7 @@ func _merge_defaults(target: Dictionary, defaults: Dictionary) -> Dictionary:
 
 
 func _current_day_key() -> String:
-    var now := Time.get_datetime_dict_from_system()
+    var now := _clock_datetime()
     return "%04d-%02d-%02d" % [
         int(now.get("year", 1970)),
         int(now.get("month", 1)),
@@ -1567,7 +1660,7 @@ func _current_day_key() -> String:
 
 
 func _current_hour_key() -> String:
-    var now := Time.get_datetime_dict_from_system()
+    var now := _clock_datetime()
     return "%04d-%02d-%02dT%02d" % [
         int(now.get("year", 1970)),
         int(now.get("month", 1)),
@@ -1594,7 +1687,7 @@ func _prune_event_buckets() -> void:
 
 
 func _is_night() -> bool:
-    var now := Time.get_datetime_dict_from_system()
+    var now := _clock_datetime()
     var hour := int(now.get("hour", 12))
     return hour < 7 or hour >= 22
 

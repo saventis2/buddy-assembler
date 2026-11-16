@@ -272,11 +272,13 @@ only a house and land and builds its own town, with no townspeople for now.
 
 ### Plan 14: Small beginnings
 
-Status: `proposed` (see `PLAN14_SMALL_BEGINNINGS.md`)
+Status: `in_progress` (see `PLAN14_SMALL_BEGINNINGS.md`)
 
-- [ ] 1 Fresh start with backup; house and land; known filter; fast-forward tool
+- [x] 1a Fast-forward tool (`tools/simulate_days.py`, `LifeSimTest`)
+- [ ] 1b House and land with discovery, behind a setting; known filter
+- [ ] 1c Fresh start with backup; the new world on by default
 - [ ] 2 Always-on world host (GGPC now, Nexus later); the desktop app is a visit
-- [ ] 3 Land content and the world's rules
+- [ ] 3 The world's rules and the things on the land
 - [ ] 4 2.5D view on the desktop
 - [ ] 5 Public world on Hardlight, nothing about you published
 - [ ] 6 Learning by trying, study time by difficulty
