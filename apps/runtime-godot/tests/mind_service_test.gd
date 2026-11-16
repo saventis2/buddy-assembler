@@ -69,6 +69,8 @@ func _run_all() -> void:
 	_case("day_plan_made_each_morning", func(): return _test_day_plan_made_each_morning())
 	_case("day_plan_followed_or_missed", func(): return _test_day_plan_followed_or_missed())
 	_case("suggestion_beats_want_and_plan", func(): return _test_suggestion_beats_want_and_plan())
+	_case("catch_up_buys_each_want_once", func(): return _test_catch_up_buys_each_want_once())
+	_case("yesterdays_plan_is_written_off", func(): return _test_yesterdays_plan_is_written_off())
 
 
 func _case(name: String, body: Callable) -> void:
@@ -690,4 +692,62 @@ func _test_suggestion_beats_want_and_plan() -> Variant:
 	var next_event: Dictionary = second["event"]
 	if str(next_event.get("buy_want", "")) != "want-%d" % (t - 3600):
 		return "the want trip should come next: %s" % [next_event]
+	return null
+
+
+func _test_catch_up_buys_each_want_once() -> Variant:
+	var svc := MindService.new()
+	var town := _shop_town()
+	var profile := svc.ensure_profile(_talk_profile())
+	profile["mind"]["wants"] = [_saving_want(NOW - 3600, 50)]
+	profile["mind"]["last_decision_unix"] = _local_unix(0, 11) - 3 * MindService.DECISION_INTERVAL_SECONDS
+	# Enough for one purchase, not two: three catch-up decisions, one trip.
+	var result := svc.tick(profile, NPCS, _local_unix(0, 11), {"meso": 100, "shop_items": []}, town)
+	var trips := 0
+	for event in result["events"]:
+		if (event as Dictionary).has("buy_want"):
+			trips += 1
+	if trips != 1:
+		return "one want, one trip: got %d" % trips
+	# Two wants and plenty of money: each bought once, never the same one twice.
+	var two := svc.ensure_profile(_talk_profile())
+	var second := _saving_want(NOW - 1800, 30)
+	second["id"] = "want-second"
+	second["item_id"] = "wz-blue-cape"
+	two["mind"]["wants"] = [_saving_want(NOW - 3600, 30), second]
+	two["mind"]["last_decision_unix"] = _local_unix(0, 11) - 4 * MindService.DECISION_INTERVAL_SECONDS
+	var both := svc.tick(two, NPCS, _local_unix(0, 11), {"meso": 500, "shop_items": []}, town)
+	var bought: Array = []
+	for event in both["events"]:
+		if (event as Dictionary).has("buy_want"):
+			if bought.has(str(event["buy_want"])):
+				return "the same want was bought twice: %s" % [bought]
+			bought.append(str(event["buy_want"]))
+	if bought.size() != 2:
+		return "both wants should get a trip: %s" % [bought]
+	return null
+
+
+func _test_yesterdays_plan_is_written_off() -> Variant:
+	var svc := MindService.new()
+	var town := _shop_town()
+	var context := {"plans": true}
+	var day_one := _decide_at(svc, _talk_profile(), _local_unix(0, 8), context, town)
+	var items: Array = svc.get_day_plan(day_one["profile"])["items"]
+	var undone := 0
+	for item in items:
+		if not bool(item["done"]):
+			undone += 1
+	if undone == 0:
+		return "the test needs an unfinished item from day one"
+	# The app was closed all evening; next morning the old plan is replaced.
+	var day_two := _decide_at(svc, day_one["profile"], _local_unix(1, 8), context, town)
+	var missed := 0
+	for entry in day_two["profile"]["mind"]["journal"]:
+		if str((entry as Dictionary).get("text", "")).contains("but I didn't get round to it"):
+			missed += 1
+	if missed < undone:
+		return "yesterday's unfinished items were lost: %d of %d noted" % [missed, undone]
+	if int(svc.get_day_plan(day_two["profile"])["day"]) != int(svc.get_day_plan(day_one["profile"])["day"]) + 1:
+		return "today's plan should replace yesterday's"
 	return null
