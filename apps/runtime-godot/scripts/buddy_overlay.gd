@@ -2580,6 +2580,10 @@ func _on_mind_thought_completed(result: int, response_code: int, _headers: Packe
             _mind_model_status = "ok"
             line = str(reply.get("thought", ""))
             AppState.apply_mind_thought(int(pending.get("t", 0)), line, str(reply.get("want", "")))
+            # The journal line just changed to the buddy's own words; an open
+            # Town window shows it under "Last time".
+            if _town_window != null and _town_window.visible:
+                _refresh_town_window()
             _maybe_choose_name()
         else:
             _mind_model_status = "unusable reply (%s)" % str(reply.get("reason", ""))
