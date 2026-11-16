@@ -29,6 +29,9 @@ const CHAT_MEMORY_MAX_NOTES := 10
 # Memory (Plan 13 B2): a failed talk-to-memory request is retried after ten
 # minutes, and let go after three failures in a row.
 const MEMORY_RETRY_SECONDS := 600
+# Half an hour without a word ends a talk: the next line starts a new one
+# (fresh context for the model, and a hello when the chat is opened again).
+const CHAT_CONVERSATION_GAP_SECONDS := 1800
 const MEMORY_MAX_FAILURES := 3
 const MAPLE_LAYOUT_MEMORY := {
     "base_size": Vector2i(460, 480),
@@ -407,6 +410,7 @@ var _mind_pending := {}
 var _chat_http: HTTPRequest = null
 var _chat_pending := {}          # {"kind": "chat" | "name" | "memory"}
 var _chat_turns: Array = []      # {"who": "you" | "them", "text": String}
+var _chat_last_turn_unix := 0
 var _mind_model_status := "not tried yet"
 var _dragging := false
 var _drag_offset := Vector2i.ZERO
@@ -604,6 +608,7 @@ func _ready() -> void:
     _configure_menu_rebuild_window()
     _configure_chat_window()
     _chat_turns = AppState.memory_live_turns()
+    _chat_last_turn_unix = int(Time.get_unix_time_from_system())
     _capture_stats_session_baseline()
     _refresh_equipped_visual_state()
     _load_assembler_default_parts()
@@ -968,7 +973,7 @@ func _add_main_menu_button(label: String, tooltip: String, action: Callable) -> 
 # Shows the buddy's recent journal in the chat window, opening it if needed.
 func _open_journal() -> void:
     if not _chat_window_open:
-        _toggle_chat_window()
+        _toggle_chat_window(false)
     _append_chat_line("Journal", "\n" + _build_journal_summary(), "#FFD77A")
 
 
@@ -2511,9 +2516,12 @@ func _request_mind_thought(event: Dictionary, suffix: String) -> bool:
         if int(entry.get("t", 0)) != int(event.get("t", 0)):
             recent.append(str(entry.get("text", "")))
     var favourite: String = str(_mind_favourites().get("favourite", ""))
-    var body := MindThinker.build_request(
-        str(AppState.settings.get("mindModelName", MindThinker.DEFAULT_MODEL)), event, recent, favourite
-    )
+    var thought_model := str(AppState.settings.get("mindModelName", MindThinker.DEFAULT_MODEL))
+    # With a different model for chat, unload the thought model straight away:
+    # two models loaded at once can overflow graphics memory next to a game or
+    # stream, and both then crawl (measured: 0.5 tokens a second).
+    var keep_alive := "0s" if MindThinker.model_name(thought_model) != MindThinker.model_name(_chat_model_name()) else MindThinker.KEEP_ALIVE
+    var body := MindThinker.build_request(thought_model, event, recent, favourite, keep_alive)
     var error := _mind_http.request(url, ["Content-Type: application/json"], HTTPClient.METHOD_POST, body)
     if error != OK:
         _mind_model_status = "could not start request (%d)" % error
@@ -2681,28 +2689,33 @@ func _chat_model_ready_url(for_conversation: bool = true) -> String:
 
 
 func _start_chat_request(user_text: String) -> bool:
+    if str(_chat_pending.get("kind", "")) == "greeting" and _chat_http != null:
+        # Their words come first: drop a hello that has not arrived yet.
+        _chat_http.cancel_request()
+        _chat_pending = {}
+    _end_stale_conversation()
     var url: String = _chat_model_ready_url()
     if url == "" or not _chat_pending.is_empty():
         return false
     _ensure_chat_http()
-    var recent: Array = []
-    for entry_variant in AppState.get_mind_journal(4):
-        if typeof(entry_variant) != TYPE_DICTIONARY:
-            continue
-        recent.append(str((entry_variant as Dictionary).get("text", "")))
     var town := {"places": _town_place_names(), "people": _town_people()}
     var memory: Dictionary = AppState.memory_recall(user_text)
     if _chat_turns.is_empty():
         # Start of a talk: code picks one thing it remembers about you that
         # it may ask after, so remembering does not wait for you to bring it up.
-        var facts_variant = memory.get("facts", [])
-        if typeof(facts_variant) == TYPE_ARRAY:
-            for line_variant in facts_variant:
-                var line: String = str(line_variant)
-                if line.begins_with("they ") and not line.begins_with("they asked you to remember") and not line.begins_with("they are called"):
-                    memory["bring_up"] = line
-                    break
-    var body: String = MindThinker.build_chat_request(_chat_model_name(), _chat_about(), recent, _chat_turns, user_text, town, memory)
+        var bring_up: String = _pick_bring_up(memory)
+        if bring_up != "":
+            memory["bring_up"] = bring_up
+    # Asked to go somewhere or see someone: the buddy decides now (code), and
+    # the reply only puts that decision into words (model).
+    var decision: Dictionary = {}
+    var target: Dictionary = AppState.mind_find_suggestion(user_text)
+    if not target.is_empty():
+        decision = _decision_for(target, AppState.mind_consider(target))
+    var body: String = MindThinker.build_chat_request(
+        _chat_model_name(), _chat_about(), _recent_journal_texts(4), _chat_turns, user_text, town, memory,
+        str(decision.get("fact", "")), str(decision.get("say", ""))
+    )
     var error: int = _chat_http.request(url, ["Content-Type: application/json"], HTTPClient.METHOD_POST, body)
     if error != OK:
         return false
@@ -2713,9 +2726,93 @@ func _start_chat_request(user_text: String) -> bool:
     return true
 
 
+func _recent_journal_texts(limit: int) -> Array:
+    var recent: Array = []
+    for entry_variant in AppState.get_mind_journal(limit):
+        if typeof(entry_variant) == TYPE_DICTIONARY:
+            recent.append(str((entry_variant as Dictionary).get("text", "")))
+    return recent
+
+
+# One thing it remembers about you to ask after: a fact about you, not a note
+# you asked it to keep and not your name.
+func _pick_bring_up(memory: Dictionary) -> String:
+    var facts_variant = memory.get("facts", [])
+    if typeof(facts_variant) != TYPE_ARRAY:
+        return ""
+    for line_variant in facts_variant:
+        var line: String = str(line_variant)
+        if line.begins_with("they ") and not line.begins_with("they asked you to remember") and not line.begins_with("they are called"):
+            return line
+    return ""
+
+
+# The decision about a suggestion: a fact with the reason, and the one thing
+# the reply must say. Both models turned a soft "yes, next" into "maybe
+# tomorrow", so the answer is spelled out where the model reads it last.
+func _decision_for(target: Dictionary, considered: Dictionary) -> Dictionary:
+    var target_name: String = str(target.get("name", ""))
+    var is_npc: bool = str(target.get("kind", "")) == "npc"
+    var asked: String = ("They suggested you go and see %s." if is_npc else "They suggested you go to %s.") % target_name
+    var going: String = ("going to see %s" if is_npc else "going to %s") % target_name
+    var reason: String = str(considered.get("reason", ""))
+    match str(considered.get("answer", "")):
+        "yes":
+            return {
+                "fact": "%s You said yes, because %s." % [asked, reason],
+                "say": "Tell them yes: you are %s in a few minutes, not later." % going,
+            }
+        "later":
+            return {
+                "fact": "%s You said not yet, because %s." % [asked, reason],
+                "say": "Tell them not yet, and why.",
+            }
+        "no":
+            return {
+                "fact": "%s You said no, because %s." % [asked, reason],
+                "say": "Tell them no, kindly, and why.",
+            }
+    return {}
+
+
+# Opening the chat after a while: the buddy says hello first and shares one
+# thing from its day. Code picks the news and the memory; the model words them.
+func _maybe_greet() -> void:
+    _end_stale_conversation()
+    if not _chat_turns.is_empty() or not _chat_pending.is_empty():
+        return
+    if AppState.is_quiet_hours_now() or _is_dnd_active():
+        return
+    var url: String = _chat_model_ready_url()
+    if url == "":
+        return
+    var news: Dictionary = AppState.mind_pick_news()
+    var memory: Dictionary = AppState.memory_recall("")
+    var bring_up: String = _pick_bring_up(memory)
+    if bring_up != "":
+        memory["bring_up"] = bring_up
+    if news.is_empty() and bring_up == "":
+        return
+    _ensure_chat_http()
+    var town := {"places": _town_place_names(), "people": _town_people()}
+    var body: String = MindThinker.build_greeting_request(
+        _chat_model_name(), _chat_about(), _recent_journal_texts(4), town, memory, str(news.get("text", ""))
+    )
+    if _chat_http.request(url, ["Content-Type: application/json"], HTTPClient.METHOD_POST, body) == OK:
+        _chat_pending = {"kind": "greeting", "news_t": int(news.get("t", 0))}
+
+
+# Called after every line added to the talk, so it also notes when the talk
+# last moved.
 func _trim_chat_turns() -> void:
+    _chat_last_turn_unix = int(Time.get_unix_time_from_system())
     while _chat_turns.size() > 16:
         _chat_turns.pop_front()
+
+
+func _end_stale_conversation() -> void:
+    if not _chat_turns.is_empty() and int(Time.get_unix_time_from_system()) - _chat_last_turn_unix >= CHAT_CONVERSATION_GAP_SECONDS:
+        _chat_turns.clear()
 
 
 func _town_character_names() -> Array:
@@ -2767,6 +2864,8 @@ func _on_chat_http_completed(result: int, response_code: int, _headers: PackedSt
         if kind == "memory":
             _on_memory_request_failed(pending)
             return
+        if kind == "greeting":
+            return
         # Ollama occasionally answers one request with a server error. Try a
         # chat line once more before telling the user something is wrong.
         var transient := result != HTTPRequest.RESULT_SUCCESS or response_code >= 500
@@ -2793,6 +2892,15 @@ func _on_chat_http_completed(result: int, response_code: int, _headers: PackedSt
             _buddy_say("I lost my train of thought. Say that again?")
     elif kind == "memory":
         _on_memory_reply(pending, body.get_string_from_utf8())
+    elif kind == "greeting":
+        var greeting: Dictionary = MindThinker.parse_chat_reply(body.get_string_from_utf8())
+        if bool(greeting.get("ok", false)):
+            var hello: String = str(greeting.get("reply", ""))
+            _chat_turns.append({"who": "you", "text": hello})
+            _trim_chat_turns()
+            AppState.memory_note_turn("you", hello)
+            AppState.mind_mark_shared(int(pending.get("news_t", 0)))
+            _buddy_say(hello)
     elif kind == "name":
         var named: Dictionary = MindThinker.parse_name_reply(body.get_string_from_utf8())
         if bool(named.get("ok", false)):
@@ -2844,7 +2952,11 @@ func _maybe_consolidate_memory() -> void:
     var body: String = MindThinker.build_memory_request(_chat_model_name(), turns)
     if _chat_http.request(url, ["Content-Type: application/json"], HTTPClient.METHOD_POST, body) != OK:
         return
-    _chat_pending = {"kind": "memory", "upto": int(pending.get("upto", 0))}
+    var lines: Array = []
+    for turn_variant in turns:
+        if typeof(turn_variant) == TYPE_DICTIONARY and str((turn_variant as Dictionary).get("who", "")) != "you":
+            lines.append(str((turn_variant as Dictionary).get("text", "")))
+    _chat_pending = {"kind": "memory", "upto": int(pending.get("upto", 0)), "lines": lines}
     # Set now, so a failed attempt waits before the same talk is tried again.
     _memory_next_attempt_unix = now_unix + MEMORY_RETRY_SECONDS
 
@@ -2859,6 +2971,10 @@ func _on_memory_reply(pending: Dictionary, body_text: String) -> void:
     AppState.memory_apply_consolidation(
         facts_variant if typeof(facts_variant) == TYPE_ARRAY else [], str(parsed.get("summary", "")), upto
     )
+    # The talk itself is an event in its day, and a place you mentioned may
+    # become somewhere it wants to go.
+    var lines_variant = pending.get("lines", [])
+    AppState.mind_note_talk(str(parsed.get("summary", "")), lines_variant if typeof(lines_variant) == TYPE_ARRAY else [])
     _memory_failures = 0
     _memory_next_attempt_unix = 0
     _refresh_memory_window()
@@ -2881,7 +2997,7 @@ func _after_memory_forgotten() -> void:
     # The unsaved part of the talk would otherwise teach it the same thing again.
     AppState.memory_discard_turns(int(AppState.memory_pending_turns().get("upto", 0)))
     var cancelled_kind := str(_chat_pending.get("kind", ""))
-    if (cancelled_kind == "chat" or cancelled_kind == "memory") and _chat_http != null:
+    if (cancelled_kind == "chat" or cancelled_kind == "memory" or cancelled_kind == "greeting") and _chat_http != null:
         _chat_http.cancel_request()
         _chat_pending = {}
         if cancelled_kind == "chat":
@@ -3509,7 +3625,7 @@ func _toggle_wardrobe_menu() -> void:
     _refresh_settings_menu()
 
 
-func _toggle_chat_window() -> void:
+func _toggle_chat_window(greet: bool = true) -> void:
     _chat_window_open = not _chat_window_open
     _layout_chat_window()
     if _chat_window_open:
@@ -3517,6 +3633,8 @@ func _toggle_chat_window() -> void:
         _refresh_settings_menu()
     if _chat_window_open and chat_input != null:
         chat_input.grab_focus()
+    if _chat_window_open and greet:
+        _maybe_greet()
 
 
 func _layout_settings_window() -> void:

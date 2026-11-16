@@ -101,6 +101,62 @@ Measured with `gemma3:4b` on Ollama 0.40.16, in two processes a "day" apart
 - Both models sometimes give "does" a noun ("night shifts"); such facts now
   read "they do night shifts".
 
+**B3 talk changes the buddy: landed 2026-11-16.**
+- **Asking it to go somewhere.** A suggestion is a chat line with a cue such
+  as "go see", "you should" or "why don't you" that names a town place or
+  character. Code decides:
+  - **no**, if it dislikes the place or the person;
+  - **later**, if it is night, it is tired, the place is closed or the
+    person is not around;
+  - otherwise **yes**.
+  The decision reaches the chat model as a fact (`your_decision`) to put into
+  words, so the model cannot change it. Yes and later become an intention for
+  the next 12 hours. No goes in the journal ("You suggested the pond, but I
+  didn't feel like it.").
+- **The next decision follows it.** When the place is open and it is not
+  night, the buddy goes, and the journal says why: "You suggested the pond,
+  so I went." The thinking model is told the reason was the person.
+- **A talk is an event.** When a talk is sorted into memories it lifts the
+  buddy's social need and goes in the journal ("We talked. ..."). A place or
+  person mentioned in it, other than in a suggestion it already answered,
+  becomes something it wants to do: "You mentioned the old library, so I
+  went."
+- **It speaks first.** When the chat is opened after a while, the buddy says
+  hello and tells one thing from its day: something it felt strongly about or
+  did with someone. Code picks it and the model words it, and it may ask
+  after something it remembers about the person. Not in quiet hours or
+  do-not-disturb, and never the same news twice. Typing takes priority over
+  a hello that is still loading.
+- **When it applies.** Only while it acts on its own and talks back.
+- `MindServiceTest` 19 cases; `MindChatTest` 14; `MindThinkerTest` 10.
+
+Measured on Ollama 0.40.16 at 8 pm, when the library was shut and the pond
+was open:
+- **A "later".** "Why don't you go and see Quill?" (Quill is at the
+  library). Both models said so: "Quill isn't about at the moment, so I'll
+  pop by the old library another time".
+- **A "yes".** "You should go to the pond". At first both models said "maybe
+  tomorrow", and the buddy then went anyway. A soft "you will go next" lost
+  to the evening. The answer is now spelled out at the end of the task, and
+  both say yes: `gemma3:12b` "I'll wander down to the pond in a few
+  minutes", `gemma3:4b` "I'm going to head over there in a little while".
+- **The plan is carried out.** The next decision went to the pond: "You
+  suggested the pond, so I went. I went to the pond and walked the bank with
+  Mira."
+- **The talk as an event.** It went in the journal ("We talked. They
+  suggested I visit Quill and the pond, and mentioned they saw the old
+  library."), lifted its social need, and the library became a plan for when
+  it opens.
+- **It speaks first.** Opening the chat later, it said hello with news:
+  "Hello there! I spent a little while in the garden today, looking for
+  beetles. I didn't find any, I'm afraid."
+- **Two models at once.** With `gemma3:12b` and `gemma3:4b` both loaded,
+  and streaming apps holding graphics memory, the two no longer fit:
+  generation fell to 0.5 tokens a second and requests timed out after
+  120 s. When thoughts and chat use different models, the thought model is
+  now unloaded straight after each thought. Using one model for both, or
+  `OLLAMA_MAX_LOADED_MODELS=1`, avoids the overlap entirely.
+
 Measured with `gemma3:4b` on Ollama 0.40.16:
 - About 1 reply in 20 ends with a curly quote that leaves the JSON open; the
   sentence is now recovered. Text after a stray brace is dropped, after one

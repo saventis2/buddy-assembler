@@ -262,7 +262,7 @@ Status: `in_progress` (see `PLAN13_TOWN_AND_CONVERSATION.md`)
 - [x] B2 graph memory
 - [ ] A2 town map window
 - [ ] A3 changing town, things you leave
-- [ ] B3 talk changes the buddy
+- [x] B3 talk changes the buddy
 - [ ] Part C: wants, day plans, projects, nightly reflection, making things
 
 ### Plan 12C: Things left for the buddy, visible places

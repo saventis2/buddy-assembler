@@ -531,6 +531,60 @@ func memory_list() -> Array:
     return rows if typeof(rows) == TYPE_ARRAY else []
 
 
+# --- Talk changes the buddy (Plan 13 B3) --------------------------------
+func _world_npcs() -> Array:
+    var world_variant = world_state.get("world", null)
+    if typeof(world_variant) == TYPE_DICTIONARY:
+        var npcs_variant = (world_variant as Dictionary).get("npcs", [])
+        if typeof(npcs_variant) == TYPE_ARRAY:
+            return npcs_variant
+    return []
+
+
+func _local_hour_now() -> int:
+    return int(Time.get_datetime_dict_from_system().get("hour", 12))
+
+
+# The town place or character the person is suggesting it go to, if any.
+# Only while it acts on its own: otherwise nothing would ever carry it out.
+func mind_find_suggestion(text: String) -> Dictionary:
+    if not bool(settings.get("autonomyEnabled", true)):
+        return {}
+    if not bool(_call_service_with_fallback("mind", "is_suggestion", [text], false)):
+        return {}
+    var target = _call_service_with_fallback("mind", "find_target", [text, get_town(), _world_npcs()], {})
+    return target if typeof(target) == TYPE_DICTIONARY else {}
+
+
+# The buddy decides (yes, later or no); returns {"answer", "reason"}.
+func mind_consider(target: Dictionary) -> Dictionary:
+    var result = _call_service_with_fallback(
+        "mind", "consider", [profile, target, _now_unix(), _local_hour_now(), get_town(), _world_npcs()], {}
+    )
+    if typeof(result) != TYPE_DICTIONARY:
+        return {"answer": "", "reason": ""}
+    if typeof(result.get("profile", null)) == TYPE_DICTIONARY:
+        profile = result["profile"]
+        flush()
+    return {"answer": str(result.get("answer", "")), "reason": str(result.get("reason", ""))}
+
+
+# A finished talk is an event in its day (social need, journal, maybe a wish).
+func mind_note_talk(summary: String, lines: Array) -> void:
+    _call_profile_service("mind", "note_talk", [profile, summary, lines, _now_unix(), get_town(), _world_npcs()])
+    flush()
+
+
+func mind_pick_news() -> Dictionary:
+    var news = _call_service_with_fallback("mind", "pick_news", [profile], {})
+    return news if typeof(news) == TYPE_DICTIONARY else {}
+
+
+func mind_mark_shared(entry_t: int) -> void:
+    _call_profile_service("mind", "mark_shared", [profile, entry_t])
+    flush()
+
+
 func get_mind_preferences() -> Dictionary:
     var preferences = _call_service_with_fallback("mind", "get_preferences", [profile], {})
     return preferences if typeof(preferences) == TYPE_DICTIONARY else {}
