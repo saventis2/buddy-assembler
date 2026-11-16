@@ -364,6 +364,27 @@ func _test_suggestion_no_or_later() -> Variant:
 	if (held["profile"]["mind"]["intention"] as Dictionary).is_empty():
 		return "intention should survive while closed"
 
+	# Tired: "later, after a rest", and it keeps to that while still tired.
+	var tired_profile := _talk_profile()
+	var tired_mods: Dictionary = {}
+	if typeof(tired_profile.get("mood_modifiers", null)) == TYPE_DICTIONARY:
+		tired_mods = (tired_profile["mood_modifiers"] as Dictionary).duplicate(true)
+	tired_mods["energy_strain"] = 0.9
+	tired_profile["mood_modifiers"] = tired_mods
+	var tired := svc.consider(tired_profile, pond, NOW, 12, TOWN, NPCS)
+	if str(tired["answer"]) != "later":
+		return "a tired buddy should say later, got %s" % [tired]
+	var still_tired := svc.tick(tired["profile"], NPCS, NOW + MindService.DECISION_INTERVAL_SECONDS, {"hour": 12}, TOWN)
+	if ((still_tired["events"] as Array)[0] as Dictionary).has("because"):
+		return "it promised to rest first, but went while still tired"
+	if (still_tired["profile"]["mind"]["intention"] as Dictionary).is_empty():
+		return "the plan should wait until it has rested"
+	var after_rest: Dictionary = (still_tired["profile"] as Dictionary).duplicate(true)
+	after_rest["mood_modifiers"]["energy_strain"] = 0.2
+	var went := svc.tick(after_rest, NPCS, NOW + 2 * MindService.DECISION_INTERVAL_SECONDS, {"hour": 12}, TOWN)
+	if str(((went["events"] as Array)[0] as Dictionary).get("because", "")) != "suggestion":
+		return "after resting it should go, as it said it would"
+
 	var expired := svc.consider(_talk_profile(), pond, NOW, 12, TOWN, NPCS)
 	var past := NOW + (MindService.INTENTION_HOURS + 1) * 3600
 	var gone := svc.tick(expired["profile"], NPCS, past, {"hour": 12}, TOWN)

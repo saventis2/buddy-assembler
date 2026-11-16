@@ -29,6 +29,9 @@ const CHAT_MEMORY_MAX_NOTES := 10
 # Memory (Plan 13 B2): a failed talk-to-memory request is retried after ten
 # minutes, and let go after three failures in a row.
 const MEMORY_RETRY_SECONDS := 600
+# Half an hour without a word ends a talk: the next line starts a new one
+# (fresh context for the model, and a hello when the chat is opened again).
+const CHAT_CONVERSATION_GAP_SECONDS := 1800
 const MEMORY_MAX_FAILURES := 3
 const MAPLE_LAYOUT_MEMORY := {
     "base_size": Vector2i(460, 480),
@@ -407,6 +410,7 @@ var _mind_pending := {}
 var _chat_http: HTTPRequest = null
 var _chat_pending := {}          # {"kind": "chat" | "name" | "memory"}
 var _chat_turns: Array = []      # {"who": "you" | "them", "text": String}
+var _chat_last_turn_unix := 0
 var _mind_model_status := "not tried yet"
 var _dragging := false
 var _drag_offset := Vector2i.ZERO
@@ -604,6 +608,7 @@ func _ready() -> void:
     _configure_menu_rebuild_window()
     _configure_chat_window()
     _chat_turns = AppState.memory_live_turns()
+    _chat_last_turn_unix = int(Time.get_unix_time_from_system())
     _capture_stats_session_baseline()
     _refresh_equipped_visual_state()
     _load_assembler_default_parts()
@@ -2688,6 +2693,7 @@ func _start_chat_request(user_text: String) -> bool:
         # Their words come first: drop a hello that has not arrived yet.
         _chat_http.cancel_request()
         _chat_pending = {}
+    _end_stale_conversation()
     var url: String = _chat_model_ready_url()
     if url == "" or not _chat_pending.is_empty():
         return false
@@ -2772,6 +2778,7 @@ func _decision_for(target: Dictionary, considered: Dictionary) -> Dictionary:
 # Opening the chat after a while: the buddy says hello first and shares one
 # thing from its day. Code picks the news and the memory; the model words them.
 func _maybe_greet() -> void:
+    _end_stale_conversation()
     if not _chat_turns.is_empty() or not _chat_pending.is_empty():
         return
     if AppState.is_quiet_hours_now() or _is_dnd_active():
@@ -2795,9 +2802,17 @@ func _maybe_greet() -> void:
         _chat_pending = {"kind": "greeting", "news_t": int(news.get("t", 0))}
 
 
+# Called after every line added to the talk, so it also notes when the talk
+# last moved.
 func _trim_chat_turns() -> void:
+    _chat_last_turn_unix = int(Time.get_unix_time_from_system())
     while _chat_turns.size() > 16:
         _chat_turns.pop_front()
+
+
+func _end_stale_conversation() -> void:
+    if not _chat_turns.is_empty() and int(Time.get_unix_time_from_system()) - _chat_last_turn_unix >= CHAT_CONVERSATION_GAP_SECONDS:
+        _chat_turns.clear()
 
 
 func _town_character_names() -> Array:
