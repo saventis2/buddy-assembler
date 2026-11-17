@@ -193,7 +193,12 @@ func apply_behavior(action_id: String) -> void:
         "apply_behavior",
         [profile, action_id, UnlockTable.xp_per_level(), UnlockTable.max_level(), xp_curve]
     )
+    # On the land the mind keeps the needs (they move with time and with what
+    # it does), so the desktop animation only changes the mood that is shown.
+    var kept_needs = profile.get("mood_modifiers", null)
     profile = _call_profile_service("mood", "apply_behavior", [profile, action_id])
+    if small_beginnings() and typeof(kept_needs) == TYPE_DICTIONARY:
+        profile["mood_modifiers"] = (kept_needs as Dictionary).duplicate(true)
     _sync_growth_mode_flags()
     profile = _call_profile_service("growth", "apply_behavior", [profile, action_id])
     profile = _call_profile_service("identity", "record_behavior", [profile, action_id])
@@ -389,6 +394,9 @@ func get_reward_box_ids() -> Array:
 
 
 func tick_world_events(now_unix: int) -> Dictionary:
+    # No quests or encounters on the land.
+    if small_beginnings():
+        return {}
     var result = _call_service_with_fallback("world", "tick_world", [world_state, profile, now_unix], {})
     if typeof(result) != TYPE_DICTIONARY:
         return {}
@@ -401,23 +409,40 @@ func tick_world_events(now_unix: int) -> Dictionary:
     return prompt if typeof(prompt) == TYPE_DICTIONARY else {}
 
 
-# Lets the buddy make any self-directed decisions that have come due
-# (including ones from while the app was closed). Returns the resulting
-# journal events, oldest first; empty when nothing was due or autonomy is off.
+# Plan 14: the buddy starts with a house and the land round it, alone. Off
+# until the fresh start (step 1c) makes it the default.
+func small_beginnings() -> bool:
+    return bool(settings.get("smallBeginnings", false))
+
+
+func _land() -> Dictionary:
+    var land = _call_service_with_fallback("world", "get_land", [], {})
+    return land if typeof(land) == TYPE_DICTIONARY else {}
+
+
+# The places the buddy can go: the town, or on the land only what it has found.
 func get_town() -> Dictionary:
+    if small_beginnings():
+        # The one place everything outside the mind reads the land.
+        var known = _call_service_with_fallback("mind", "known_town", [profile, _land()], {})
+        return known if typeof(known) == TYPE_DICTIONARY else {}
     var town = _call_service_with_fallback("world", "get_town", [world_state], {})
     return town if typeof(town) == TYPE_DICTIONARY else {}
 
 
+# Lets the buddy make any self-directed decisions that have come due
+# (including ones from while the app was closed). Returns the resulting
+# journal events, oldest first; empty when nothing was due or autonomy is off.
 func tick_mind(now_unix: int) -> Array:
     if not bool(settings.get("autonomyEnabled", true)):
         return []
-    var npcs: Array = []
-    var world_variant = world_state.get("world", null)
-    if typeof(world_variant) == TYPE_DICTIONARY:
-        var npcs_variant = (world_variant as Dictionary).get("npcs", [])
-        if typeof(npcs_variant) == TYPE_ARRAY:
-            npcs = npcs_variant
+    var small := small_beginnings()
+    if small:
+        # In the middle of something (asleep, out at the water): nothing is due.
+        var mind_variant = profile.get("mind", null)
+        if typeof(mind_variant) == TYPE_DICTIONARY and now_unix < int((mind_variant as Dictionary).get("busy_until", 0)):
+            return []
+    var npcs: Array = _world_npcs()
     var context := {
         "is_night": _is_night(),
         "top_trait": "",
@@ -425,11 +450,13 @@ func tick_mind(now_unix: int) -> Array:
         "meso": int(get_inventory_snapshot().get("meso", 0)),
         "shop_items": _want_shop_items(),
         "plans": true,
+        "small_beginnings": small,
     }
     var identity_ctx = _call_service_with_fallback("identity", "get_context", [profile], {})
     if typeof(identity_ctx) == TYPE_DICTIONARY:
         context["top_trait"] = str(identity_ctx.get("top_trait", ""))
-    var result = _call_service_with_fallback("mind", "tick", [profile, npcs, now_unix, context, get_town()], {})
+    var town: Dictionary = _land() if small else get_town()
+    var result = _call_service_with_fallback("mind", "tick", [profile, npcs, now_unix, context, town], {})
     if typeof(result) != TYPE_DICTIONARY:
         return []
     var events = result.get("events", [])
@@ -547,12 +574,7 @@ func memory_enabled() -> bool:
 
 
 func _memory_roster() -> Dictionary:
-    var npcs: Array = []
-    var world_variant = world_state.get("world", null)
-    if typeof(world_variant) == TYPE_DICTIONARY:
-        var npcs_variant = (world_variant as Dictionary).get("npcs", [])
-        if typeof(npcs_variant) == TYPE_ARRAY:
-            npcs = npcs_variant
+    var npcs: Array = _world_npcs()
     var places_variant = get_town().get("places", [])
     return {"places": places_variant if typeof(places_variant) == TYPE_ARRAY else [], "npcs": npcs}
 
@@ -718,6 +740,9 @@ func memory_list() -> Array:
 
 # --- Talk changes the buddy (Plan 13 B3) --------------------------------
 func _world_npcs() -> Array:
+    # Nobody else lives on the land.
+    if small_beginnings():
+        return []
     var world_variant = world_state.get("world", null)
     if typeof(world_variant) == TYPE_DICTIONARY:
         var npcs_variant = (world_variant as Dictionary).get("npcs", [])
@@ -1529,6 +1554,7 @@ func _default_settings() -> Dictionary:
         "chatTextSize": "m",
         "continuityDigestEnabled": true,
         "autonomyEnabled": true,
+        "smallBeginnings": false,
         "inventoryCompact": false,
         "mindModelEnabled": true,
         "mindModelUrl": "http://127.0.0.1:11434",

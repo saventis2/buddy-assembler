@@ -1,8 +1,8 @@
 # Plan 14: Small Beginnings
 
-Started: 2026-11-16. Status: direction set by the owner (answers below);
-design proposed. Written against `main` at b1cb579 (Plan 13 A1, A2, B1 to B3
-and C1+C2 part 1 merged).
+Started: 2026-11-16. Status: direction set by the owner (answers below); in
+build, see Progress. Written against `main` at b1cb579 (Plan 13 A1, A2, B1 to
+B3 and C1+C2 part 1 merged).
 
 ## Progress
 
@@ -55,6 +55,68 @@ What this changes in the plan:
 - **Targets for the new world**, to pin as tests in step 1b: something new on
   most of the first 30 days, no need pinned at its limit, and the ten most
   common lines well under half the journal.
+
+### Step 1b, the house and land: built 2026-11-17
+
+Behind the setting `smallBeginnings`, which stays off until step 1c. Run it
+with `simulate_days.py --world land`.
+
+- **The land is written.** `scripts/services/land_data.gd` holds the house and
+  twelve areas (the yard, the wood heap, the big tree, the overgrown patch,
+  the gate, the high ground, the long grass, the water, the stony ground, the
+  grey bank, the sandy bend, the whispering grass, the dark trees), 58 things
+  to do and 80 things to notice, all in the buddy's own words. It has few
+  names, so it describes: "A tall grey bird was standing in the water, so
+  still I took it for a stick. Then the stick took one step."
+- **It knows only its house.** It finds the rest by going to the edge of what
+  it knows: a sign first ("I could hear water somewhere, low and steady"),
+  then tries that can fail, then the place. After a failed try it leaves that
+  place for another day, and each failure makes the next try a little more
+  likely. `AppState.get_town()` returns only what it has found, so chat,
+  suggestions, day plans, memory and the Town map all narrow the same way.
+- **What it does takes time.** Each thing takes its minutes plus the walk
+  there, and it sleeps from when it is tired in the evening until morning. A
+  day is about 27 journal lines, not 144.
+- **Its needs move with time.** Being awake tires it, comfort fades, and its
+  confidence follows how things go. In the new world the desktop animation
+  no longer moves them.
+- **Nobody else lives there.** The three people reads return nothing, quests
+  and encounter prompts are off, and it never chooses to visit anyone.
+- **Its own seed feeds its choices**, so two buddies do not live the same life.
+- **Its journal starts with one line**: waking up in a house it does not know.
+
+What a first month looks like, across eight seeds, next to the baseline above:
+
+| | Today's town | The land |
+|---|---|---|
+| Places found | All by day 3 | 3 to 6 on day 1, 10 to 12 of 13 by day 7, the last on day 8 to 12 |
+| Failed tries | None | 13 to 19 |
+| Something new | Nothing on 40 of 90 days | Something on 26 to 29 of 30 days |
+| Ten most common lines | 68% of the journal | 6.5% to 7.8% |
+| Nights | Out exploring | Asleep from evening until morning |
+| Needs | Stuck at their limits | Tiredness 0 to 0.72 each day, comfort 0.39 to 1, confidence 0.13 to 1 |
+
+`LandLifeTest` (15 cases) pins this: the land's data is well formed and every
+place can be reached, a sign comes before a find, nothing is noticed twice,
+and the month stays inside these bands for three seeds.
+
+Choices made here that later steps should know about:
+
+- **The local model does not reword land lines for now.** It would write over
+  what the buddy found and noticed. It still picks its name. Revisit with the
+  "what you know" chat work.
+- **Company is left alone.** Nobody lives on the land, so that need only moves
+  when you talk to it. It gets its outlets with the visit (step 2) and the
+  console (step 9).
+- **The land alone carries about two months.** After about day 12 the only new
+  things are the ones it notices. Over 90 days (seed 7) there was something
+  new on 26 days of the first month, 19 of the second and 2 of the third. The
+  later weeks fill up when there are things to try and make (steps 3 and 6
+  to 8).
+- **It crosses its land in one move**, with the walk counted in minutes but no
+  route. The 3D view (step 4) is where movement shows.
+- **Bond and meso still accrue as before.** They belong to your side of the
+  economy and are settled with commerce (step 13).
 
 ## Direction (owner, 2026-11-16)
 
@@ -572,7 +634,7 @@ met.
 | Step | What | Done when |
 |---|---|---|
 | 1a | Fast-forward tool (built 2026-11-17) | A 90-day run prints a timeline; the same seed gives the same life; nothing is saved |
-| 1b | The house and land with discovery, behind a setting: land areas, exploring the edge of what it knows, the known filter at `get_town()` and the three people reads; characters, quests and encounters off in the new world | The first 30 days meet the novelty targets in fast-forward, across seeds |
+| 1b | The house and land with discovery, behind a setting (built 2026-11-17): land areas, exploring the edge of what it knows, the known filter at `get_town()` and the three people reads; characters, quests and encounters off in the new world | The first 30 days meet the novelty targets in fast-forward, across seeds |
 | 1c | Fresh start with backup; characters, quests and encounters archived; the new world on by default; D-007 | The old save is backed up and a fresh buddy starts |
 | 2 | World host: the world runs headless on GGPC with a watchdog; the desktop app becomes the visit and sends requests; calling it over; D-010 | Close the desktop app for a day; the journal shows it kept living |
 | 3 | The world's rules and the things on the land: materials and properties, ways of working, building needs, outcomes with reasons; noticing and naming | First own names appear in week 1 in fast-forward; the basics check passes |

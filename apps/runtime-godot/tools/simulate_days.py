@@ -6,7 +6,7 @@ AppState code with a supplied clock and never writes the save files. See
 apps/runtime-godot/README.md ("Fast-forward").
 
     python apps/runtime-godot/tools/simulate_days.py --godot <path> \\
-        [--days 30] [--seed 1] [--journal firsts] [--out report.json]
+        [--days 30] [--seed 1] [--journal firsts] [--world town|land] [--out report.json]
 """
 
 from __future__ import annotations
@@ -43,6 +43,7 @@ def run_simulation(
     days: int,
     seed: int,
     journal: str,
+    world: str,
     out: Path | None,
     command_runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
 ) -> int:
@@ -78,7 +79,7 @@ def run_simulation(
             timeout=TIMEOUT_SECONDS,
         )
 
-    args = [f"--days={days}", f"--seed={seed}", f"--journal={journal}"]
+    args = [f"--days={days}", f"--seed={seed}", f"--journal={journal}", f"--world={world}"]
     if out is not None:
         args.append(f"--out={out.resolve()}")
     command = [godot, "--headless", "--path", str(project), SCENE, "--", *args]
@@ -114,6 +115,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--days", type=int, default=30)
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--journal", choices=("all", "firsts", "none"), default="firsts")
+    parser.add_argument("--world", choices=("town", "land"), default="town")
     parser.add_argument("--out", type=Path)
     parser.add_argument("--project", type=Path, default=PROJECT_DEFAULT)
     args = parser.parse_args(argv)
@@ -125,6 +127,7 @@ def main(argv: list[str] | None = None) -> int:
         days=args.days,
         seed=args.seed,
         journal=args.journal,
+        world=args.world,
         out=args.out,
     )
 

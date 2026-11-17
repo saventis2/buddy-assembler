@@ -56,6 +56,13 @@ on any machine. Once a process starts a simulation it never saves, so the real
 save files are not touched. Not simulated: ambient desktop animation, quests and
 encounters, talking to the buddy, and the language model.
 
+`--world land` runs the small-beginnings world (the house and land of Plan 14);
+the default `town` is today's world.
+
+```powershell
+python apps/runtime-godot/tools/simulate_days.py --godot "C:\path\to\Godot_v4.2.2-stable_win64_console.exe" --days 30 --seed 1 --world land --journal firsts
+```
+
 The current implementation is intentionally minimal and is a vertical-slice
 scaffold, not final production content.
 

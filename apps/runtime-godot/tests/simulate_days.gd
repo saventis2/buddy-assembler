@@ -1,7 +1,7 @@
 extends Node
 
 # Command-line fast-forward: lives a new buddy through N days and prints the
-# report. Usage (after --): --days=N --seed=N --journal=all|firsts|none --out=<path>
+# report. Usage (after --): --days=N --seed=N --journal=all|firsts|none --world=town|land --out=<path>
 # See tools/simulate_days.py for the launcher.
 
 const LifeSim = preload("res://tests/life_sim.gd")
@@ -14,6 +14,7 @@ func _ready() -> void:
 	var days := DEFAULT_DAYS
 	var seed_value := 1
 	var journal := "firsts"
+	var world := "town"
 	var out_path := ""
 	for arg in OS.get_cmdline_user_args():
 		var text := str(arg)
@@ -31,6 +32,8 @@ func _ready() -> void:
 			seed_value = int(value)
 		elif text.begins_with("--journal="):
 			journal = text.substr(10)
+		elif text.begins_with("--world="):
+			world = text.substr(8)
 		elif text.begins_with("--out="):
 			out_path = text.substr(6)
 		else:
@@ -43,8 +46,12 @@ func _ready() -> void:
 		_fail("simulate_days: --journal must be all, firsts or none")
 		return
 
+	if not ["town", "land"].has(world):
+		_fail("simulate_days: --world must be town or land")
+		return
+
 	var started := Time.get_ticks_msec()
-	var report: Dictionary = LifeSim.run(AppState, {"days": days, "seed": seed_value})
+	var report: Dictionary = LifeSim.run(AppState, {"days": days, "seed": seed_value, "small_beginnings": world == "land"})
 	if report.has("error"):
 		_fail("simulate_days: " + str(report["error"]))
 		return

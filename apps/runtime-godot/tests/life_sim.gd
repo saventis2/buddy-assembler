@@ -29,12 +29,14 @@ static func run(app_state: Node, config: Dictionary) -> Dictionary:
 	var seed_value: int = int(config.get("seed", 1))
 	var start: int = int(config.get("start_unix", DEFAULT_START_UNIX))
 	var pack_id: String = str(config.get("pack_id", "core_pack"))
+	var small: bool = bool(config.get("small_beginnings", false))
 
 	if not state.begin_simulation(seed_value, start):
 		return {"error": "begin_simulation refused (needs a headless process and a start time above 0)"}
 	var loaded: Dictionary = ContentLoader.load_with_fallback(pack_id, "", false)
 	state.apply_loaded_pack(str(loaded.get("pack_id", pack_id)), loaded.get("manifest", {}))
 	state.trim_catalog_for_simulation()
+	state.settings["smallBeginnings"] = small
 
 	var home_place: String = str(state.get_town().get("home_place", "home"))
 	var interval: int = MindService.DECISION_INTERVAL_SECONDS
@@ -61,90 +63,128 @@ static func run(app_state: Node, config: Dictionary) -> Dictionary:
 	var day_firsts: Array = []
 	var day_new_texts := 0
 	var day_purchases := 0
+	var text_counts := {}
+	var signs_total := 0
+	var sights_total := 0
+	var blocked_total := 0
+	var night_rows := 0
+	var need_stats := {}
+	for need_key in MOOD_KEYS:
+		need_stats[need_key] = {"min": 1.0, "max": 0.0, "samples": 0, "at_limit": 0}
 
 	for i in range(days * slots_per_day):
 		var t: int = start + i * interval
 		var day: int = int(i / slots_per_day) + 1
 		state.set_sim_clock(t)
 		var events: Array = state.tick_mind(t)
-		var journal: Array = state.get_mind_journal(40)
-		for entry_variant in journal:
-			if typeof(entry_variant) != TYPE_DICTIONARY:
-				continue
-			var entry: Dictionary = entry_variant
-			var entry_t: int = int(entry.get("t", 0))
-			# A plan line is stamped a second before its decision, a purchase
-			# line a second after it.
-			if entry_t < t - 1 or entry_t > t + 1:
-				continue
-			var kind: String = str(entry.get("kind", "decision"))
-			var found: Array = []
-			if kind == "decision":
-				var place_id: String = str(entry.get("place_id", ""))
-				if place_id != "" and place_id != home_place:
-					found.append({"kind": "place", "id": place_id, "name": str(entry.get("place_name", place_id))})
-				var activity_id: String = str(entry.get("activity_id", ""))
-				if activity_id != "":
-					found.append({"kind": "activity", "id": activity_id, "name": str(entry.get("activity_label", activity_id))})
-				var companion: String = str(entry.get("companion_name", ""))
-				if companion != "":
-					found.append({"kind": "companion", "id": companion, "name": companion})
-				var want_id: String = str(entry.get("noticed_want", ""))
-				if want_id != "":
-					found.append({"kind": "want", "id": want_id, "name": str(entry.get("noticed_item", ""))})
-					wants_noticed += 1
-			elif kind == "purchase" and float(entry.get("valence", 0.0)) > 0.0:
-				# The same kind also carries "I didn't have enough saved" lines.
-				found.append({"kind": "purchase", "id": str(entry.get("subject_id", "")), "name": str(entry.get("subject_name", ""))})
-				purchases_total += 1
-				day_purchases += 1
-			var first_tags: Array = []
-			for first_row in found:
-				var key: String = str(first_row["kind"]) + ":" + str(first_row["id"])
-				if seen_firsts.has(key):
+		if not events.is_empty():
+			var journal: Array = state.get_mind_journal(40)
+			for entry_variant in journal:
+				if typeof(entry_variant) != TYPE_DICTIONARY:
 					continue
-				seen_firsts[key] = true
-				first_tags.append(key)
-				day_firsts.append({"t": entry_t, "kind": first_row["kind"], "id": first_row["id"], "name": first_row["name"]})
-				if first_row["kind"] == "place":
-					places_seen[first_row["id"]] = true
-				elif first_row["kind"] == "companion":
-					companions_seen[first_row["id"]] = true
-			var text: String = str(entry.get("text", ""))
-			if not seen_texts.has(text):
-				seen_texts[text] = true
-				day_new_texts += 1
-			var stamp: Dictionary = Time.get_datetime_dict_from_unix_time(entry_t)
-			var row := {
-				"t": entry_t,
-				"day": day,
-				"hour": int(stamp.get("hour", 0)),
-				"minute": int(stamp.get("minute", 0)),
-				"kind": kind,
-				"intent": str(entry.get("intent", "")),
-				"place_id": str(entry.get("place_id", "")),
-				"place_name": str(entry.get("place_name", "")),
-				"activity_id": str(entry.get("activity_id", "")),
-				"companion_name": str(entry.get("companion_name", "")),
-				"valence": _snap(float(entry.get("valence", 0.0))),
-				"text": text,
-				"firsts": first_tags,
-			}
-			rows.append(row)
+				var entry: Dictionary = entry_variant
+				var entry_t: int = int(entry.get("t", 0))
+				# A plan line is stamped a second before its decision, a purchase
+				# line a second after it.
+				if entry_t < t - 1 or entry_t > t + 1:
+					continue
+				var kind: String = str(entry.get("kind", "decision"))
+				var found: Array = []
+				if kind == "decision":
+					var place_id: String = str(entry.get("place_id", ""))
+					if place_id != "" and place_id != home_place:
+						found.append({"kind": "place", "id": place_id, "name": str(entry.get("place_name", place_id))})
+					var activity_id: String = str(entry.get("activity_id", ""))
+					if activity_id != "":
+						found.append({"kind": "activity", "id": activity_id, "name": str(entry.get("activity_label", activity_id))})
+					var companion: String = str(entry.get("companion_name", ""))
+					if companion != "":
+						found.append({"kind": "companion", "id": companion, "name": companion})
+					var want_id: String = str(entry.get("noticed_want", ""))
+					if want_id != "":
+						found.append({"kind": "want", "id": want_id, "name": str(entry.get("noticed_item", ""))})
+						wants_noticed += 1
+					var sign_id: String = str(entry.get("sign_of", ""))
+					if sign_id != "":
+						found.append({"kind": "sign", "id": sign_id, "name": sign_id})
+					var sight_id: String = str(entry.get("sight", ""))
+					if sight_id != "":
+						found.append({"kind": "sight", "id": sight_id, "name": sight_id})
+				elif kind == "purchase" and float(entry.get("valence", 0.0)) > 0.0:
+					# The same kind also carries "I didn't have enough saved" lines.
+					found.append({"kind": "purchase", "id": str(entry.get("subject_id", "")), "name": str(entry.get("subject_name", ""))})
+					purchases_total += 1
+					day_purchases += 1
+				var first_tags: Array = []
+				for first_row in found:
+					var key: String = str(first_row["kind"]) + ":" + str(first_row["id"])
+					if seen_firsts.has(key):
+						continue
+					seen_firsts[key] = true
+					first_tags.append(key)
+					day_firsts.append({"t": entry_t, "kind": first_row["kind"], "id": first_row["id"], "name": first_row["name"]})
+					if first_row["kind"] == "place":
+						places_seen[first_row["id"]] = true
+					elif first_row["kind"] == "companion":
+						companions_seen[first_row["id"]] = true
+					elif first_row["kind"] == "sign":
+						signs_total += 1
+					elif first_row["kind"] == "sight":
+						sights_total += 1
+				var text: String = str(entry.get("text", ""))
+				if not seen_texts.has(text):
+					seen_texts[text] = true
+					day_new_texts += 1
+				text_counts[text] = int(text_counts.get(text, 0)) + 1
+				var stamp: Dictionary = Time.get_datetime_dict_from_unix_time(entry_t)
+				if kind == "decision" and int(stamp.get("hour", 0)) < 5:
+					night_rows += 1
+				if str(entry.get("blocked_at", "")) != "":
+					blocked_total += 1
+				var row := {
+					"t": entry_t,
+					"day": day,
+					"hour": int(stamp.get("hour", 0)),
+					"minute": int(stamp.get("minute", 0)),
+					"kind": kind,
+					"intent": str(entry.get("intent", "")),
+					"place_id": str(entry.get("place_id", "")),
+					"place_name": str(entry.get("place_name", "")),
+					"activity_id": str(entry.get("activity_id", "")),
+					"companion_name": str(entry.get("companion_name", "")),
+					"sign_of": str(entry.get("sign_of", "")),
+					"blocked_at": str(entry.get("blocked_at", "")),
+					"found_place": str(entry.get("found_place", "")),
+					"sight": str(entry.get("sight", "")),
+					"valence": _snap(float(entry.get("valence", 0.0))),
+					"text": text,
+					"firsts": first_tags,
+				}
+				rows.append(row)
 
-		for event_variant in events:
-			var event: Dictionary = event_variant
-			var intent: String = str(event.get("intent", ""))
-			day_decisions += 1
-			day_intents[intent] = int(day_intents.get(intent, 0)) + 1
-			intents_total[intent] = int(intents_total.get(intent, 0)) + 1
-			var event_place: String = str(event.get("place_id", ""))
-			if event_place != "":
-				day_places[event_place] = int(day_places.get(event_place, 0)) + 1
-			var event_companion: String = str(event.get("companion_name", ""))
-			if event_companion != "":
-				day_companions[event_companion] = int(day_companions.get(event_companion, 0)) + 1
-			state.apply_behavior(str(event.get("action", "idle")))
+			for event_variant in events:
+				var event: Dictionary = event_variant
+				var intent: String = str(event.get("intent", ""))
+				day_decisions += 1
+				day_intents[intent] = int(day_intents.get(intent, 0)) + 1
+				intents_total[intent] = int(intents_total.get(intent, 0)) + 1
+				var event_place: String = str(event.get("place_id", ""))
+				if event_place != "":
+					day_places[event_place] = int(day_places.get(event_place, 0)) + 1
+				var event_companion: String = str(event.get("companion_name", ""))
+				if event_companion != "":
+					day_companions[event_companion] = int(day_companions.get(event_companion, 0)) + 1
+				state.apply_behavior(str(event.get("action", "idle")))
+			# How its needs are doing, once for every slot where it decided something.
+			var sampled: Dictionary = state.profile.get("mood_modifiers", {})
+			for need_key in MOOD_KEYS:
+				var level: float = float(sampled.get(need_key, 0.0))
+				var stats: Dictionary = need_stats[need_key]
+				stats["min"] = minf(float(stats["min"]), level)
+				stats["max"] = maxf(float(stats["max"]), level)
+				stats["samples"] = int(stats["samples"]) + 1
+				if level <= 0.02 or level >= 0.98:
+					stats["at_limit"] = int(stats["at_limit"]) + 1
 		decisions_total += events.size()
 
 		if i % slots_per_day == slots_per_day - 1:
@@ -191,6 +231,39 @@ static func run(app_state: Node, config: Dictionary) -> Dictionary:
 	var recent: Array = state.get_mind_journal(5)
 	for recent_entry in recent:
 		tail.append(str((recent_entry as Dictionary).get("text", "")))
+	var counts: Array = text_counts.values()
+	counts.sort()
+	counts.reverse()
+	var top_ten := 0
+	for count_index in range(mini(10, counts.size())):
+		top_ten += int(counts[count_index])
+	var top10_share: float = 0.0
+	if not rows.is_empty():
+		top10_share = float(top_ten) / float(rows.size())
+	var needs_report := {}
+	for need_key in MOOD_KEYS:
+		var stats: Dictionary = need_stats[need_key]
+		var samples: int = int(stats["samples"])
+		needs_report[need_key] = {
+			"min": _snap(float(stats["min"]) if samples > 0 else 0.0),
+			"max": _snap(float(stats["max"])),
+			"at_limit_share": _snap(float(int(stats["at_limit"])) / float(samples) if samples > 0 else 0.0),
+		}
+	var known_variant = state.profile.get("mind", {}).get("known_places", {})
+	var known_found: Array = []
+	var known_signs: Array = []
+	if typeof(known_variant) == TYPE_DICTIONARY:
+		for known_id in (known_variant as Dictionary).keys():
+			var known_record = (known_variant as Dictionary)[known_id]
+			if typeof(known_record) != TYPE_DICTIONARY:
+				continue
+			var known_stage: String = str((known_record as Dictionary).get("stage", ""))
+			if known_stage == "found":
+				known_found.append(str(known_id))
+			elif known_stage == "sign":
+				known_signs.append(str(known_id))
+	known_found.sort()
+	known_signs.sort()
 	var final_wants: Array = []
 	for want_variant in state.mind_wants():
 		var want: Dictionary = want_variant
@@ -202,7 +275,7 @@ static func run(app_state: Node, config: Dictionary) -> Dictionary:
 
 	return {
 		"schema": 1,
-		"config": {"days": days, "seed": seed_value, "start_unix": start, "pack_id": pack_id},
+		"config": {"days": days, "seed": seed_value, "start_unix": start, "pack_id": pack_id, "small_beginnings": small},
 		"not_simulated": NOT_SIMULATED.duplicate(),
 		"rows": rows,
 		"days": day_rows,
@@ -218,6 +291,12 @@ static func run(app_state: Node, config: Dictionary) -> Dictionary:
 			"wants_noticed": wants_noticed,
 			"purchases": purchases_total,
 			"intents": intents_total,
+			"signs": signs_total,
+			"sights": sights_total,
+			"blocked_tries": blocked_total,
+			"night_rows": night_rows,
+			"top10_share": _snap(top10_share),
+			"needs": needs_report,
 		},
 		"final": {
 			"location": str(state.profile.get("mind", {}).get("location", "")),
@@ -229,6 +308,7 @@ static func run(app_state: Node, config: Dictionary) -> Dictionary:
 			"top_trait": str(state.get_behavior_context().get("top_trait", "")),
 			"meso": int(state.get_inventory_snapshot().get("meso", 0)),
 			"journal_tail": tail,
+			"known_places": {"found": known_found, "signs": known_signs},
 		},
 	}
 
@@ -255,7 +335,8 @@ static func format_text(report: Dictionary, journal: String) -> String:
 	var lines: PackedStringArray = PackedStringArray()
 	var config: Dictionary = report.get("config", {})
 	var start: int = int(config.get("start_unix", DEFAULT_START_UNIX))
-	lines.append("== Buddy life: %s days, seed %s, pack %s ==" % [str(config.get("days", 0)), str(config.get("seed", 0)), str(config.get("pack_id", ""))])
+	var world_name: String = "land" if bool(config.get("small_beginnings", false)) else "town"
+	lines.append("== Buddy life: %s days, seed %s, pack %s, world %s ==" % [str(config.get("days", 0)), str(config.get("seed", 0)), str(config.get("pack_id", "")), world_name])
 	lines.append("Not simulated: " + ", ".join(PackedStringArray(report.get("not_simulated", []))))
 	lines.append("")
 
@@ -300,6 +381,11 @@ static func format_text(report: Dictionary, journal: String) -> String:
 	lines.append("flat days %d, longest flat streak %d" % [int(totals.get("flat_days", 0)), int(totals.get("longest_flat_streak", 0))])
 	lines.append("places visited %d, companions met %d, wants noticed %d, purchases %d" % [int(totals.get("places_visited", 0)), int(totals.get("companions_met", 0)), int(totals.get("wants_noticed", 0)), int(totals.get("purchases", 0))])
 	lines.append("intents: " + _counts_text(totals.get("intents", {})))
+	lines.append("signs %d, sights %d, failed tries %d, night rows %d, top-10 lines cover %s of the journal" % [int(totals.get("signs", 0)), int(totals.get("sights", 0)), int(totals.get("blocked_tries", 0)), int(totals.get("night_rows", 0)), str(totals.get("top10_share", 0))])
+	var needs_totals: Dictionary = totals.get("needs", {})
+	for need_name in MOOD_KEYS:
+		var need_row: Dictionary = needs_totals.get(need_name, {})
+		lines.append("need %s: %s..%s, at a limit %s" % [need_name, str(need_row.get("min", 0)), str(need_row.get("max", 0)), str(need_row.get("at_limit_share", 0))])
 	lines.append("Firsts:")
 	for day_variant in report.get("days", []):
 		var firsts_day: Dictionary = day_variant
