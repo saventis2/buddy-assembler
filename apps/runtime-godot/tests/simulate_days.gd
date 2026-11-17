@@ -14,7 +14,7 @@ func _ready() -> void:
 	var days := DEFAULT_DAYS
 	var seed_value := 1
 	var journal := "firsts"
-	var world := "town"
+	var world := "land"
 	var out_path := ""
 	for arg in OS.get_cmdline_user_args():
 		var text := str(arg)

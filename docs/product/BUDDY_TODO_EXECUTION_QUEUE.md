@@ -276,7 +276,7 @@ Status: `in_progress` (see `PLAN14_SMALL_BEGINNINGS.md`)
 
 - [x] 1a Fast-forward tool (`tools/simulate_days.py`, `LifeSimTest`)
 - [x] 1b House and land with discovery, behind a setting; known filter (`land_data.gd`, `LandLifeTest`)
-- [ ] 1c Fresh start with backup; the new world on by default
+- [x] 1c Fresh start with backup; the new world on by default (`fresh_start_if_due`, `FreshStartTest`, D-007)
 - [ ] 2 Always-on world host (GGPC now, Nexus later); the desktop app is a visit
 - [ ] 3 The world's rules and the things on the land
 - [ ] 4 2.5D view on the desktop

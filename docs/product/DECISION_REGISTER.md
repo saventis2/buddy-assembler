@@ -39,3 +39,18 @@ Recorded on: 2026-04-15
 - Status: locked
 - Why: reduces security and maintenance burden.
 
+## D-007: Small beginnings
+
+Recorded on: 2026-11-17 (owner direction of 2026-11-16, Plan 14)
+
+- Decision: a buddy starts with a house and the land around it, alone, and
+  builds its own town as it learns. There are no townspeople for now; the
+  only people in its life are real people. The Plan 13 town, its six
+  characters, their quests and encounters stay in the pack and the code as an
+  archive, switched off for a buddy that starts small. A buddy from before is
+  backed up, then a new one starts.
+- Status: locked
+- Why: the owner wants it to start out knowing very little and have everything
+  develop over time, not to start in a town full of people. See
+  `PLAN14_SMALL_BEGINNINGS.md`.
+

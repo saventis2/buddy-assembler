@@ -11,6 +11,8 @@ const PROFILE_PATH := "user://profile.json"
 const WORLD_STATE_PATH := "user://world_state.json"
 const CORE_ECONOMY_PACK_ID := "core_pack"
 const INVENTORY_BACKFILL_MIGRATION_VERSION := 2
+const BACKUP_ROOT := "user://backups"
+const BORN_ON_THE_LAND := "land"
 
 const SERVICE_PATHS := {
     "identity": "res://scripts/services/identity_service.gd",
@@ -38,6 +40,9 @@ var _deferred_save_seconds := 0.0
 # process, so a simulated life can never touch the real save files.
 var _sim_clock_unix := 0
 var _persistence_enabled := true
+# Set when a buddy from before could not be backed up at launch (see
+# fresh_start_if_due): it then stays in its old town for this run.
+var _fresh_start_failed := false
 
 const DEFERRED_SAVE_DELAY_SECONDS := 1.5
 # Things the buddy can notice in a shop and want (Plan 13 C1+C2): wearable
@@ -409,15 +414,58 @@ func tick_world_events(now_unix: int) -> Dictionary:
     return prompt if typeof(prompt) == TYPE_DICTIONARY else {}
 
 
-# Plan 14: the buddy starts with a house and the land round it, alone. Off
-# until the fresh start (step 1c) makes it the default.
+# Plan 14: the buddy starts with a house and the land round it, alone. False
+# for this run if a buddy from before could not be backed up at launch.
 func small_beginnings() -> bool:
-    return bool(settings.get("smallBeginnings", false))
+    return bool(settings.get("smallBeginnings", true)) and not _fresh_start_failed
 
 
 func _land() -> Dictionary:
     var land = _call_service_with_fallback("world", "get_land", [], {})
     return land if typeof(land) == TYPE_DICTIONARY else {}
+
+
+# --- Fresh start (Plan 14 step 1c) ---------------------------------------
+# In the small-beginnings world every buddy is born on the land. A buddy from
+# before is put away first: its save files are copied to a dated folder under
+# BACKUP_ROOT, which is never overwritten, and only then does a new buddy wake
+# up. Only the buddy starts over: settings, items, wardrobe and meso are kept.
+# If the copy fails nothing is changed, and the old buddy carries on in its
+# old town for this run. Called once at launch by launch_router.gd, never by
+# tests or the simulator.
+# Returns {"status": "not_due"|"started"|"backup_failed", "backup": String}.
+func fresh_start_if_due() -> Dictionary:
+    return _fresh_start(PROFILE_PATH, [SETTINGS_PATH, PROFILE_PATH, WORLD_STATE_PATH], BACKUP_ROOT)
+
+
+func _fresh_start(profile_path: String, save_paths: Array, backup_root: String) -> Dictionary:
+    if not bool(settings.get("smallBeginnings", true)):
+        return {"status": "not_due", "backup": ""}
+    var mind_variant = profile.get("mind", null)
+    if typeof(mind_variant) == TYPE_DICTIONARY and str((mind_variant as Dictionary).get("born", "")) == BORN_ON_THE_LAND:
+        return {"status": "not_due", "backup": ""}
+    var backup_dir := ""
+    # No profile on disk means there is no buddy from before to put away.
+    if FileAccess.file_exists(profile_path):
+        var today := _clock_datetime()
+        var label := "before-small-beginnings-%04d-%02d-%02d" % [int(today.get("year", 0)), int(today.get("month", 0)), int(today.get("day", 0))]
+        backup_dir = SaveStore.backup_files(save_paths, backup_root, label)
+        if backup_dir == "":
+            push_warning("app_state: could not back up the save; the buddy from before stays for this run")
+            _fresh_start_failed = true
+            return {"status": "backup_failed", "backup": ""}
+    var fresh := _ensure_profile_modules(_default_profile())
+    var mind: Dictionary = fresh["mind"]
+    mind["born"] = BORN_ON_THE_LAND
+    fresh["mind"] = mind
+    profile = fresh
+    _reconcile_progression_from_xp()
+    _sync_growth_mode_flags()
+    _refresh_unlocks()
+    if backup_dir != "":
+        settings["freshStartBackup"] = backup_dir
+    flush()
+    return {"status": "started", "backup": backup_dir}
 
 
 # The places the buddy can go: the town, or on the land only what it has found.
@@ -635,6 +683,7 @@ func begin_simulation(seed_value: int, start_unix: int) -> bool:
         push_error("app_state: begin_simulation needs a headless process and a start time")
         return false
     _persistence_enabled = false
+    _fresh_start_failed = false
     _deferred_save_pending = false
     _sim_clock_unix = start_unix
     _load_services()
@@ -1554,7 +1603,7 @@ func _default_settings() -> Dictionary:
         "chatTextSize": "m",
         "continuityDigestEnabled": true,
         "autonomyEnabled": true,
-        "smallBeginnings": false,
+        "smallBeginnings": true,
         "inventoryCompact": false,
         "mindModelEnabled": true,
         "mindModelUrl": "http://127.0.0.1:11434",

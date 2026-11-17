@@ -118,6 +118,36 @@ Choices made here that later steps should know about:
 - **Bond and meso still accrue as before.** They belong to your side of the
   economy and are settled with commerce (step 13).
 
+### Step 1c, the fresh start: built 2026-11-17
+
+- **The new world is on by default.** `smallBeginnings` is now true.
+- **A buddy from before is put away, then a new one wakes up.** At a real
+  launch, if the buddy was not born on the land, `settings.json`,
+  `profile.json` and `world_state.json` are copied to
+  `backups/before-small-beginnings-<date>/` in the save folder. The folder is
+  never overwritten and each copy is checked against its original. Only then
+  is the buddy replaced. If the copy fails, nothing is changed and the old
+  buddy carries on in its old town for that run.
+- **Only the buddy starts over**: its name, memories, journal, feelings, bond
+  and growth. Settings, items, wardrobe and meso are kept, as your side of the
+  economy.
+- **Only a real launch does it.** `launch_router.gd` calls it. The tests, the
+  CI start-up modes and the fast-forward tool never touch the save.
+- **The six characters, their quests and encounters stay where they are**, in
+  the pack and the code. That is the archive: nothing was removed, the new
+  world never reads them, and with the setting off the old town works as
+  before. No separate archive folder was made, because moving pack content
+  would have changed nothing a buddy can see.
+- **Going back is by hand**: turn the setting off and copy `profile.json` from
+  the backup folder over the one in the save folder. The runtime README has
+  the steps.
+- **D-007 is recorded** in `DECISION_REGISTER.md`, `V1_PRD.md` and
+  `DEFERRED.md`.
+
+`FreshStartTest` (9 cases) covers the copy, a backup that already exists, a
+copy that fails, a new install, the setting turned off, and the new buddy's
+first line.
+
 ## Direction (owner, 2026-11-16)
 
 The buddy starts out knowing very little. It does not start in a town full of
@@ -598,12 +628,12 @@ faster than real time. Then:
 
 ## Fresh start for existing buddies
 
-On the first launch after this ships, the current profile save is copied to a
-dated backup (kept, never overwritten). The six existing characters, their
-quests and encounters are copied to an archive in the content pack and
-switched off. A new buddy starts with the house and land, in the world host's
-data folder. The old save can be restored by hand. A test covers the copy and
-the fresh start.
+On the first launch after this ships, the save files are copied to a dated
+backup (kept, never overwritten). The six existing characters, their quests
+and encounters are kept as an archive and switched off. A new buddy starts
+with the house and land. The old save can be restored by hand. A test covers
+the copy and the fresh start. Built in step 1c; see Progress for what it does
+exactly. The world host's data folder comes with step 2.
 
 ## What changes in what is already built
 
@@ -635,7 +665,7 @@ met.
 |---|---|---|
 | 1a | Fast-forward tool (built 2026-11-17) | A 90-day run prints a timeline; the same seed gives the same life; nothing is saved |
 | 1b | The house and land with discovery, behind a setting (built 2026-11-17): land areas, exploring the edge of what it knows, the known filter at `get_town()` and the three people reads; characters, quests and encounters off in the new world | The first 30 days meet the novelty targets in fast-forward, across seeds |
-| 1c | Fresh start with backup; characters, quests and encounters archived; the new world on by default; D-007 | The old save is backed up and a fresh buddy starts |
+| 1c | Fresh start with backup (built 2026-11-17); characters, quests and encounters archived; the new world on by default; D-007 | The old save is backed up and a fresh buddy starts |
 | 2 | World host: the world runs headless on GGPC with a watchdog; the desktop app becomes the visit and sends requests; calling it over; D-010 | Close the desktop app for a day; the journal shows it kept living |
 | 3 | The world's rules and the things on the land: materials and properties, ways of working, building needs, outcomes with reasons; noticing and naming | First own names appear in week 1 in fast-forward; the basics check passes |
 | 4 | The 3D view on the desktop: land diorama, the buddy as a card, time of day and weather, mist over unexplored land; D-009 | You can open it and watch the buddy move around its land |

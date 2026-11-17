@@ -83,6 +83,9 @@ const MIND_DEFAULTS := {
 	"done": {},
 	# It is in the middle of something until this time; nothing is decided before then.
 	"busy_until": 0,
+	# Where it was born: "land" for a buddy that started small (Plan 14).
+	# Anything else is a buddy from before (see AppState.fresh_start_if_due).
+	"born": "",
 }
 
 # --- Small beginnings (Plan 14 step 1b) ---------------------------------

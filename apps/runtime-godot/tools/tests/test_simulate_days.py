@@ -55,7 +55,7 @@ def make_project(root: Path, *, imported: bool) -> Path:
 
 
 def run(
-    fake: FakeGodot, project: Path, out: Path | None = None, world: str = "town"
+    fake: FakeGodot, project: Path, out: Path | None = None, world: str = "land"
 ) -> tuple[int, str, str]:
     stdout, stderr = io.StringIO(), io.StringIO()
     with redirect_stdout(stdout), redirect_stderr(stderr):
@@ -103,19 +103,19 @@ class SimulateDaysTests(unittest.TestCase):
                 ["godot", "--headless", "--path", str(project), sim.SCENE, "--"],
             )
             self.assertEqual(
-                command[6:10], ["--days=3", "--seed=7", "--journal=none", "--world=town"]
+                command[6:10], ["--days=3", "--seed=7", "--journal=none", "--world=land"]
             )
             out_arg = command[10]
             self.assertTrue(out_arg.startswith("--out="))
             self.assertTrue(Path(out_arg.removeprefix("--out=")).is_absolute())
 
-    def test_world_land_reaches_the_godot_command(self) -> None:
+    def test_world_town_reaches_the_godot_command(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             project = make_project(Path(tmp), imported=True)
             fake = FakeGodot()
-            code, _out, _err = run(fake, project, world="land")
+            code, _out, _err = run(fake, project, world="town")
             self.assertEqual(code, 0)
-            self.assertIn("--world=land", fake.calls[-1])
+            self.assertIn("--world=town", fake.calls[-1])
 
     def test_imports_only_when_godot_folder_is_missing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

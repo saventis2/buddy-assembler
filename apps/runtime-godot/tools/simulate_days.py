@@ -6,7 +6,7 @@ AppState code with a supplied clock and never writes the save files. See
 apps/runtime-godot/README.md ("Fast-forward").
 
     python apps/runtime-godot/tools/simulate_days.py --godot <path> \\
-        [--days 30] [--seed 1] [--journal firsts] [--world town|land] [--out report.json]
+        [--days 30] [--seed 1] [--journal firsts] [--world land|town] [--out report.json]
 """
 
 from __future__ import annotations
@@ -115,7 +115,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--days", type=int, default=30)
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--journal", choices=("all", "firsts", "none"), default="firsts")
-    parser.add_argument("--world", choices=("town", "land"), default="town")
+    parser.add_argument("--world", choices=("town", "land"), default="land")
     parser.add_argument("--out", type=Path)
     parser.add_argument("--project", type=Path, default=PROJECT_DEFAULT)
     args = parser.parse_args(argv)
