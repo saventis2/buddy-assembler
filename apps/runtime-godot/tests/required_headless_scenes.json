@@ -21,6 +21,7 @@
     {"id": "life-sim", "scene": "res://tests/LifeSimTest.tscn", "pass_marker": "life_sim_test: PASS (8 cases)"},
     {"id": "land-life", "scene": "res://tests/LandLifeTest.tscn", "pass_marker": "land_life_test: PASS (15 cases)"},
     {"id": "fresh-start", "scene": "res://tests/FreshStartTest.tscn", "pass_marker": "fresh_start_test: PASS (9 cases)"},
+    {"id": "no-save-start", "scene": "res://tests/NoSaveStartTest.tscn", "args": ["--", "--no-save"], "pass_marker": "no_save_start_test: PASS (4 cases)"},
     {"id": "manual-verification-report", "scene": "res://tests/ManualVerificationReportTest.tscn", "pass_marker": "manual_verification_report_test: PASS (2 cases)"}
   ]
 }

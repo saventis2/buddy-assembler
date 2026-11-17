@@ -148,6 +148,17 @@ Choices made here that later steps should know about:
 copy that fails, a new install, the setting turned off, and the new buddy's
 first line.
 
+Two things found after the first build of this step:
+
+- **A new install backed up its own empty save**, because loading can write a
+  default profile before the fresh start runs. Whether a buddy was saved is
+  now read once, before anything can save.
+- **The fast-forward tool could touch the save while the app was starting
+  up**, before the simulation switched saving off (a pending migration writes,
+  a damaged file is renamed). The launcher now passes `--no-save`, which makes
+  the app start from defaults without opening the save files, and the
+  simulation scene refuses to run without it. Found in review of PR #101.
+
 ## Direction (owner, 2026-11-16)
 
 The buddy starts out knowing very little. It does not start in a town full of

@@ -52,9 +52,10 @@ It runs the real mind code with a supplied clock, in a headless process, and
 prints each day's decisions, the new places, people and wishes it met, and how
 often the journal repeated itself. `--journal` is `all`, `firsts` or `none`;
 `--out` also writes the full report as JSON. The same seed gives the same life
-on any machine. Once a process starts a simulation it never saves, so the real
-save files are not touched. Not simulated: ambient desktop animation, quests and
-encounters, talking to the buddy, and the language model.
+on any machine. The launcher starts the app with `-- --no-save`, so it starts
+from defaults and never opens the save files, not even while starting up; the
+simulation scene refuses to run without it. Not simulated: ambient desktop
+animation, quests and encounters, talking to the buddy, and the language model.
 
 `--world` picks the world. `land`, the default, is the house and land a buddy
 starts with since Plan 14; `town` is the older town with its six characters.

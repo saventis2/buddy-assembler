@@ -103,11 +103,24 @@ class SimulateDaysTests(unittest.TestCase):
                 ["godot", "--headless", "--path", str(project), sim.SCENE, "--"],
             )
             self.assertEqual(
-                command[6:10], ["--days=3", "--seed=7", "--journal=none", "--world=land"]
+                command[6:11],
+                [sim.NO_SAVE_ARG, "--days=3", "--seed=7", "--journal=none", "--world=land"],
             )
-            out_arg = command[10]
+            out_arg = command[11]
             self.assertTrue(out_arg.startswith("--out="))
             self.assertTrue(Path(out_arg.removeprefix("--out=")).is_absolute())
+
+    def test_the_app_is_always_started_without_saves(self) -> None:
+        # The app must be told before it starts, so that not even its start-up
+        # can read, write or rename the save files.
+        with tempfile.TemporaryDirectory() as tmp:
+            project = make_project(Path(tmp), imported=True)
+            for world in ("land", "town"):
+                fake = FakeGodot()
+                code, _out, _err = run(fake, project, world=world)
+                self.assertEqual(code, 0)
+                command = fake.calls[-1]
+                self.assertEqual(command[command.index("--") + 1], "--no-save")
 
     def test_world_town_reaches_the_godot_command(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

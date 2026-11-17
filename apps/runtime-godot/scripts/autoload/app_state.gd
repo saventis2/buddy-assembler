@@ -13,6 +13,9 @@ const CORE_ECONOMY_PACK_ID := "core_pack"
 const INVENTORY_BACKFILL_MIGRATION_VERSION := 2
 const BACKUP_ROOT := "user://backups"
 const BORN_ON_THE_LAND := "land"
+# A process started with this user argument (after "--") never reads or writes
+# the save files. The fast-forward tool always passes it.
+const NO_SAVE_ARG := "--no-save"
 
 const SERVICE_PATHS := {
     "identity": "res://scripts/services/identity_service.gd",
@@ -59,7 +62,26 @@ var _want_shop_catalog_size := -1
 
 func _ready() -> void:
     _load_services()
+    if OS.get_cmdline_user_args().has(NO_SAVE_ARG):
+        _start_without_saves()
+        return
     load_state()
+
+
+# For a process started with NO_SAVE_ARG: default state, saving off, and the
+# save files never opened. Loading normally can already write them (a pending
+# migration) or rename them (a damaged file), which a tool that promises not
+# to touch the save must not do, even while the app is starting up.
+func _start_without_saves() -> void:
+    _persistence_enabled = false
+    _deferred_save_pending = false
+    settings = _default_settings()
+    profile = _ensure_profile_modules(_default_profile())
+    world_state = _ensure_world_modules(_default_world_state())
+    _reconcile_progression_from_xp()
+    _sync_growth_mode_flags()
+    _refresh_unlocks()
+    _prune_event_buckets()
 
 
 func _load_services() -> void:
@@ -439,6 +461,10 @@ func _land() -> Dictionary:
 # tests or the simulator.
 # Returns {"status": "not_due"|"started"|"backup_failed", "backup": String}.
 func fresh_start_if_due() -> Dictionary:
+    # A process that never saves (the fast-forward tool, a simulation) leaves
+    # the save folder alone: no backup is copied and nothing is replaced.
+    if not _persistence_enabled:
+        return {"status": "not_due", "backup": ""}
     return _fresh_start(_profile_was_on_disk, [SETTINGS_PATH, PROFILE_PATH, WORLD_STATE_PATH], BACKUP_ROOT)
 
 
