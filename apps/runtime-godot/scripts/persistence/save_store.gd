@@ -11,6 +11,7 @@ extends RefCounted
 #  * Forward-version guard — a save whose schemaVersion is NEWER than
 #    the runtime knows how to handle is quarantined rather than merged
 #    (silently merging newer shapes is how subtle corruption starts).
+#  * Backups: `backup_files` copies saves to a dated folder that is never overwritten.
 #  * Migration hook — `load_versioned` runs a caller-supplied migrator
 #    map to step an older save up to the current version before merge.
 #
@@ -81,6 +82,32 @@ static func write_json(path: String, data: Dictionary) -> bool:
         push_error("save_store: cannot rename %s -> %s (err %d)" % [tmp_path, path, rename_err])
         return false
     return false
+
+
+# Copies the given files into a new folder "<backup_root>/<label>" and returns
+# that folder, or "" if anything failed. A backup is never overwritten: if the
+# folder exists, "<label>-2", "<label>-3" and so on are used. Files that do not
+# exist are skipped. Every copy is checked against its original.
+static func backup_files(paths: Array, backup_root: String, label: String) -> String:
+    var folder := "%s/%s" % [backup_root, label]
+    var suffix := 2
+    while DirAccess.dir_exists_absolute(folder) or FileAccess.file_exists(folder):
+        folder = "%s/%s-%d" % [backup_root, label, suffix]
+        suffix += 1
+    var made := DirAccess.make_dir_recursive_absolute(folder)
+    if made != OK:
+        push_error("save_store: cannot create backup folder %s (err %d)" % [folder, made])
+        return ""
+    for path_variant in paths:
+        var path := str(path_variant)
+        if not FileAccess.file_exists(path):
+            continue
+        var dest := "%s/%s" % [folder, path.get_file()]
+        var err := DirAccess.copy_absolute(path, dest)
+        if err != OK or not FileAccess.file_exists(dest) or FileAccess.get_md5(dest) != FileAccess.get_md5(path):
+            push_error("save_store: cannot back up %s to %s (err %d)" % [path, dest, err])
+            return ""
+    return folder
 
 
 static func load_versioned(

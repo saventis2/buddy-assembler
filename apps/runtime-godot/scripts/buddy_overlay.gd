@@ -2528,6 +2528,11 @@ func _say_mind_line(line: String, suffix: String) -> void:
 # words. Returns false when no request was started (model off, bad URL, or
 # one already in flight); the caller then speaks the built-in wording.
 func _request_mind_thought(event: Dictionary, suffix: String) -> bool:
+    if AppState.small_beginnings():
+        # The land's lines are written by hand and carry what it found and
+        # noticed, so the model does not word over them. It still picks a name.
+        _maybe_choose_name()
+        return false
     if not bool(AppState.settings.get("mindModelEnabled", true)):
         _mind_model_status = "off"
         return false
@@ -2645,6 +2650,8 @@ func _place_display_name(place_id: String) -> String:
 
 
 func _town_npcs() -> Array:
+    if AppState.small_beginnings():
+        return []
     var world_variant = AppState.world_state.get("world", null)
     if typeof(world_variant) != TYPE_DICTIONARY:
         return []

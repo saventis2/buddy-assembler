@@ -13,6 +13,12 @@ func _ready() -> void:
 	if args.has("--ci-startup-smoke"):
 		call_deferred("_run_ci_startup_smoke")
 		return
+	# In the small-beginnings world a buddy from before is put away (backed up)
+	# and a new one wakes up on the land. Only a real launch does this; the
+	# CI modes above, the tests and the simulator never do.
+	var fresh: Dictionary = AppState.fresh_start_if_due()
+	if str(fresh.get("status", "")) == "started" and str(fresh.get("backup", "")) != "":
+		print("launch_router: the buddy from before is saved in %s" % ProjectSettings.globalize_path(str(fresh["backup"])))
 	var target_scene := _target_scene_from_args(args)
 	call_deferred("_switch_to_scene", target_scene)
 
