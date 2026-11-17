@@ -43,6 +43,9 @@ var _persistence_enabled := true
 # Set when a buddy from before could not be backed up at launch (see
 # fresh_start_if_due): it then stays in its old town for this run.
 var _fresh_start_failed := false
+# Whether a profile was on disk when this run loaded its state, read before
+# anything could save. A brand-new install has none, so nothing to back up.
+var _profile_was_on_disk := false
 
 const DEFERRED_SAVE_DELAY_SECONDS := 1.5
 # Things the buddy can notice in a shop and want (Plan 13 C1+C2): wearable
@@ -75,6 +78,7 @@ func _load_services() -> void:
 
 
 func load_state() -> void:
+    _profile_was_on_disk = FileAccess.file_exists(PROFILE_PATH)
     settings = SaveStore.load_versioned(
         SETTINGS_PATH,
         _default_settings,
@@ -435,18 +439,20 @@ func _land() -> Dictionary:
 # tests or the simulator.
 # Returns {"status": "not_due"|"started"|"backup_failed", "backup": String}.
 func fresh_start_if_due() -> Dictionary:
-    return _fresh_start(PROFILE_PATH, [SETTINGS_PATH, PROFILE_PATH, WORLD_STATE_PATH], BACKUP_ROOT)
+    return _fresh_start(_profile_was_on_disk, [SETTINGS_PATH, PROFILE_PATH, WORLD_STATE_PATH], BACKUP_ROOT)
 
 
-func _fresh_start(profile_path: String, save_paths: Array, backup_root: String) -> Dictionary:
+# `had_profile` is whether a buddy was saved before this run started. It is not
+# read from disk here: loading can already have written a default profile.
+func _fresh_start(had_profile: bool, save_paths: Array, backup_root: String) -> Dictionary:
     if not bool(settings.get("smallBeginnings", true)):
         return {"status": "not_due", "backup": ""}
     var mind_variant = profile.get("mind", null)
     if typeof(mind_variant) == TYPE_DICTIONARY and str((mind_variant as Dictionary).get("born", "")) == BORN_ON_THE_LAND:
         return {"status": "not_due", "backup": ""}
     var backup_dir := ""
-    # No profile on disk means there is no buddy from before to put away.
-    if FileAccess.file_exists(profile_path):
+    # With no buddy from before there is nothing to put away.
+    if had_profile:
         var today := _clock_datetime()
         var label := "before-small-beginnings-%04d-%02d-%02d" % [int(today.get("year", 0)), int(today.get("month", 0)), int(today.get("day", 0))]
         backup_dir = SaveStore.backup_files(save_paths, backup_root, label)

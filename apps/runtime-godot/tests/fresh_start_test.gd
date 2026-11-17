@@ -150,7 +150,7 @@ func _test_old_buddy_put_away() -> Variant:
 	for p in paths:
 		md5s[p] = _md5(p)
 	var world_before := JSON.stringify(AppState.world_state, "", true)
-	var result: Dictionary = AppState._fresh_start(profile_path, paths, ROOT + "/old/backups")
+	var result: Dictionary = AppState._fresh_start(true, paths, ROOT + "/old/backups")
 	if str(result.get("status", "")) != "started":
 		return "status was %s" % str(result.get("status", ""))
 	var backup := str(result.get("backup", ""))
@@ -181,7 +181,7 @@ func _test_old_buddy_put_away() -> Variant:
 
 func _test_land_buddy_left_alone() -> Variant:
 	var paths := [ROOT + "/old/settings.json", ROOT + "/old/profile.json", ROOT + "/old/world_state.json"]
-	var result: Dictionary = AppState._fresh_start(ROOT + "/old/profile.json", paths, ROOT + "/old/backups")
+	var result: Dictionary = AppState._fresh_start(true, paths, ROOT + "/old/backups")
 	if str(result.get("status", "")) != "not_due":
 		return "status was %s" % str(result.get("status", ""))
 	var folders := DirAccess.get_directories_at(ROOT + "/old/backups")
@@ -194,8 +194,11 @@ func _test_new_install() -> Variant:
 	if not AppState.begin_simulation(1, LifeSim.DEFAULT_START_UNIX):
 		return "begin_simulation refused"
 	AppState.settings["smallBeginnings"] = true
+	# On a new install, loading can already have written a default profile by
+	# the time the fresh start runs. That file is not a buddy from before.
 	var none := ROOT + "/none/profile.json"
-	var result: Dictionary = AppState._fresh_start(none, [none], ROOT + "/none/backups")
+	_write(none, JSON.stringify(AppState.profile))
+	var result: Dictionary = AppState._fresh_start(false, [none], ROOT + "/none/backups")
 	if str(result.get("status", "")) != "started":
 		return "status was %s" % str(result.get("status", ""))
 	if str(result.get("backup", "")) != "":
@@ -214,7 +217,7 @@ func _test_setting_off() -> Variant:
 	_make_old_buddy()
 	var path := ROOT + "/off/profile.json"
 	_write(path, JSON.stringify(AppState.profile))
-	var result: Dictionary = AppState._fresh_start(path, [path], ROOT + "/off/backups")
+	var result: Dictionary = AppState._fresh_start(true, [path], ROOT + "/off/backups")
 	if str(result.get("status", "")) != "not_due":
 		return "status was %s" % str(result.get("status", ""))
 	if str(_mind().get("born", "")) != "":
@@ -235,7 +238,7 @@ func _test_failed_backup() -> Variant:
 	_write(path, JSON.stringify(AppState.profile))
 	_write(ROOT + "/fail/blocker", "i am a file")
 	var md5_before := _md5(path)
-	var result: Dictionary = AppState._fresh_start(path, [path], ROOT + "/fail/blocker/backups")
+	var result: Dictionary = AppState._fresh_start(true, [path], ROOT + "/fail/blocker/backups")
 	if str(result.get("status", "")) != "backup_failed":
 		return "status was %s" % str(result.get("status", ""))
 	if int(AppState.profile.get("bond_xp", 0)) != 300:
@@ -261,7 +264,7 @@ func _test_new_buddy_wakes_up() -> Variant:
 	AppState.trim_catalog_for_simulation()
 	AppState.settings["smallBeginnings"] = true
 	var none := ROOT + "/wake/profile.json"
-	var result: Dictionary = AppState._fresh_start(none, [none], ROOT + "/wake/backups")
+	var result: Dictionary = AppState._fresh_start(false, [none], ROOT + "/wake/backups")
 	if str(result.get("status", "")) != "started":
 		return "status was %s" % str(result.get("status", ""))
 	var events: Array = AppState.tick_mind(LifeSim.DEFAULT_START_UNIX)
