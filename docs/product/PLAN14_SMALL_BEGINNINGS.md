@@ -255,6 +255,10 @@ Found in review and fixed before merging:
     setting on, and not straight after the PC wakes);
   - only one host runs at a time;
   - there is no hello in chat while it is at home.
+- **From the Codex review of PR #103:**
+  - **Holding lasts only as long as the lock.** A process that froze for longer than the stale time can find its lock taken over. Before any write it now checks the lock is still its own, and it stops writing the buddy at once when it is not. An app in that state shows the buddy at home; a host in that state stops if another host has taken over.
+  - **Forget is disabled while the buddy is at home**, because the forget would not be saved.
+  - **The app finishes a visit itself** when the setting is off or no host is running, so the save never says "visiting" with nobody to finish it. A buddy that stays with you because no host could start now leaves for its visit like any other.
 
 Checked end to end, with throwaway saves:
 

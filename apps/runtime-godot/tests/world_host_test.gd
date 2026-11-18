@@ -10,6 +10,7 @@ const Whereabouts = preload("res://scripts/persistence/buddy_whereabouts.gd")
 const MindService = preload("res://scripts/services/mind_service.gd")
 const LifeSim = preload("res://tests/life_sim.gd")
 const ContentLoader = preload("res://scripts/content/content_loader.gd")
+const VisitController = preload("res://scripts/visit_controller.gd")
 
 const ROOT := "user://world_host_test"
 const MINI_LAND := {
@@ -57,6 +58,8 @@ func _run_all() -> void:
 	_case("bedtime", func(): return _test_bedtime())
 	_case("company_fades_on_the_land", func(): return _test_company_fades())
 	_case("only_the_holder_writes", func(): return _test_only_the_holder_writes())
+	_case("a_lost_lock_stops_writes", func(): return _test_a_lost_lock_stops_writes())
+	_case("the_visit_ends_here_without_a_host", func(): return _test_the_visit_ends_here_without_a_host())
 	_case("peek_never_writes", func(): return _test_peek_never_writes())
 	_case("solo_is_unchanged", func(): return _test_solo_is_unchanged())
 	_case("bedtime_call_waits_for_morning", func(): return _test_bedtime_call_waits_for_morning())
@@ -384,6 +387,10 @@ func _test_company_fades() -> Variant:
 func _test_only_the_holder_writes() -> Variant:
 	var saved_role: String = AppState._role
 	var saved_holding: bool = AppState._holding
+	var saved_dir: String = AppState._host_dir
+	var base := _fresh_base("may_write")
+	var pid := OS.get_process_id()
+	AppState._host_dir = base
 	var paths := [AppState.SETTINGS_PATH, AppState.PROFILE_PATH, AppState.WORLD_STATE_PATH]
 	# role, holding -> may write settings, profile, world state
 	var table := [
@@ -396,15 +403,70 @@ func _test_only_the_holder_writes() -> Variant:
 	]
 	var problem := ""
 	for row in table:
-		AppState._role = str(row[0])
-		AppState._holding = bool(row[1])
+		var role := str(row[0])
+		var holding := bool(row[1])
+		Whereabouts.release(base, "host", pid)
+		Whereabouts.release(base, "desktop", pid)
+		# Holding means holding the lock too (AppState._still_holding).
+		if holding and role != "solo":
+			Whereabouts.try_acquire(base, role, pid, Time.get_unix_time_from_system(), 0.0)
+		AppState._role = role
+		AppState._holding = holding
 		for index in range(paths.size()):
 			var got: bool = AppState._may_write(paths[index])
 			if got != bool((row[2] as Array)[index]) and problem == "":
-				problem = "role %s holding %s: _may_write(%s) is %s" % [str(row[0]), str(row[1]), str(paths[index]), str(got)]
+				problem = "role %s holding %s: _may_write(%s) is %s" % [role, str(holding), str(paths[index]), str(got)]
+	Whereabouts.release(base, "host", pid)
+	Whereabouts.release(base, "desktop", pid)
 	AppState._role = saved_role
 	AppState._holding = saved_holding
+	AppState._host_dir = saved_dir
 	return problem if problem != "" else null
+
+
+# A holder whose lock was taken over (it froze for longer than the stale time,
+# so the other side broke the lock) stops writing the buddy's files at once.
+func _test_a_lost_lock_stops_writes() -> Variant:
+	var saved_role: String = AppState._role
+	var saved_holding: bool = AppState._holding
+	var saved_dir: String = AppState._host_dir
+	var base := _fresh_base("lost_lock")
+	var pid := OS.get_process_id()
+	var now := Time.get_unix_time_from_system()
+	var problem := ""
+	if not Whereabouts.try_acquire(base, "desktop", pid, now, 0.0):
+		problem = "could not take the test lock"
+	AppState._host_dir = base
+	AppState._role = "desktop"
+	AppState._holding = true
+	if problem == "" and not AppState._may_write(AppState.PROFILE_PATH):
+		problem = "the holder may not write its own buddy"
+	if problem == "":
+		# The host takes the lock over.
+		SaveStore.write_json(Whereabouts.lock_path(base) + "/owner.json", {"role": "host", "pid": pid + 1, "since": now, "heartbeat": now})
+		if AppState._may_write(AppState.PROFILE_PATH) or AppState._may_write(AppState.WORLD_STATE_PATH):
+			problem = "a process whose lock was taken over still writes the buddy"
+		elif AppState.is_holding_buddy():
+			problem = "a process whose lock was taken over still says it holds the buddy"
+		elif not AppState._may_write(AppState.SETTINGS_PATH):
+			problem = "the app lost its own settings along with the lock"
+	_wipe(base)
+	AppState._role = saved_role
+	AppState._holding = saved_holding
+	AppState._host_dir = saved_dir
+	return problem if problem != "" else null
+
+
+# When the buddy goes home and no host will take it back (the setting is off,
+# or no host is running), the app finishes the visit itself.
+func _test_the_visit_ends_here_without_a_host() -> Variant:
+	if not VisitController.should_finish_here(false, true):
+		return "with the setting off, the app must finish the visit itself"
+	if not VisitController.should_finish_here(true, false):
+		return "with no host running, the app must finish the visit itself"
+	if VisitController.should_finish_here(true, true):
+		return "with a host running, the host finishes the visit"
+	return null
 
 
 func _test_peek_never_writes() -> Variant:

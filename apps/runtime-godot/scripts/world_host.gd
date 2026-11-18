@@ -101,7 +101,16 @@ func _tick() -> void:
 		Whereabouts.heartbeat(_base, "host", OS.get_process_id(), now)
 	var desktop := _desktop_status()
 	# 4. Not holding.
+	# is_holding_buddy() checks the lock is still ours: after this host froze for
+	# longer than the stale time, it may have been taken over.
 	if not AppState.is_holding_buddy():
+		# Another host took over while this one was frozen: this one stops.
+		var current := Whereabouts.read_status("%s/host.json" % _base)
+		var current_pid := int(current.get("pid", 0))
+		if current_pid != OS.get_process_id() and Whereabouts.is_alive(current, now) and Whereabouts.is_running(current_pid):
+			print("world_host: another host is running (pid %d); this one stops" % current_pid)
+			get_tree().quit()
+			return
 		var desktop_alive := Whereabouts.is_alive(desktop, now)
 		var desktop_state := str(desktop.get("state", ""))
 		if desktop_alive and desktop_state == "visiting":

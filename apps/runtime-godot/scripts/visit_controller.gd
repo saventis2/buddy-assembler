@@ -91,6 +91,17 @@ func start() -> void:
 	_poll()
 
 
+# Whether this app finishes a visit itself when the buddy goes home: only when
+# no host will take it back and finish it.
+static func should_finish_here(setting_on: bool, host_alive: bool) -> bool:
+	return not setting_on or not host_alive
+
+
+func _buddy_is_visiting() -> bool:
+	var mind_variant = AppState.profile.get("mind", {})
+	return typeof(mind_variant) == TYPE_DICTIONARY and str((mind_variant as Dictionary).get("location", "")) == "visiting"
+
+
 func call_over() -> void:
 	if _visiting or _closed:
 		return
@@ -174,10 +185,17 @@ func _poll() -> void:
 	if now - _last_poll > 3.0 * DESKTOP_POLL_SECONDS:
 		_awake_since = now
 	_last_poll = now
-	# Heartbeats.
-	_write_desktop(now)
+	# Heartbeats. is_holding_buddy() checks the lock is still ours.
 	if AppState.is_holding_buddy():
 		Whereabouts.heartbeat(AppState.HOST_DIR, "desktop", _pid, now)
+	elif _visiting:
+		# This app froze for longer than the stale time and the host took the
+		# buddy back: it is at home now, and nothing here writes it any more.
+		_visiting = false
+		_host_must_take_back = false
+		_set_state("away", "")
+		left.emit("lost")
+	_write_desktop(now)
 	var host := Whereabouts.read_status("%s/host.json" % _base)
 	var host_alive := Whereabouts.is_alive(host, now)
 	# Waiting for the host it launched.
@@ -218,6 +236,10 @@ func _stay_with_you(now: float) -> void:
 		return
 	if Whereabouts.try_acquire(_base, "desktop", _pid, now, now - _awake_since):
 		AppState.take_buddy()
+		# It is visiting you like any other time, so the visit can be finished
+		# properly when it ends (see _go_home).
+		if not _buddy_is_visiting():
+			AppState.mind_leave_for_visit(int(now), "opened")
 		_visiting = true
 		_opened_sent = true
 		_set_state("visiting", "")
@@ -265,6 +287,14 @@ func _poll_visiting(now: float) -> void:
 
 func _go_home(reason: String) -> void:
 	left.emit(reason)
+	var now := Time.get_unix_time_from_system()
+	var host := Whereabouts.read_status("%s/host.json" % _base)
+	# With no host to take it back (the setting is off, so the host stops, or no
+	# host is running), the visit ends here. Otherwise the save would say
+	# "visiting" with nobody to finish it, and the next run would count the
+	# visit as time on its land.
+	if should_finish_here(bool(AppState.settings.get("worldHost", false)), Whereabouts.is_alive(host, now)) and _buddy_is_visiting():
+		AppState.mind_return_from_visit(int(now), reason)
 	AppState.release_buddy()
 	Whereabouts.release(_base, "desktop", _pid)
 	_visiting = false

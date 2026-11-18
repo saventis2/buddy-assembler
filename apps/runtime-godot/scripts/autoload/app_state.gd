@@ -59,6 +59,8 @@ var _profile_was_on_disk := false
 # and only the desktop writes settings. See _may_write.
 var _role := "solo"
 var _holding := false
+# Where the lock lives; tests point it at a folder of their own.
+var _host_dir := HOST_DIR
 
 const DEFERRED_SAVE_DELAY_SECONDS := 1.5
 # Things the buddy can notice in a shop and want (Plan 13 C1+C2): wearable
@@ -243,7 +245,20 @@ func _may_write(path: String) -> bool:
     if path == SETTINGS_PATH:
         return _role == "desktop"
     if path == PROFILE_PATH or path == WORLD_STATE_PATH:
-        return _holding
+        return _still_holding()
+    return false
+
+
+# Holding is only as good as the lock. A process that froze for longer than the
+# stale time can find its lock taken over by the other one; from then on it must
+# not write the buddy's files, whatever it thought before.
+func _still_holding() -> bool:
+    if not _holding:
+        return false
+    if Whereabouts.holds(_host_dir, _role, OS.get_process_id()):
+        return true
+    push_warning("app_state: the buddy's lock is no longer this process's; it stops writing the buddy")
+    _holding = false
     return false
 
 
@@ -252,7 +267,7 @@ func role() -> String:
 
 
 func is_holding_buddy() -> bool:
-    return _holding
+    return _still_holding()
 
 
 # This process takes the buddy: reads its files for real (the holder is the only

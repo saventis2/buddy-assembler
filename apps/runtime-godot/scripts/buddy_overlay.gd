@@ -3111,7 +3111,9 @@ func _after_memory_forgotten() -> void:
 
 func _toggle_memory_setting() -> void:
     _toggle_bool_setting("memoryEnabled")
-    if not AppState.memory_enabled():
+    # At home the buddy's memories are the host's to change: the talk in progress
+    # is dropped when it next arrives instead (see _on_visit_arrived).
+    if not AppState.memory_enabled() and not _is_away():
         # Off means nothing new is kept, including the talk in progress.
         AppState.memory_discard_turns(int(AppState.memory_pending_turns().get("upto", 0)))
     _refresh_memory_window()
@@ -3234,12 +3236,20 @@ func _refresh_memory_window() -> void:
         forget.text = "Forget"
         forget.tooltip_text = "Forget this for good."
         forget.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+        # At home its memories are the host's: a forget here would not be saved.
+        if _is_away():
+            forget.disabled = true
+            forget.tooltip_text = "%s is at home. Forget it when it visits." % _away_name()
         if str(row.get("kind", "")) == "pending":
             forget.pressed.connect(func() -> void:
+                if _is_away():
+                    return
                 _after_memory_forgotten()
             )
         else:
             forget.pressed.connect(func() -> void:
+                if _is_away():
+                    return
                 if AppState.memory_forget(memory_id):
                     _after_memory_forgotten()
             )
@@ -3248,10 +3258,16 @@ func _refresh_memory_window() -> void:
     _memory_btn_toggle.text = "Remembering: %s" % ("on" if enabled else "off")
     var armed := int(Time.get_unix_time_from_system()) <= _memory_forget_all_armed_until
     _memory_btn_forget_all.text = "Click again to forget all" if armed else "Forget everything"
-    _memory_btn_forget_all.disabled = rows.is_empty()
+    _memory_btn_forget_all.disabled = rows.is_empty() or _is_away()
+    _memory_btn_forget_all.tooltip_text = (
+        "%s is at home. Forget it when it visits." % _away_name() if _is_away()
+        else "Forget everything it knows about you. Click twice."
+    )
 
 
 func _on_forget_all_pressed() -> void:
+    if _is_away():
+        return
     var now_unix := int(Time.get_unix_time_from_system())
     if now_unix <= _memory_forget_all_armed_until:
         _memory_forget_all_armed_until = 0
@@ -6775,6 +6791,10 @@ func _on_visit_arrived(reason: String) -> void:
     if _buddy_name() == "":
         # Names are otherwise only chosen from mind events, and a visit has none.
         _maybe_choose_name()
+    if not AppState.memory_enabled():
+        # Remembering was turned off while it was at home: the talk in progress goes now.
+        AppState.memory_discard_turns(int(AppState.memory_pending_turns().get("upto", 0)))
+    _refresh_memory_window()
     _refresh_settings_menu()
     queue_redraw()
 
@@ -6788,6 +6808,7 @@ func _on_visit_left(reason: String) -> void:
     if lines.has(reason):
         _buddy_say(str(lines[reason]))
     _visit_answer = {}
+    _refresh_memory_window()
     _refresh_settings_menu()
     queue_redraw()
 
