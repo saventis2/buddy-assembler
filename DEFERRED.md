@@ -14,7 +14,15 @@ unless the V1 exit criteria in `PR_PLAN.md` are signed off.
   existing choices. See `docs/product/PLAN13_TOWN_AND_CONVERSATION.md`.
 - Generalized plugin / runtime scripting surface.
 - Multi-character world simulation beyond the existing single-companion +
-  optional visitor pattern.
+  optional visitor pattern. Narrowed 2026-11-17 by D-007 (Plan 14, updated
+  together with `docs/product/V1_PRD.md`): a buddy that starts small lives
+  alone, and the six town characters, their quests and encounters are switched
+  off for it and kept as an archive. Other characters stay deferred to a later
+  plan. Also, from 2026-11-18 (D-010): a watchdog that keeps the world host
+  running is deferred to the move to Nexus. And from 2026-11-18 (D-012): the
+  buddy is told nothing about its world, and what it says on the land is
+  checked against its own memory; talking to it by letter through its console
+  stays deferred to step 2c.
 - Cross-platform parity (macOS, Linux, mobile).
 - Marketplace or user-submitted content hosting.
 
