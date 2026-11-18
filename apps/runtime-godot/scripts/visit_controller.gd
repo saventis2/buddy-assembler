@@ -97,6 +97,13 @@ static func should_finish_here(setting_on: bool, host_alive: bool) -> bool:
 	return not setting_on or not host_alive
 
 
+# Whether a world host is wanted: the same two settings the host itself checks
+# (it stops when either is off), so this app never waits for a host that will
+# not stay.
+static func host_wanted(settings: Dictionary) -> bool:
+	return bool(settings.get("worldHost", true)) and bool(settings.get("smallBeginnings", true))
+
+
 func _buddy_is_visiting() -> bool:
 	var mind_variant = AppState.profile.get("mind", {})
 	return typeof(mind_variant) == TYPE_DICTIONARY and str((mind_variant as Dictionary).get("location", "")) == "visiting"
@@ -212,9 +219,10 @@ func _poll() -> void:
 		return
 	_emit_health("running" if host_alive else "not_running")
 	if not host_alive:
-		if not bool(AppState.settings.get("worldHost", true)):
-			# The setting is off (a host was running at start and stopped because
-			# of it): no host will come, so the buddy stays with you.
+		if not host_wanted(AppState.settings):
+			# World host or small beginnings is off (a host was running at start
+			# and stopped because of it): no host will come, so the buddy stays
+			# with you.
 			_stay_with_you(now)
 		elif now >= _next_respawn and now - _awake_since >= Whereabouts.STALE_SECONDS:
 			# The host stopped while this app is open: start it again, at most once
@@ -293,7 +301,7 @@ func _go_home(reason: String) -> void:
 	# host is running), the visit ends here. Otherwise the save would say
 	# "visiting" with nobody to finish it, and the next run would count the
 	# visit as time on its land.
-	if should_finish_here(bool(AppState.settings.get("worldHost", true)), Whereabouts.is_alive(host, now)) and _buddy_is_visiting():
+	if should_finish_here(host_wanted(AppState.settings), Whereabouts.is_alive(host, now)) and _buddy_is_visiting():
 		AppState.mind_return_from_visit(int(now), reason)
 	AppState.release_buddy()
 	Whereabouts.release(_base, "desktop", _pid)

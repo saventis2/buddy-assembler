@@ -60,6 +60,7 @@ func _run_all() -> void:
 	_case("only_the_holder_writes", func(): return _test_only_the_holder_writes())
 	_case("a_lost_lock_stops_writes", func(): return _test_a_lost_lock_stops_writes())
 	_case("the_visit_ends_here_without_a_host", func(): return _test_the_visit_ends_here_without_a_host())
+	_case("a_host_needs_both_settings", func(): return _test_a_host_needs_both_settings())
 	_case("peek_never_writes", func(): return _test_peek_never_writes())
 	_case("solo_is_unchanged", func(): return _test_solo_is_unchanged())
 	_case("bedtime_call_waits_for_morning", func(): return _test_bedtime_call_waits_for_morning())
@@ -466,6 +467,20 @@ func _test_a_lost_lock_stops_writes() -> Variant:
 
 # When the buddy goes home and no host will take it back (the setting is off,
 # or no host is running), the app finishes the visit itself.
+# The app wants a host only when both settings the host checks are on, so with
+# small beginnings off it keeps the buddy instead of restarting hosts that stop.
+func _test_a_host_needs_both_settings() -> Variant:
+	if not VisitController.host_wanted({}):
+		return "with the defaults a host should be wanted"
+	if VisitController.host_wanted({"worldHost": false, "smallBeginnings": true}):
+		return "with World host off no host should be wanted"
+	if VisitController.host_wanted({"worldHost": true, "smallBeginnings": false}):
+		return "with small beginnings off no host should be wanted"
+	if not VisitController.host_wanted({"worldHost": true, "smallBeginnings": true}):
+		return "with both on a host should be wanted"
+	return null
+
+
 func _test_the_visit_ends_here_without_a_host() -> Variant:
 	if not VisitController.should_finish_here(false, true):
 		return "with the setting off, the app must finish the visit itself"
