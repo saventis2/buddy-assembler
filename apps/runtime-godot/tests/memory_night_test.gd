@@ -37,6 +37,8 @@ func _run_all() -> void:
 	_case("lines_read_well", func(): return _test_lines_read_well())
 	_case("land_memories_only_when_relevant", func(): return _test_land_memories_only_when_relevant())
 	_case("report_traces_every_memory", func(): return _test_report_traces_every_memory())
+	_case("first_pass_counts_once", func(): return _test_first_pass_counts_once())
+	_case("a_day_without_sleep_before_the_first_pass", func(): return _test_a_day_without_sleep_before_the_first_pass())
 
 
 func _case(name: String, body: Callable) -> void:
@@ -240,6 +242,45 @@ func _test_alone_after_a_week() -> Variant:
 			believes += 1
 	if believes != 1:
 		return "expected one belief, got %d" % believes
+	return null
+
+
+# The mind's records already include today, so the first pass must not count
+# what happened today twice (three naps are three, not six).
+func _test_first_pass_counts_once() -> Variant:
+	var profile: Dictionary = _svc.ensure_profile({"mind": {
+		"known_places": {"orchard": {"stage": "found", "t": T0, "tries": 0}},
+		"seen": {"owl": T0 + 10},
+		"done": {"nap": 3, "wander": 2, "look": 1},
+	}})
+	var events: Array = [
+		_event(T0, "orchard", "the old orchard", "wander", "wandered about", 0.0, {"found_place": "orchard", "text": "I found an orchard."}),
+		_event(T0 + 10, "orchard", "the old orchard", "look", "looked about", 0.0, {"sight": "owl", "text": OWL_LINE}),
+		_event(T0 + 20, "home", "the house", "nap", "had a nap", 0.2),
+		_event(T0 + 30, "home", "the house", "nap", "had a nap", 0.2),
+		_event(T0 + 40, "home", "the house", "nap", "had a nap", 0.2),
+	]
+	var out: Dictionary = _night(profile, events, T0 + 100)
+	var expected := {"nap": 3, "wander": 2, "look": 1}
+	for activity_id in expected.keys():
+		var did: Dictionary = _edge(out, "did", "activity:" + str(activity_id))
+		if did.is_empty() or int(did["count"]) != int(expected[activity_id]):
+			return "%s should be remembered %d times, not %s" % [str(activity_id), int(expected[activity_id]), str(did.get("count", "none"))]
+	if int(_edge(out, "found", "place:orchard").get("count", 0)) != 1:
+		return "the place found today was counted twice"
+	if int(_edge(out, "noticed", "sight:owl").get("count", 0)) != 1:
+		return "the sight noticed today was counted twice"
+	return null
+
+
+# Before its first pass there is no last pass to count from: a buddy that never
+# chooses to sleep still sorts its day once a day.
+func _test_a_day_without_sleep_before_the_first_pass() -> Variant:
+	var profile: Dictionary = _svc.note_today(_fresh(), [_event(T0, "home", "the house", "look", "looked about", 0.0)], _land())
+	if _svc.night_pass_due(profile, [], _land(), T0 + 3600):
+		return "a pass was due an hour after its first decision"
+	if not _svc.night_pass_due(profile, [], _land(), T0 + DAY):
+		return "no pass after a day without sleep, before its first pass"
 	return null
 
 

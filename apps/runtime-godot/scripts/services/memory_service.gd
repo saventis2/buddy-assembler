@@ -342,8 +342,19 @@ func night_pass_due(profile: Dictionary, events: Array, land: Dictionary, now: i
 		if activity.has("until_hour"):
 			return true
 	var memory: Dictionary = _read(profile)
+	var today: Array = _today(memory)
+	if today.is_empty():
+		return false
 	var last: int = int(memory.get("last_pass_t", 0))
-	return last > 0 and now - last >= NIGHT_PASS_EVERY and not _today(memory).is_empty()
+	# Before its first pass, the day runs from the oldest thing it holds, so a
+	# buddy that never chooses to sleep still sorts its day once a day.
+	var since: int = last
+	if since <= 0:
+		since = now
+		for item in today:
+			if typeof(item) == TYPE_DICTIONARY:
+				since = mini(since, int((item as Dictionary).get("t", now)))
+	return now - since >= NIGHT_PASS_EVERY
 
 
 # Sorts today into long-term memories: every one is about a stable world id.
@@ -545,28 +556,56 @@ func _sign_line(land: Dictionary, place_id: String) -> String:
 # A buddy born before memory brings what its mind already knows.
 func _seed_from_mind(memory: Dictionary, mind_variant: Variant, land: Dictionary, me: Dictionary, now: int) -> void:
 	var mind: Dictionary = _dict(mind_variant)
+	# The mind's records already include today, and the pass adds today's items
+	# itself: seed only what came before today, so nothing is counted twice.
+	var today_found := {}
+	var today_sign := {}
+	var today_sight := {}
+	var today_done := {}
+	for item_variant in _today(memory):
+		if typeof(item_variant) != TYPE_DICTIONARY:
+			continue
+		var item: Dictionary = item_variant
+		if str(item.get("found", "")) != "":
+			today_found[str(item["found"])] = true
+		if str(item.get("sign", "")) != "":
+			today_sign[str(item["sign"])] = true
+		if str(item.get("sight", "")) != "":
+			today_sight[str(item["sight"])] = true
+		var today_activity: String = str(item.get("activity", ""))
+		if today_activity != "":
+			today_done[today_activity] = int(today_done.get(today_activity, 0)) + 1
 	var known: Dictionary = _dict(mind.get("known_places", {}))
 	for place_id in known.keys():
 		var record: Dictionary = _dict(known[place_id])
 		var t: int = int(record.get("t", now))
 		var node := {"id": "place:" + str(place_id)}
 		if str(record.get("stage", "")) == "found":
+			if today_found.has(str(place_id)):
+				continue
 			node["label"] = _place_name(land, str(place_id))
 			_upsert(memory, me, "found", node, LAND_FOUND[2], "land", LAND_FOUND[0], LAND_FOUND[1], t, 0)
 		elif str(record.get("stage", "")) == "sign":
+			if today_sign.has(str(place_id)):
+				continue
 			var line: String = _sign_line(land, str(place_id))
 			node["label"] = line if line != "" else "something I have not found yet"
 			_upsert(memory, me, "heard_of", node, LAND_HEARD_OF[2], "land", LAND_HEARD_OF[0], LAND_HEARD_OF[1], t, 0)
 	var seen: Dictionary = _dict(mind.get("seen", {}))
 	for sight_id in seen.keys():
+		if today_sight.has(str(sight_id)):
+			continue
 		var line: String = _sight_line(land, str(sight_id))
 		var sight := {"id": "sight:" + str(sight_id), "label": line if line != "" else str(sight_id)}
 		_upsert(memory, me, "noticed", sight, LAND_NOTICED[2], "land", LAND_NOTICED[0], LAND_NOTICED[1], int(seen[sight_id]), 0)
 	var done: Dictionary = _dict(mind.get("done", {}))
 	for activity_id in done.keys():
+		var before_today: int = int(done[activity_id]) - int(today_done.get(str(activity_id), 0))
+		if before_today <= 0:
+			continue
 		var activity := {"id": "activity:" + str(activity_id), "label": _any_activity_label(land, str(activity_id))}
 		var edge: Dictionary = _upsert(memory, me, "did", activity, LAND_DID[2], "land", LAND_DID[0], LAND_DID[1], now, 0)
-		edge["count"] = maxi(1, int(done[activity_id]))
+		edge["count"] = before_today
 	memory["first_pass_t"] = now
 
 
