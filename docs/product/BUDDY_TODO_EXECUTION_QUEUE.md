@@ -278,7 +278,8 @@ Status: `in_progress` (see `PLAN14_SMALL_BEGINNINGS.md`)
 - [x] 1b House and land with discovery, behind a setting; known filter (`land_data.gd`, `LandLifeTest`)
 - [x] 1c Fresh start with backup; the new world on by default (`fresh_start_if_due`, `FreshStartTest`, D-007)
 - [x] Chat on the land: its own wording, measured on gemma3:4b and gemma3:12b (`LAND_CHAT_SYSTEM_PROMPT`, `mind_chat_test`)
-- [ ] 2a Always-on world host (GGPC now, Nexus later); the desktop app is a visit
+- [x] 2a-1 World host and the visit, behind a setting that is off by default (`world_host.gd`, `visit_controller.gd`, `buddy_whereabouts.gd`, `WorldHostTest`)
+- [ ] 2a-2 Watchdog that starts and restarts the host (needs the owner's OK), a journal line after the host was down, the setting on by default (D-010), the host choosing the name
 - [ ] 2b Memory: told nothing; short-term and long-term memory, the nightly pass, recall, the check on what it says (D-012)
 - [ ] 2c Letters through the console, like a pen pal
 - [ ] 3 The world's rules and the things on the land

@@ -191,6 +191,100 @@ was written against. The larger model follows it, but it is twice the size
 better chat. The lasting fix is to check what it writes against what it knows
 before it is sent (see Memory).
 
+### Step 2a-1, the world host and the visit: built 2026-11-18
+
+Behind a setting that is off by default (`worldHost` in `settings.json`, or
+Menu > Settings > Its own mind > World host). With it off nothing changes: the
+app, the fast-forward tool and every test behave as before.
+
+With it on, the buddy lives on its land in a background program (the app
+started with `--headless -- --world-host`) that keeps running when the app is
+closed, and the desktop app is the buddy visiting you. The owner chose:
+
+1. **One writer at a time, by hand-over.** The buddy is in exactly one place.
+   At home the world host runs its life and is the only process that writes
+   `profile.json` and `world_state.json`. While it visits, the desktop app
+   looks after it exactly as before and is the only process that writes them.
+   Going home hands it back. `settings.json` always belongs to the desktop
+   app; the host only reads it.
+2. **Opening the app.** The buddy comes over by itself when the app opens,
+   unless it is asleep or in the middle of something. Then the app says when it
+   will come, and it comes then if the app is still open.
+3. **Lonely visits.** Its need for company slowly falls on its own land
+   (`LAND_COMPANY_FADE_PER_SLOT`). When the company need is low, it is awake and
+   free, and the app is open, it may come over by itself, and not within three
+   hours of a visit ending.
+4. **Going home.** A visit ends when the app closes, at its bedtime, after two
+   quiet hours (no interaction), or when you choose "Send home" in its menu.
+
+Rule 6 below now reads: the buddy is written by whichever program it is in, and
+only one holds it at a time. The website still only shows it and sends requests.
+
+The files, all under `user://host/` (`%APPDATA%\Godot\app_userdata\Buddy Runtime\host`):
+
+- `buddy.lock/`: a folder used as the lock. `owner.json` inside it has the
+  holder's role, pid and a heartbeat every 15 seconds. A lock is broken only
+  when its owner's process is gone, or its heartbeat is over 90 seconds old and
+  the breaker has itself been awake and ticking for 90 seconds (so a PC waking
+  from sleep never breaks a live holder's lock).
+- `host.json`: written only by the host. Its state (`home`, `visiting` or
+  `waiting`), why it handed the buddy over, its last answer to a call, and
+  `freshStartBackup`.
+- `desktop.json`: written only by the app. `away`, `visiting` or `sent_home`
+  with the reason, and a heartbeat.
+- `inbox/`: requests from the app to the host, one file each.
+
+Found in review and fixed before merging:
+
+- **A new buddy started with no company at all**, so it would have come over
+  every three hours from its first day. A buddy born on the land now starts at
+  `LAND_START_COMPANY` (0.6) and gets lonely after about a day awake.
+- **Right after a hand-over, the host could take the buddy back as lost**
+  before the app had picked it up. It now waits up to a minute
+  (`HANDOVER_GRACE_SECONDS`), and a "sent home" left over from an earlier visit
+  no longer ends a new one.
+- **Opening the app when the host was not running got "busy, will come in N
+  minutes"**, because the new host caught up on its day before it read the
+  call. The app now sends the call before it starts the host.
+- Smaller fixes:
+  - calls older than ten minutes are dropped;
+  - a call it said it would come for is checked again when the time comes;
+  - called at its bedtime, it comes at 07:00, instead of arriving and leaving at once;
+  - a second copy of the app is told apart from a status file left by a crash;
+  - the app restarts a host that stopped while it was open (only with the
+    setting on, and not straight after the PC wakes);
+  - only one host runs at a time;
+  - there is no hello in chat while it is at home.
+- **From the Codex review of PR #103:**
+  - **Holding lasts only as long as the lock.** A process that froze for longer than the stale time can find its lock taken over. Before any write it now checks the lock is still its own, and it stops writing the buddy at once when it is not. An app in that state shows the buddy at home; a host in that state stops if another host has taken over.
+  - **Forget is disabled while the buddy is at home**, because the forget would not be saved.
+  - **The app finishes a visit itself** when the setting is off or no host is running, so the save never says "visiting" with nobody to finish it. A buddy that stays with you because no host could start now leaves for its visit like any other.
+
+Checked end to end, with throwaway saves:
+
+- Opening the app started the host, and the buddy came over in about 6 s.
+- Closing the app sent it home in about 8 s ("Your desk went dark, so I came home.").
+- Opening the app again brought it back.
+- Killing the app left the buddy with it until the 90-second wait ran out. Then
+  the host took it back ("I found my way home from your desk.").
+- Turning the setting off stopped the host.
+
+The town and land 30-day runs are unchanged, and `WorldHostTest` has 16 cases.
+
+One limit: if the app was started through Godot's console wrapper
+(`..._console.exe`), a host it starts stops when the app stops, because the
+wrapper ends everything it started. Started from the windowed Godot program or
+an exported build, the host keeps running. The watchdog in 2a-2 removes this
+limit.
+
+Left for 2a-2:
+
+- a watchdog that starts the host at logon and restarts it (this adds a
+  scheduled task, so it needs the owner's OK);
+- a journal line after the host was down;
+- the setting on by default, with D-010;
+- the host choosing the name.
+
 ## Direction (owner, 2026-11-16)
 
 The buddy starts out knowing very little. It does not start in a town full of
@@ -326,8 +420,10 @@ alike.
    templates and cannot read.
 5. **No hosted model at runtime**, and most moves make no model call at all.
    Decision D-004 still holds: AI is optional, not foundational.
-6. **One world, one writer.** The world host owns the save. The desktop app
-   and the website only show it and send requests.
+6. **One world, one writer at a time, by hand-over.** The buddy is written by
+   whichever program it is in, and only one holds it at a time: the world host
+   while it is at home, the desktop app while it visits. The website only
+   shows it and sends requests.
 7. **Its world is public; you are private.** Nothing you said, nothing it
    remembers about you and nothing you left is ever published.
 8. **No other characters for now.** The only people in its life are real

@@ -86,6 +86,11 @@ const MIND_DEFAULTS := {
 	# Where it was born: "land" for a buddy that started small (Plan 14).
 	# Anything else is a buddy from before (see AppState.fresh_start_if_due).
 	"born": "",
+	# Visits to the person's desktop (Plan 14 step 2a): when it left for one,
+	# why, and when the last one ended. 0 / "" while it is at home.
+	"visit_left_unix": 0,
+	"visit_reason": "",
+	"last_visit_end_unix": 0,
 }
 
 # --- Small beginnings (Plan 14 step 1b) ---------------------------------
@@ -127,6 +132,23 @@ const LAND_RESTED := 0.05
 const LAND_NAP_FLOOR := 0.45
 const LAND_NIGHT_REST_FLOOR := 0.25
 const LAND_COMFORT_FADE_PER_SLOT := 0.006
+# Company lost per awake slot on its own land (nobody else lives there).
+const LAND_COMPANY_FADE_PER_SLOT := 0.005
+# Below this much company it may decide to visit the person.
+const LAND_LONELY_BELOW := 0.35
+# How much company a buddy has when it wakes on the land for the first time
+# (AppState._fresh_start), so it gets lonely slowly, about a day of being awake.
+const LAND_START_COMPANY := 0.6
+# Company gained per slot (10 minutes) of a visit.
+const VISIT_COMPANY_PER_SLOT := 0.06
+# No visit of its own accord within this long after a visit ended.
+const SELF_VISIT_GAP_SECONDS := 3 * 3600
+# From this hour, and before 5, it is bedtime.
+const VISIT_BEDTIME_HOUR := 21
+# From 19:00 it is bedtime once this tired.
+const VISIT_TIRED_EVENING := 0.45
+# Called at bedtime, it comes at this hour the next morning instead.
+const VISIT_MORNING_HOUR := 7
 const LAND_COMFORT_FADE_ASLEEP_PER_SLOT := 0.003
 const LAND_COMFORT_GAIN_PER_SLOT := 0.05
 # How hard its confidence is pulled back toward the middle each decision.
@@ -1551,21 +1573,23 @@ func _land_slots(activity: Dictionary, place: Dictionary, came_from: String, dec
 
 
 # In the land, needs move with time and with what it does: being awake tires
-# it, comfort fades, and how things go moves its confidence. Company is left
-# alone here: nobody else lives on the land, and only talking with the person
-# changes it (note_talk).
+# it, comfort fades, and how things go moves its confidence. Company slowly
+# fades while it is awake: nobody else lives on the land, and only talking with
+# the person (note_talk) or a visit (return_from_visit) brings it back.
 func _apply_land_needs(mods: Dictionary, activity: Dictionary, slots: int, valence: float, edge_kind: String) -> void:
 	var n := float(slots)
 	var need := str(activity.get("satisfies", ""))
 	var strain := float(mods["energy_strain"])
 	var comfort := float(mods["comfort"])
 	var confidence := float(mods["confidence"])
+	var company := float(mods.get("social_fulfillment", 0.0))
 	if activity.has("until_hour"):
 		# Asleep: it mends for as long as it sleeps.
 		strain = maxf(LAND_RESTED, strain - LAND_SLEEP_PER_SLOT * n)
 		comfort -= LAND_COMFORT_FADE_ASLEEP_PER_SLOT * n
 	else:
 		comfort -= LAND_COMFORT_FADE_PER_SLOT * n
+		company -= LAND_COMPANY_FADE_PER_SLOT * n
 		if need == "energy":
 			strain -= LAND_REST_PER_SLOT * n
 		else:
@@ -1589,6 +1613,7 @@ func _apply_land_needs(mods: Dictionary, activity: Dictionary, slots: int, valen
 	mods["energy_strain"] = _clamp01(strain)
 	mods["comfort"] = _clamp01(comfort)
 	mods["confidence"] = _clamp01(confidence)
+	mods["social_fulfillment"] = _clamp01(company)
 
 
 # True when this time gets one of the activity's own "bad" lines: only when it
@@ -1776,3 +1801,168 @@ func _hour_is_night(unix_time: int) -> bool:
 
 func _clamp01(value: float) -> float:
 	return minf(1.0, maxf(0.0, value))
+
+
+# --- Visits (Plan 14 step 2a) -------------------------------------------
+# The buddy can go and sit on the person's desktop. These are pure: the world
+# host and the desktop app decide when; this decides what it means for the buddy.
+
+func _land_activity(land: Dictionary, place_id: String, activity_id: String) -> Dictionary:
+	for place_variant in _usable_places(land):
+		var place: Dictionary = place_variant
+		if str(place.get("id", "")) != place_id:
+			continue
+		for activity_variant in (place.get("activities", []) as Array):
+			if typeof(activity_variant) == TYPE_DICTIONARY and str((activity_variant as Dictionary).get("id", "")) == activity_id:
+				return activity_variant
+	return {}
+
+
+func _visit_entry(
+	now: int, intent: String, place_id: String, place_name: String, activity_id: String,
+	activity_label: String, valence: float, text: String, subject_id: String, subject_name: String
+) -> Dictionary:
+	return {
+		"t": now,
+		"intent": intent,
+		"subject_id": subject_id,
+		"subject_name": subject_name,
+		"valence": valence,
+		"text": text,
+		"place_id": place_id,
+		"place_name": place_name,
+		"activity_id": activity_id,
+		"activity_label": activity_label,
+		"companion_name": "",
+	}
+
+
+func _slots_since(unix_left: int, now: int) -> float:
+	if unix_left <= 0:
+		return 0.0
+	return float(maxi(0, now - unix_left) / DECISION_INTERVAL_SECONDS)
+
+
+# Whether it can come over right now: {"come": "now"|"later"|"asleep", "at", "why"}.
+func consider_call(profile: Dictionary, land: Dictionary, now: int) -> Dictionary:
+	var merged := ensure_profile(profile)
+	var mind: Dictionary = merged["mind"]
+	var busy_until := int(mind.get("busy_until", 0))
+	if now >= busy_until:
+		# Awake, but it is its bedtime: a visit now would end at once, so it
+		# comes in the morning instead.
+		if is_bedtime(merged, now):
+			return {"come": "asleep", "at": _next_local_hour(now, VISIT_MORNING_HOUR), "why": ""}
+		return {"come": "now", "at": now, "why": ""}
+	var activity: Dictionary = {}
+	var journal: Array = mind["journal"]
+	if not journal.is_empty() and typeof(journal[journal.size() - 1]) == TYPE_DICTIONARY:
+		var last: Dictionary = journal[journal.size() - 1]
+		activity = _land_activity(land, str(last.get("place_id", "")), str(last.get("activity_id", "")))
+		# Activities of its own (waking up, the edge) are not in the land: the entry has the label.
+		if activity.is_empty():
+			activity = {"label": str(last.get("activity_label", ""))}
+	if activity.has("until_hour"):
+		return {"come": "asleep", "at": busy_until, "why": str(activity.get("label", ""))}
+	return {"come": "later", "at": busy_until, "why": str(activity.get("label", ""))}
+
+
+# The next time after now that the local clock shows this hour, on the hour.
+func _next_local_hour(now: int, hour: int) -> int:
+	var t := now - (now % 3600) + 3600
+	for _hour_step in range(25):
+		if _local_hour(t) == hour:
+			return t
+		t += 3600
+	return now + 3600
+
+
+# It goes to see the person. reason: "opened", "called", "lonely" or "pending".
+func leave_for_visit(profile: Dictionary, land: Dictionary, now: int, reason: String) -> Dictionary:
+	var merged := ensure_profile(profile)
+	var mind: Dictionary = merged["mind"]
+	var texts := {
+		"opened": "You were at your desk, so I went over to see you.",
+		"called": "You called me over, so I went to see you.",
+		"lonely": "It was too quiet on my own, so I went to see you.",
+		"pending": "I finished what I was doing and went to see you.",
+	}
+	_append_journal(mind, _visit_entry(
+		now, "visit", "visiting", "your desk", "visit_you", "visiting you", 0.3,
+		str(texts.get(reason, texts["called"])), "you", "you"
+	))
+	mind["location"] = "visiting"
+	mind["busy_until"] = 0
+	mind["visit_left_unix"] = now
+	mind["visit_reason"] = reason
+	merged["mind"] = mind
+	return merged
+
+
+# It comes home. reason: "bedtime", "quiet", "sent", "closed" or "lost". Being
+# awake tired it, and the company did it good. No decisions are made up for
+# the time it was away.
+func return_from_visit(profile: Dictionary, land: Dictionary, now: int, reason: String) -> Dictionary:
+	var merged := ensure_profile(profile)
+	var mind: Dictionary = merged["mind"]
+	var slots := _slots_since(int(mind.get("visit_left_unix", 0)), now)
+	var mods := _mood_modifiers(merged)
+	mods["energy_strain"] = _clamp01(float(mods["energy_strain"]) + LAND_TIRE_PER_SLOT * slots)
+	mods["social_fulfillment"] = _clamp01(float(mods["social_fulfillment"]) + VISIT_COMPANY_PER_SLOT * slots)
+	var raw = merged.get("mood_modifiers", null)
+	var kept: Dictionary = (raw as Dictionary).duplicate(true) if typeof(raw) == TYPE_DICTIONARY else {}
+	for key in mods.keys():
+		kept[key] = mods[key]
+	merged["mood_modifiers"] = kept
+	var home_id := str(land.get("home_place", "home"))
+	var home_name := "the house"
+	for place_variant in _usable_places(land):
+		if str((place_variant as Dictionary).get("id", "")) == home_id:
+			home_name = str((place_variant as Dictionary).get("name", home_name))
+	var texts := {
+		"bedtime": "I walked home from your desk and got ready for bed.",
+		"quiet": "It went quiet at your desk, so I came home.",
+		"sent": "You sent me home, so I came back to my land.",
+		"closed": "Your desk went dark, so I came home.",
+		"lost": "I found my way home from your desk.",
+	}
+	_append_journal(mind, _visit_entry(
+		now, "tend_home", home_id, home_name, "came_home", "came home", 0.2,
+		str(texts.get(reason, texts["lost"])), "place:%s" % home_id, home_name
+	))
+	mind["location"] = home_id
+	mind["busy_until"] = 0
+	mind["last_decision_unix"] = now
+	mind["last_visit_end_unix"] = now
+	mind["visit_left_unix"] = 0
+	mind["visit_reason"] = ""
+	merged["mind"] = mind
+	return merged
+
+
+# Whether it would like to go over by itself: free, in the daytime, lonely, and
+# not just back from a visit.
+func wants_company(profile: Dictionary, land: Dictionary, now: int) -> bool:
+	var merged := ensure_profile(profile)
+	var mind: Dictionary = merged["mind"]
+	if now < int(mind.get("busy_until", 0)):
+		return false
+	var hour := _local_hour(now)
+	if hour < 7 or hour > 19:
+		return false
+	if float(_mood_modifiers(merged)["social_fulfillment"]) >= LAND_LONELY_BELOW:
+		return false
+	return now - int(mind.get("last_visit_end_unix", 0)) >= SELF_VISIT_GAP_SECONDS
+
+
+# Time for bed: late, or the evening and tired (counting the time on a visit).
+func is_bedtime(profile: Dictionary, now: int) -> bool:
+	var merged := ensure_profile(profile)
+	var hour := _local_hour(now)
+	if hour >= VISIT_BEDTIME_HOUR or hour < 5:
+		return true
+	if hour < 19:
+		return false
+	var slots := _slots_since(int((merged["mind"] as Dictionary).get("visit_left_unix", 0)), now)
+	var tired := float(_mood_modifiers(merged)["energy_strain"]) + LAND_TIRE_PER_SLOT * slots
+	return tired >= VISIT_TIRED_EVENING

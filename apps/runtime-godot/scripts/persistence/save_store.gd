@@ -170,6 +170,44 @@ static func load_versioned(
     return merged
 
 
+static func peek_versioned(
+    path: String,
+    default_factory: Callable,
+    current_version: int,
+    migrators: Dictionary
+) -> Dictionary:
+    # Like `load_versioned`, but never quarantines, renames or writes anything.
+    # Returns {} for a missing, unreadable, unparseable, newer-than-runtime or
+    # unmigratable file, so a process that does not own the file keeps what it had.
+    if not FileAccess.file_exists(path):
+        return {}
+    var file := FileAccess.open(path, FileAccess.READ)
+    if file == null:
+        return {}
+    var raw := file.get_as_text()
+    file.close()
+    var parsed = JSON.parse_string(raw)
+    if typeof(parsed) != TYPE_DICTIONARY:
+        return {}
+    var data: Dictionary = parsed
+    var loaded_version := int(data.get(SCHEMA_VERSION_KEY, 1))
+    if loaded_version > current_version:
+        return {}
+    while loaded_version < current_version:
+        if not migrators.has(loaded_version):
+            return {}
+        var migrator: Callable = migrators[loaded_version]
+        data = migrator.call(data)
+        loaded_version += 1
+        data[SCHEMA_VERSION_KEY] = loaded_version
+    var defaults: Dictionary = default_factory.call()
+    var merged := defaults.duplicate(true)
+    for key in data.keys():
+        merged[key] = data[key]
+    merged[SCHEMA_VERSION_KEY] = current_version
+    return merged
+
+
 static func _quarantine(path: String, reason: String) -> void:
     if not FileAccess.file_exists(path):
         return
