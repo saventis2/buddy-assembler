@@ -2799,7 +2799,10 @@ func _start_chat_request(user_text: String) -> bool:
         return false
     _ensure_chat_http()
     var town := {"places": _town_place_names(), "people": _town_people()}
-    var memory: Dictionary = AppState.memory_recall(user_text)
+    # On the land its own memories go to chat apart (your_memories, below),
+    # so what_you_remember holds only what it knows about you.
+    var land: bool = AppState.small_beginnings()
+    var memory: Dictionary = AppState.memory_recall(user_text, not land)
     if _chat_turns.is_empty():
         # Start of a talk: code picks one thing it remembers about you that
         # it may ask after, so remembering does not wait for you to bring it up.
@@ -2812,18 +2815,34 @@ func _start_chat_request(user_text: String) -> bool:
     var target: Dictionary = AppState.mind_find_suggestion(user_text)
     if not target.is_empty():
         decision = _decision_for(target, AppState.mind_consider(target))
-    var body: String = MindThinker.build_chat_request(
-        _chat_model_name(), _chat_about(), _recent_journal_texts(4), _chat_turns, user_text, town, memory,
-        str(decision.get("fact", "")), str(decision.get("say", "")), AppState.small_beginnings()
-    )
+    # On the land it speaks from its own memories, recalled for what was said.
+    var recalled: Dictionary = AppState.memory_recall_land(user_text) if land else {}
+    var your_memories: Array = recalled.get("lines", []) if land else []
+    var context := {
+        "about": _chat_about(), "recent": _recent_journal_texts(4), "turns": _chat_turns.duplicate(true), "user_text": user_text,
+        "town": town, "memory": memory, "decision": str(decision.get("fact", "")), "say": str(decision.get("say", "")),
+        "land": land, "your_memories": your_memories,
+    }
+    var body: String = _chat_body_from(context, "")
     var error: int = _chat_http.request(url, ["Content-Type: application/json"], HTTPClient.METHOD_POST, body)
     if error != OK:
         return false
+    if land:
+        AppState.memory_strengthen_recalled(recalled.get("ids", []))
     _chat_turns.append({"who": "them", "text": user_text})
     _trim_chat_turns()
     AppState.memory_note_turn("them", user_text)
-    _chat_pending = {"kind": "chat", "url": url, "body": body, "retried": false}
+    _chat_pending = {"kind": "chat", "url": url, "body": body, "retried": false, "user_text": user_text, "honest": false, "context": context}
     return true
+
+
+# The chat request for a context kept in _chat_pending, so the honest retry is
+# the same request with one more line in the task.
+func _chat_body_from(context: Dictionary, extra_task: String) -> String:
+    return MindThinker.build_chat_request(
+        _chat_model_name(), context["about"], context["recent"], context["turns"], str(context["user_text"]), context["town"], context["memory"],
+        str(context["decision"]), str(context["say"]), bool(context["land"]), context["your_memories"], extra_task
+    )
 
 
 func _recent_journal_texts(limit: int) -> Array:
@@ -2898,12 +2917,17 @@ func _maybe_greet() -> void:
         return
     _ensure_chat_http()
     var town := {"places": _town_place_names(), "people": _town_people()}
+    var land: bool = AppState.small_beginnings()
+    var your_memories: Array = []
+    if land:
+        var recalled: Dictionary = AppState.memory_recall_land(str(news.get("text", "")))
+        your_memories = recalled.get("lines", [])
     var body: String = MindThinker.build_greeting_request(
         _chat_model_name(), _chat_about(), _recent_journal_texts(4), town, memory, str(news.get("text", "")),
-        AppState.small_beginnings()
+        land, your_memories
     )
     if _chat_http.request(url, ["Content-Type: application/json"], HTTPClient.METHOD_POST, body) == OK:
-        _chat_pending = {"kind": "greeting", "news_t": int(news.get("t", 0))}
+        _chat_pending = {"kind": "greeting", "news_t": int(news.get("t", 0)), "land": land}
 
 
 # Called after every line added to the talk, so it also notes when the talk
@@ -2988,6 +3012,24 @@ func _on_chat_http_completed(result: int, response_code: int, _headers: PackedSt
         var reply: Dictionary = MindThinker.parse_chat_reply(body.get_string_from_utf8())
         if bool(reply.get("ok", false)):
             var reply_text: String = str(reply.get("reply", ""))
+            if bool(pending.get("context", {}).get("land", false)):
+                # On the land what it says is checked against its memory. A
+                # reply that names what it has not met is asked for once more,
+                # told so; if that fails too, it says what it honestly can.
+                var user_text: String = str(pending.get("user_text", ""))
+                var known: Dictionary = AppState.memory_known_words()
+                var checked: Dictionary = MindThinker.check_reply(reply_text, user_text, known)
+                if not bool(checked.get("ok", false)):
+                    if not bool(pending.get("honest", false)):
+                        var note: String = MindThinker.honest_retry_note(checked.get("unknown", []), bool(checked.get("premise", false)))
+                        var retry_context: Dictionary = pending["context"]
+                        _chat_pending = {
+                            "kind": "chat", "url": str(pending.get("url", "")), "body": _chat_body_from(retry_context, note),
+                            "retried": false, "user_text": user_text, "honest": true, "context": retry_context,
+                        }
+                        _retry_chat_request.call_deferred()
+                        return
+                    reply_text = MindThinker.fallback_line(user_text, checked.get("unknown", []), known)
             _chat_turns.append({"who": "you", "text": reply_text})
             _trim_chat_turns()
             AppState.memory_note_turn("you", reply_text)
@@ -3000,6 +3042,9 @@ func _on_chat_http_completed(result: int, response_code: int, _headers: PackedSt
         var greeting: Dictionary = MindThinker.parse_chat_reply(body.get_string_from_utf8())
         if bool(greeting.get("ok", false)):
             var hello: String = str(greeting.get("reply", ""))
+            # On the land a hello that names what it has not met is not said.
+            if bool(pending.get("land", false)) and not bool(MindThinker.check_reply(hello, "", AppState.memory_known_words()).get("ok", false)):
+                return
             _chat_turns.append({"who": "you", "text": hello})
             _trim_chat_turns()
             AppState.memory_note_turn("you", hello)

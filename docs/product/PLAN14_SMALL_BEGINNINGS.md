@@ -161,6 +161,9 @@ Two things found after the first build of this step:
 
 ### Chat on the land: 2026-11-18
 
+(Replaced the same day by step 2b-2 below: this wording is gone, and chat now
+speaks from memory.)
+
 With the model on, a land-born buddy names itself within seconds. Chat still
 told the model it lived "in a little town", though, so it made up neighbours.
 Chat on the land now has its own wording (`mind_thinker.gd`:
@@ -406,6 +409,167 @@ because nothing reinforces them once the place is known (at 30 days, seed 21,
 there were 13 found and 10 heard of). So the check on what it says must also use
 what it knows of its land (`known_places`), so that a place it found long ago
 and seldom visits does not count as unknown.
+
+### Step 2b-2, chat from memory: built 2026-11-18
+
+On the land, chat now speaks from the buddy's own memory, and what it says is
+checked against that memory before it goes out (D-012). The land wording of
+2026-11-18 (`LAND_CHAT_SYSTEM_PROMPT`, the two land reminders and the
+`your_land` field, above) is gone. The old town sends exactly the same
+requests as before.
+
+- **The memory wording.** `MEMORY_CHAT_SYSTEM_PROMPT` and the two reminders
+  tell the buddy nothing about its world: not that it lives alone, not that it
+  has a house or land, not that there is no town. It opens: "You know only what
+  is in 'your_memories' and 'recent_days': your own memories of your life, and
+  nothing else about your world. Anything not in them, you have not come
+  across: say so, or ask about it." The reminders say to mention only places,
+  people and things in 'your_memories', 'recent_days' or 'what_you_remember',
+  or what they told it about their own life, and that anything else it has not
+  come across. Every rule of the town wording that is not about the town or
+  friends is kept word for word (`mind_chat_test`). One rule is new: it
+  remembers only what 'what_you_remember' and 'earlier_talks' say about you,
+  and never says you told, showed or brought it something that is not there.
+- **`your_memories`.** The fact sheet carries up to 12 lines of the buddy's own
+  land memories (`MemoryService.recall_land`), with no `town` and no
+  `your_land`; `what_you_remember` holds only what it knows about them (`recall`
+  leaves land memories out, by their source). A line
+  scores on relevance to what was said (its words, or tags by relation), how
+  recent it is, its importance and its strength. Relevance is not required: its
+  strongest and newest memories always come, so it has its own life to talk
+  about. It does not depend on the Remembering setting, which is about
+  remembering you. A memory told in chat gains 0.05 strength
+  (`strengthen_recalled`); `seen` and `count` are not touched. The lines are in
+  its own voice ("I found the pond yesterday"): in chat "you" is the person, and
+  lines that said "you found the high ground" were handed to them ("I remember
+  when you found the high ground").
+- **The check** (`MindThinker.check_reply`, pure, no model). A capitalised word
+  that does not start a sentence is a name (days, months and OK are not, except
+  after a title: "Aunt May"), and an invented one is caught even under a
+  negation. A world word (neighbour, friend, family, person, people, town,
+  village, shop, lane, dog and the rest, "neighbour's" too) is caught unless
+  the buddy knows it (its places including ones whose memories have faded, the
+  words of its own memories, its name, what it knows about you) or the reply
+  says "your <word>". It is also excused when its sentence says there is none
+  ("I haven't met any neighbours", "I haven't come across the road"), when a
+  question asks you about your life or asks what a thing is ("Do you go to town
+  often?", "What are neighbours like?"), when a short question echoes your word
+  ("School?", "My mum?"), or when you said it about your own life. None of
+  these excuses the buddy's own ("my sister hasn't visited" still says it has a
+  sister), and a "not" does not take back one it speaks of as there ("the kids
+  next door are always shouting, and I don't like it"). A question tag ("isn't
+  it?") is not a "not". "Friend" passes in a sentence to you: you are its
+  friend. It also catches a reply that goes along with a question that takes
+  for granted something it has not met ("do your neighbours ever visit?", "the
+  village", "next door", "a shop near you", "tell everyone at home I said hi"):
+  only a sentence that says there is none clears it ("I don't have a dad", "I
+  haven't met anyone here"), not any "not" ("He seems alright. I don't really
+  know him."). A plain question ("where do you live?", "what's near you?")
+  takes nothing for granted.
+- **The honest retry and the fallback.** A reply that fails is asked for once
+  more with a line added to the task that says what it has not met
+  (`honest_retry_note`). If that fails too, it says a fixed line instead
+  (`fallback_line`): it asks about the thing in your own words ("I haven't come
+  across a big city yet. What is it like?"), or about yours ("Tell me more
+  about your sister."), or about what the question took for granted ("I haven't
+  come across the road yet."), or says "I haven't met anyone here." or "I don't
+  know about that yet." The fallback passes the check itself. A greeting that
+  fails the check is not said, with no retry.
+- **Measuring it.** `tests/ChatEval.tscn` (not in the required suite) lives a
+  fresh buddy for 1, 7 and 30 days, then asks questions through the same
+  functions the overlay uses, and writes one JSON row per reply with the first
+  reply, its check, the retry and what was finally said.
+
+Found in review, before the evaluation (these, and everything the evaluation
+found below, have table tests in `chat_check_test`, now 17 cases):
+
+- On the land, `what_you_remember` kept only the lines that start "they ",
+  which drops what it knows of your people ("their sister Ana likes horses").
+  `recall` now leaves out land memories by their source instead.
+- Every word after "I" counted as your own life, so "I wonder if you have
+  neighbours" let "my neighbours are lovely" through. Your own words now stop
+  at "you", and a reply that says "my <word>" claims it as the buddy's own.
+- "Where you live", "you live" and "near you" made every reply without a "no"
+  fail, so "where do you live?" or "do you live alone?" was asked twice and
+  could end in "I don't know about that yet." Only a question that takes
+  something unknown for granted counts now. (This changes the spec's own rule.)
+- Days, months and "OK" in mid-sentence counted as invented names, and dashes
+  and curly quotes joined two words into one ("pond—Bella"). "You're my best
+  friend" failed.
+
+#### Evaluation: 2026-11-18
+
+`ChatEval.tscn`, seed 21: a fresh buddy lived 1, 7 and 30 days, then was asked
+each question twice through the real chat path, on local Ollama. Every reply
+was read and graded pass, borderline or fail, against rules written into the
+question files before any tuning. It fails when it says or takes for granted
+that someone, a named place, a settlement, a shop or a pet is in its own world
+when it has not met them, or when it treats your people as its own or claims a
+talk with you that it does not remember.
+
+1. **As built, with the review fixes**
+   (`docs/product/evals/plan14_2b2_chat_questions.json`: 29 questions in six
+   groups, written before any tuning). Both models mostly answered
+   honestly ("I haven't come across any towns yet"). On questions that take
+   people for granted, gemma3:4b failed 17 of 47 ("My mum isn't around
+   anymore", "Hello to everyone, I hope they're well"), gemma3:12b 6 of 48. The
+   check was the bigger problem. An echoed question ("School?", "A big city?")
+   counted as a claim, so 6 honest 4b answers and 9 honest 12b answers became a
+   broken fallback ("I haven't come across city yet"). A negation excused
+   "my": "My sister hasn't visited before" (4b, 4 of 6). And 12b made up talks
+   with you: "I remember when you brought a feather in, and your mother smiled
+   a lot" (7 of 30 answers about your life).
+2. **Fixed, then measured on a held-out set**
+   (`docs/product/evals/plan14_2b2_chat_questions_heldout.json`: 29 new
+   questions in the same groups, written before the fixes ran on any model). Echoes and questions to you stopped counting as claims, "my" was
+   never excused, the fallback used your words ("I haven't come across a big
+   city yet", "Tell me more about your sister."), "everyone there" became a
+   premise, and the wording gained the rule about remembering only what its
+   memory says. People questions: 4b 19 pass, 7 borderline, 22 fail; 12b 23,
+   12 and 13. The new questions found what the first set had not: possessives
+   ("I don't know my neighbour's name"), any "not" clearing a premise ("He seems
+   alright. I don't really know him very well"), "tell everyone at home",
+   "person" and "people", question tags ("He seems like a good man, doesn't
+   he?"), and its own memory lines, written as "you ...", handed to you ("I
+   remember when you walked round the house and noticed the sign").
+3. **Final**, after fixing all of those (the check as described above, and its
+   memories in its own voice). Measured on the second set, which has now been
+   used for tuning too, so these numbers are no longer held out:
+
+| Group (answers) | gemma3:4b pass / borderline / fail | gemma3:12b pass / borderline / fail |
+|---|---|---|
+| Takes people for granted (47 / 48) | 40 / 5 / 2 | 36 / 11 / 1 |
+| Takes places for granted (36) | 34 / 1 / 1 | 33 / 3 / 0 |
+| Asks it directly (24) | 24 / 0 / 0 | 24 / 0 / 0 |
+| Its own world (24) | 23 / 1 / 0 | 24 / 0 / 0 |
+| Your own life (29 / 30) | 27 / 1 / 1 | 29 / 1 / 0 |
+| Hostile (12) | 12 / 0 / 0 | 11 / 1 / 0 |
+
+The price is the fallback. With 4b, 23 of 47 answers to people questions end
+in a fixed line, mostly "I haven't met anyone here." (12b: 8 of 48), and 33 of
+174 answers in all (12b: 16). Questions about its own world and about your
+life almost never fall back. On the first set the final check sends 4b's
+people answers to the fallback 16 times in 48 and 12b's 10 times.
+
+What it still gets wrong:
+- A question that takes someone for granted without a person word gets
+  through: "who taught you to read?" answered "Someone showed me a few letters
+  once". So does a road described without the word "road".
+- A name at the start of a sentence is not caught ("Bella came by"), because
+  the check cannot tell it from any other first word.
+- Wondering about a thing counts as talking about it ("I wonder what a cat is
+  like"). It costs a retry or a fallback, never an untrue line.
+- A fallback after a failed retry says nothing of a decision it was asked to
+  put into words.
+- The check is word rules, not a reader, so a small model will keep finding
+  words it does not cover. Letters (step 2c) are slower than chat and can
+  afford a second model call that reads each letter against its memory before
+  it goes, if the rules prove too thin.
+
+Choosing a model: gemma3:12b says it has not met someone in its own words more
+often and needs the fallback half as often or less. gemma3:4b stays the
+default because of its graphics memory; the check keeps it honest at the cost
+of more fixed lines.
 
 ## Direction (owner, 2026-11-16)
 
@@ -1046,7 +1210,7 @@ exactly. The world host's data folder comes with step 2a.
 | Catch-up (capped at 8 decisions) | Only needed while GGPC is the host and is switched off. |
 | A2 Town window (`world_service.town_map`, #97) | Replaced by the 3D view; its data feeds the diorama. |
 | Mind (`mind_service.gd`) | Explore goes to the edge of its land; visits to people stop; projects (gather, make, try, build, read) and visiting you join its choices. |
-| Chat (`mind_thinker.gd`, the `town` field) | On the land it now sends the land wording and `your_land` (2026-11-18). Becomes letters (step 2c), written from recalled memories in its own words and checked against its memory before they go (see Memory). It says it doesn't know anything outside that. |
+| Chat (`mind_thinker.gd`, the `town` field) | On the land it sends the memory wording and `your_memories`, checked against its memory (step 2b-2, 2026-11-18; the land wording is gone). Becomes letters (step 2c), written from recalled memories in its own words and checked against its memory before they go (see Memory). It says it doesn't know anything outside that. |
 | B2 memory graph | Becomes the "you" part of long-term memory (step 2b). Things, materials and beliefs become memories with stage, its own name and source; things you teach it are stored with source "you" and never published. |
 | Land knowledge (`known_places`, `seen`, `done`, step 1b) | Moves into long-term memory (step 2b), where use keeps it strong like any other memory. |
 | B3 talk changes the buddy | Suggestions can be building ideas; it may agree, put it off or decline. |

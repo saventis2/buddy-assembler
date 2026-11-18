@@ -55,6 +55,20 @@ const LAND_DID := [0.5, 0.1, 0.3]
 const LAND_FELT := [0.6, 0.15, 0.6]
 const LAND_BELIEVES := [0.6, 0.05, 0.6]
 const USER_FACT_BONUS := 0.25
+# Plan 14 step 2b-2: telling a land memory in chat makes it a little stronger.
+const RECALL_BOOST := 0.05
+# Words that make a land memory relevant to what was said, by relation (recall_land).
+const LAND_TAGS := {
+	"believes": ["people", "person", "anyone", "anybody", "someone", "somebody", "everyone", "neighbour", "neighbours", "neighbor", "neighbors", "friend", "friends", "family", "mum", "mom", "dad", "mother", "father", "brother", "sister", "folks", "town", "village", "city", "alone", "lonely", "live", "lives", "visit", "play", "met", "meet"],
+	"found": ["place", "places", "where", "home", "land", "found", "near", "far", "around"],
+	"went_to": ["place", "places", "where", "home", "land", "found", "near", "far", "around"],
+	"heard_of": ["place", "places", "where", "home", "land", "found", "near", "far", "around"],
+	"couldnt_reach": ["place", "places", "where", "home", "land", "found", "near", "far", "around"],
+	"noticed": ["seen", "saw", "noticed", "found", "lately", "new"],
+	"did": ["do", "did", "doing", "today", "like", "likes", "favourite", "favorite", "fun", "play", "enjoy"],
+	"liked": ["do", "did", "doing", "today", "like", "likes", "favourite", "favorite", "fun", "play", "enjoy"],
+	"disliked": ["do", "did", "doing", "today", "like", "likes", "favourite", "favorite", "fun", "play", "enjoy"],
+}
 const SUBJECT_WORDS_FOR_USER := ["them", "they", "the person", "person", "user", "the user"]
 const SUBJECT_WORDS_REFUSED := ["you", "me", "i", "myself", "yourself", "buddy", "the buddy", "us", "we"]
 # Extracted facts that read like orders to the buddy are dropped. Kept narrow
@@ -686,12 +700,17 @@ func list_about_user(profile: Dictionary, now_unix: int) -> Array:
 	return rows
 
 
-func recall(profile: Dictionary, text: String, now_unix: int) -> Dictionary:
+# `include_land` false leaves out its own memories of the land: on the land
+# those go to chat apart, as 'your_memories' (recall_land), and this is only
+# what it knows about the person.
+func recall(profile: Dictionary, text: String, now_unix: int, include_land: bool = true) -> Dictionary:
 	var memory: Dictionary = _read(profile)
 	var words: Array = _keys(text)
 
 	var scored: Array = []
 	for edge in memory["edges"]:
+		if not include_land and str(edge.get("source", "")) == "land":
+			continue
 		var eff: float = _effective_strength(edge, now_unix)
 		if eff < FORGET_BELOW:
 			continue
@@ -744,6 +763,140 @@ func recall(profile: Dictionary, text: String, now_unix: int) -> Dictionary:
 			break
 		talks.append(entry["line"])
 	return {"facts": facts, "talks": talks}
+
+
+# Plan 14 step 2b-2: what it tells in chat comes from its own memories. Only
+# land edges, apart from what it knows about the person (that is recall). This
+# does not depend on the "Remembering" setting: that is about remembering the
+# person; its own memories are its life. Returns {"lines": [String], "ids": [int]}.
+func recall_land(profile: Dictionary, text: String, now_unix: int, limit: int = 12) -> Dictionary:
+	var memory: Dictionary = _read(profile)
+	var words: Array = _keys(text)
+	var plain: Dictionary = _plain_words(text)
+	var scored: Array = []
+	for edge in memory["edges"]:
+		if str(edge.get("source", "")) != "land":
+			continue
+		var eff: float = _effective_strength(edge, now_unix)
+		if eff < FORGET_BELOW:
+			continue
+		var line: String = _first_person(_render_edge(edge, now_unix))
+		if line == "":
+			continue
+		var relevant := 0.0
+		for key in _land_edge_keys(edge):
+			if words.has(key):
+				relevant = 1.0
+				break
+		if relevant <= 0.0:
+			# Tags are matched on the plain words too: "do", "did", "today",
+			# "like" and "where" are stopwords, so _keys never has them.
+			for tag in LAND_TAGS.get(str(edge.get("r", "")), []):
+				if plain.has(str(tag)) or plain.has(_stem(str(tag))):
+					relevant = 1.0
+					break
+		var seen: int = int(edge.get("seen", 0))
+		var score: float = relevant + _recency(seen, now_unix) + float(edge.get("importance", 0.0)) + 0.25 * eff
+		scored.append({"score": score, "seen": seen, "id": int(edge.get("id", 0)), "line": line})
+	scored.sort_custom(func(a, b): return a["score"] > b["score"] or (a["score"] == b["score"] and (a["seen"] > b["seen"] or (a["seen"] == b["seen"] and a["id"] < b["id"]))))
+	var lines: Array = []
+	var ids: Array = []
+	for entry in scored:
+		if lines.size() >= limit:
+			break
+		lines.append(entry["line"])
+		ids.append(entry["id"])
+	return {"lines": lines, "ids": ids}
+
+
+# Its own memories go to chat in its own voice ("I found the yard"): in chat
+# "you" is the person, and a model told "you found the yard" hands the memory
+# to them ("I remember when you found the yard"). Land words never say "you",
+# so only the line's own words change.
+func _first_person(line: String) -> String:
+	var words: PackedStringArray = line.split(" ")
+	var out := PackedStringArray()
+	var i := 0
+	while i < words.size():
+		if words[i] == "you" and i + 1 < words.size() and words[i + 1] == "are":
+			out.append("I")
+			out.append("am")
+			i += 2
+			continue
+		out.append("I" if words[i] == "you" else words[i])
+		i += 1
+	return " ".join(out)
+
+
+# Telling a memory makes it stronger. `seen` and `count` are not touched: they
+# mean when it last met the thing, and the lines use them.
+func strengthen_recalled(profile: Dictionary, ids: Array, now_unix: int) -> Dictionary:
+	var out: Dictionary = ensure_profile(profile)
+	for edge in out["memory"]["edges"]:
+		if ids.has(int(edge.get("id", -1))):
+			edge["strength"] = minf(1.0, float(edge.get("strength", 0.0)) + RECALL_BOOST)
+			edge["recalled"] = now_unix
+	return out
+
+
+# What it may talk about as real in its own world (lowercase words, as keys):
+# the places it knows (faded memories included), the words of its own memories
+# of the land, its own name, and what it knows of the person's life.
+func known_words(profile: Dictionary, land: Dictionary) -> Dictionary:
+	var known := {}
+	var mind: Dictionary = _dict(profile.get("mind", {}))
+	_add_keys(known, _place_name(land, str(land.get("home_place", "home"))))
+	var places: Dictionary = _dict(mind.get("known_places", {}))
+	for place_id in places.keys():
+		if str(_dict(places[place_id]).get("stage", "")) == "found":
+			_add_keys(known, _place_name(land, str(place_id)))
+	_add_keys(known, str(mind.get("name", "")))
+	for edge in _read(profile)["edges"]:
+		var source: String = str(edge.get("source", ""))
+		if source == "land":
+			_add_keys(known, str(edge.get("o_label", "")))
+		elif source == "talk" or source == "note" or str(edge.get("s", "")) == "user":
+			# The person's own people and things ("their sister Ana").
+			_add_keys(known, str(edge.get("s_label", "")))
+			_add_keys(known, str(edge.get("o_label", "")))
+	return known
+
+
+func _add_keys(known: Dictionary, text: String) -> void:
+	for key in _keys(text):
+		known[key] = true
+
+
+func _land_edge_keys(edge: Dictionary) -> Array:
+	var keys: Array = _keys(str(edge.get("o_label", "")))
+	var o: String = str(edge.get("o", ""))
+	var colon: int = o.find(":")
+	if colon >= 0:
+		keys.append(o.substr(colon + 1))
+	return keys
+
+
+# The lowercase words of a text, stopwords kept, each also without a plural s.
+func _plain_words(text: String) -> Dictionary:
+	var lowered: String = text.to_lower()
+	var spaced := ""
+	for i in lowered.length():
+		var code: int = lowered.unicode_at(i)
+		if (code >= 97 and code <= 122) or (code >= 48 and code <= 57) or code > 127:
+			spaced += lowered[i]
+		else:
+			spaced += " "
+	var result := {}
+	for word in spaced.split(" ", false):
+		result[word] = true
+		result[_stem(word)] = true
+	return result
+
+
+func _stem(word: String) -> String:
+	if word.length() > 3 and word.ends_with("s") and not word.ends_with("ss"):
+		return word.substr(0, word.length() - 1)
+	return word
 
 
 func counts(profile: Dictionary) -> Dictionary:

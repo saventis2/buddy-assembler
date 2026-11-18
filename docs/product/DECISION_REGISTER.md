@@ -66,3 +66,16 @@ Recorded on: 2026-11-18 (owner direction of 2026-11-16 and 2026-11-18, Plan 14)
   is on the desktop.
 - Note: GGPC hosts it for now, without a watchdog; a scheduled task that keeps
   it running comes with the move to Nexus. See `PLAN14_SMALL_BEGINNINGS.md`.
+
+## D-012: The buddy is told nothing about its world
+
+Recorded on: 2026-11-18 (owner direction of 2026-11-18, Plan 14)
+
+- Decision: the buddy is told nothing about its world. Everything it knows lives
+  in its own memory (short-term and long-term, its second brain), never in the
+  model. Whatever it says is checked against that memory before it goes out. You
+  will talk to it by letter through its console (step 2c).
+- Status: locked
+- Why: the owner wants it to learn everything for itself, and a small model
+  fills gaps from its training ("Mr. Henderson next door"). See
+  `PLAN14_SMALL_BEGINNINGS.md`, Memory.

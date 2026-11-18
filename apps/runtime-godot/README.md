@@ -91,12 +91,19 @@ backup folder over the one in the save folder. The old town, its six
 characters, quests and encounters are still in the pack and the code; with the
 setting off they work as before.
 
-On the land, chat tells the model it lives alone in a house on its land, with
-no town and nobody else. The default chat model, `gemma3:4b`, can still make
-up neighbours when a question takes them for granted. `gemma3:12b` does not,
-if it is installed and you can spare the graphics memory: set
+On the land, chat tells the model nothing about the buddy's world: it speaks
+from its own memories (`your_memories`), and what it says is checked against
+them before it goes out. A reply that names someone or something it has not
+met is asked for once more, told so, and if that fails too it says a plain
+line instead, such as "I haven't met anyone here." The default chat model,
+`gemma3:4b`, often goes along with questions that take people for granted
+("what's your neighbour's name?"), so it falls back to that line more: 23 of 47
+such answers in the 2b-2 evaluation, against 8 of 48 for `gemma3:12b`. If 12b
+is installed and you can spare the graphics memory, set
 `"chatModelName": "gemma3:12b"` in `settings.json`. The buddy also picks its
 name with the chat model, so it stays nameless while the model is off.
+`tests/ChatEval.tscn` measures this against a real model (see
+`docs/product/PLAN14_SMALL_BEGINNINGS.md`, step 2b-2).
 
 The current implementation is intentionally minimal and is a vertical-slice
 scaffold, not final production content.

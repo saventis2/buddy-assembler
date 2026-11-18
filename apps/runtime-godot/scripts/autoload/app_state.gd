@@ -987,11 +987,36 @@ func memory_discard_turns(upto: int) -> void:
     flush()
 
 
-func memory_recall(text: String) -> Dictionary:
+# `include_land` false: on the land its own memories go to chat apart
+# (memory_recall_land), so this is only what it knows about the person.
+func memory_recall(text: String, include_land: bool = true) -> Dictionary:
     if not memory_enabled():
         return {}
-    var recalled = _call_service_with_fallback("memory", "recall", [profile, text, _now_unix()], {})
+    var recalled = _call_service_with_fallback("memory", "recall", [profile, text, _now_unix(), include_land], {})
     return recalled if typeof(recalled) == TYPE_DICTIONARY else {}
+
+
+# Plan 14 step 2b-2: on the land, chat speaks from the buddy's own memories.
+# That is its life, not what it remembers of the person, so it does not depend
+# on memoryEnabled. Returns {"lines": [String], "ids": [int]}.
+func memory_recall_land(text: String) -> Dictionary:
+    var recalled = _call_service_with_fallback("memory", "recall_land", [profile, text, _now_unix()], {})
+    return recalled if typeof(recalled) == TYPE_DICTIONARY else {"lines": [], "ids": []}
+
+
+# Telling a memory makes it stronger. Saved soon, and only by the process that
+# holds the buddy (flush checks _may_write).
+func memory_strengthen_recalled(ids: Array) -> void:
+    if ids.is_empty():
+        return
+    _call_profile_service("memory", "strengthen_recalled", [profile, ids, _now_unix()])
+    flush_soon()
+
+
+# What the buddy may talk about as real in its own world (check_reply).
+func memory_known_words() -> Dictionary:
+    var known = _call_service_with_fallback("memory", "known_words", [profile, _land()], {})
+    return known if typeof(known) == TYPE_DICTIONARY else {}
 
 
 # Returns {"ok": bool, "id": int, "reason": String}.

@@ -11,7 +11,9 @@ Since 2026-11-17 (D-007, `PLAN14_SMALL_BEGINNINGS.md`) the buddy also has a
 small world of its own: it starts with a house and the land around it, alone,
 and finds and later builds the rest as it learns. Since 2026-11-18 (D-010) that
 world runs in a background world host, on by default; the desktop app is the
-buddy visiting you.
+buddy visiting you. Since 2026-11-18 (D-012) it is told nothing about its
+world: it knows what is in its own memory, and what it says is checked against
+that memory before it goes out.
 
 ## Target User
 
