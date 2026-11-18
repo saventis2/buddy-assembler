@@ -280,7 +280,8 @@ Status: `in_progress` (see `PLAN14_SMALL_BEGINNINGS.md`)
 - [x] Chat on the land: its own wording, measured on gemma3:4b and gemma3:12b (`LAND_CHAT_SYSTEM_PROMPT`, `mind_chat_test`)
 - [x] 2a-1 World host and the visit, behind a setting that is off by default (`world_host.gd`, `visit_controller.gd`, `buddy_whereabouts.gd`, `WorldHostTest`)
 - [x] 2a-2 The world host on by default (D-010), a journal line after the host was down, the host choosing the name (`_is_real_launch_args`, `note_still_world`, `note_name`, `WorldHostTest`)
-- [ ] 2b Memory: told nothing; short-term and long-term memory, the nightly pass, recall, the check on what it says (D-012)
+- [x] 2b-1 Memory: short-term (`memory.today`) and long-term memory, the nightly pass, fading, the alone belief (`memory_service.gd`, `MemoryNightTest`, D-012)
+- [ ] 2b-2 Memory: recall into chat, the check on what it says, the land wording goes
 - [ ] 2c Letters through the console, like a pen pal
 - [ ] 3 The world's rules and the things on the land
 - [ ] 4 2.5D view on the desktop
