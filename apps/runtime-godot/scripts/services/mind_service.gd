@@ -143,6 +143,10 @@ const LAND_START_COMPANY := 0.6
 const VISIT_COMPANY_PER_SLOT := 0.06
 # No visit of its own accord within this long after a visit ended.
 const SELF_VISIT_GAP_SECONDS := 3 * 3600
+# When the world host takes the buddy after being away this long (it was not
+# running, or the PC slept), the journal says there was a stretch it does not
+# remember; a shorter gap is only the host's ordinary restart.
+const HOST_GAP_NOTE_SECONDS := 3 * 3600
 # From this hour, and before 5, it is bedtime.
 const VISIT_BEDTIME_HOUR := 21
 # From 19:00 it is bedtime once this tired.
@@ -1848,7 +1852,11 @@ func consider_call(profile: Dictionary, land: Dictionary, now: int) -> Dictionar
 	var merged := ensure_profile(profile)
 	var mind: Dictionary = merged["mind"]
 	var busy_until := int(mind.get("busy_until", 0))
-	if now >= busy_until:
+	# It has only just woken up for the first time: nothing it minds leaving.
+	var journal_now: Array = mind["journal"]
+	var just_woke := not journal_now.is_empty() and typeof(journal_now[journal_now.size() - 1]) == TYPE_DICTIONARY \
+		and str((journal_now[journal_now.size() - 1] as Dictionary).get("activity_id", "")) == str(LAND_WAKE_ACTIVITY["id"])
+	if now >= busy_until or just_woke:
 		# Awake, but it is its bedtime: a visit now would end at once, so it
 		# comes in the morning instead.
 		if is_bedtime(merged, now):
@@ -1936,6 +1944,54 @@ func return_from_visit(profile: Dictionary, land: Dictionary, now: int, reason: 
 	mind["last_visit_end_unix"] = now
 	mind["visit_left_unix"] = 0
 	mind["visit_reason"] = ""
+	merged["mind"] = mind
+	return merged
+
+
+# The place it is in, as a name: the land's name for it, else "the house".
+func _place_name_here(land: Dictionary, place_id: String) -> String:
+	for place_variant in _usable_places(land):
+		if str((place_variant as Dictionary).get("id", "")) == place_id:
+			return str((place_variant as Dictionary).get("name", "the house"))
+	return "the house"
+
+
+# The world host took the buddy after a long gap in its life: one line says so,
+# dated before the decisions that catch up, so the journal reads in order. Does
+# nothing for a short gap, a buddy that has never decided anything, or one
+# that is out visiting.
+func note_still_world(profile: Dictionary, land: Dictionary, now: int) -> Dictionary:
+	var merged := ensure_profile(profile)
+	var mind: Dictionary = merged["mind"]
+	var last := int(mind.get("last_decision_unix", 0))
+	# Time it spent asleep (or busy) is not lost: the gap runs from when it would
+	# next have done something.
+	var since := maxi(last, int(mind.get("busy_until", 0)))
+	if last <= 0 or now - since < HOST_GAP_NOTE_SECONDS:
+		return merged
+	var place_id := str(mind.get("location", ""))
+	if place_id == "visiting":
+		return merged
+	var t := maxi(since + 1, now - MAX_CATCHUP_DECISIONS * DECISION_INTERVAL_SECONDS - 60)
+	_append_journal(mind, _visit_entry(
+		t, "reflect", place_id, _place_name_here(land, place_id), "still_world", "lost track of time", 0.0,
+		"There was a long stretch I don't remember. When I noticed again, everything was just where I left it.",
+		"place:%s" % place_id, _place_name_here(land, place_id)
+	))
+	merged["mind"] = mind
+	return merged
+
+
+# It chose its own name (the world host does this while the buddy is at home).
+func note_name(profile: Dictionary, now: int, chosen: String, land: Dictionary = {}) -> Dictionary:
+	var merged := ensure_profile(profile)
+	var mind: Dictionary = merged["mind"]
+	var place_id := str(mind.get("location", ""))
+	var place_name := _place_name_here(land, place_id)
+	_append_journal(mind, _visit_entry(
+		now, "reflect", place_id, place_name, "chose_name", "chose a name", 0.3,
+		"I thought about what to call myself. I'm %s." % chosen, "place:%s" % place_id, place_name
+	))
 	merged["mind"] = mind
 	return merged
 

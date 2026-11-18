@@ -82,18 +82,63 @@ func _ready() -> void:
         _role = "host"
         _load_read_only()
         return
-    var peeked: Dictionary = SaveStore.peek_versioned(
-        SETTINGS_PATH,
-        _default_settings,
-        SchemaMigrations.SETTINGS_CURRENT_VERSION,
-        SchemaMigrations.SETTINGS_MIGRATORS
-    )
+    # While a world host is running, it holds (or may take) the buddy, so every
+    # other process only reads it: tests, tools and checks included. Only a real
+    # launch then starts the visit (see is_real_launch and the overlay).
     var host_status := Whereabouts.read_status("%s/host.json" % HOST_DIR)
-    if bool(peeked.get("worldHost", false)) or Whereabouts.is_alive(host_status, Time.get_unix_time_from_system()):
+    if Whereabouts.is_alive(host_status, Time.get_unix_time_from_system()):
         _role = "desktop"
         _load_read_only()
         return
+    # With no host running, only a real launch of the app becomes the desktop
+    # because of the setting. A parse check, a test scene or a tool script also
+    # starts this autoload, and none of them may start a world host.
+    if _is_real_launch():
+        var peeked: Dictionary = SaveStore.peek_versioned(
+            SETTINGS_PATH,
+            _default_settings,
+            SchemaMigrations.SETTINGS_CURRENT_VERSION,
+            SchemaMigrations.SETTINGS_MIGRATORS
+        )
+        # A new install has no settings.json: the defaults count.
+        var s: Dictionary = peeked if not peeked.is_empty() else _default_settings()
+        if bool(s.get("worldHost", true)) and bool(s.get("smallBeginnings", true)):
+            _role = "desktop"
+            _load_read_only()
+            return
     load_state()
+
+
+# False for the processes that are not the app itself: a scene or script named
+# on the command line, an editor or import run, and the two smoke tests. Pure,
+# so tests can call it. (The engine removes the arguments it handles itself,
+# such as --headless, --path and --quit, before OS.get_cmdline_args() sees
+# them, so those can only be told apart by the display server; see
+# _is_real_launch.)
+func _is_real_launch_args(engine_args: PackedStringArray, user_args: PackedStringArray) -> bool:
+    for arg in engine_args:
+        if ["--quit", "--quit-after", "-s", "--script", "--check-only", "--import", "-e", "--editor"].has(arg):
+            return false
+        if (arg.ends_with(".tscn") or arg.ends_with(".scn")) and arg != "res://scenes/LaunchRouter.tscn":
+            return false
+    for arg in user_args:
+        if arg == "--ci-startup-smoke" or arg == "--verify-export-closure":
+            return false
+    return true
+
+
+func _is_real_launch() -> bool:
+    # The app always has a window. A headless process that is not the world host
+    # (the CI parse check `--headless --quit`, a tool) is never the desktop.
+    if DisplayServer.get_name() == "headless":
+        return false
+    return _is_real_launch_args(OS.get_cmdline_args(), OS.get_cmdline_user_args())
+
+
+# Whether this process is the app itself, with its window: only then does the
+# overlay start the visit (which may start a world host).
+func is_real_launch() -> bool:
+    return _is_real_launch()
 
 
 # For the world host and the desktop app at startup: everything is read without
@@ -868,6 +913,9 @@ func begin_simulation(seed_value: int, start_unix: int) -> bool:
         push_error("app_state: begin_simulation needs a headless process and a start time")
         return false
     _persistence_enabled = false
+    # A simulated life is always solo: tick_mind returns nothing in the desktop role.
+    _role = "solo"
+    _holding = false
     _fresh_start_failed = false
     _deferred_save_pending = false
     _sim_clock_unix = start_unix
@@ -1033,6 +1081,33 @@ func mind_return_from_visit(now: int, reason: String) -> void:
     if typeof(result) == TYPE_DICTIONARY:
         profile = result
         flush()
+
+
+# For the world host, when it takes the buddy after a long gap.
+func mind_note_still_world(now: int) -> void:
+    var before := _mind_journal_size()
+    var result = _call_service_with_fallback("mind", "note_still_world", [profile, _land(), now], null)
+    if typeof(result) == TYPE_DICTIONARY:
+        profile = result
+        if _mind_journal_size() > before:
+            flush()
+
+
+# For the world host: the buddy has chosen its name.
+func mind_note_name(now: int, chosen: String) -> void:
+    var result = _call_service_with_fallback("mind", "note_name", [profile, now, chosen, _land()], null)
+    if typeof(result) == TYPE_DICTIONARY:
+        profile = result
+        (profile["mind"] as Dictionary)["name"] = chosen
+        flush()
+
+
+func _mind_journal_size() -> int:
+    var mind_variant = profile.get("mind", null)
+    if typeof(mind_variant) != TYPE_DICTIONARY:
+        return 0
+    var journal_variant = (mind_variant as Dictionary).get("journal", [])
+    return (journal_variant as Array).size() if typeof(journal_variant) == TYPE_ARRAY else 0
 
 
 func mind_wants_company(now: int) -> bool:
@@ -1819,7 +1894,7 @@ func _default_settings() -> Dictionary:
         "continuityDigestEnabled": true,
         "autonomyEnabled": true,
         "smallBeginnings": true,
-        "worldHost": false,
+        "worldHost": true,
         "inventoryCompact": false,
         "mindModelEnabled": true,
         "mindModelUrl": "http://127.0.0.1:11434",

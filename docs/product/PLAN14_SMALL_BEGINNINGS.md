@@ -277,13 +277,79 @@ wrapper ends everything it started. Started from the windowed Godot program or
 an exported build, the host keeps running. The watchdog in 2a-2 removes this
 limit.
 
-Left for 2a-2:
+Left for 2a-2 (done below, except the watchdog):
 
 - a watchdog that starts the host at logon and restarts it (this adds a
-  scheduled task, so it needs the owner's OK);
-- a journal line after the host was down;
-- the setting on by default, with D-010;
-- the host choosing the name.
+  scheduled task: not done, moved to the move to Nexus, see 2a-2);
+- a journal line after the host was down (done);
+- the setting on by default, with D-010 (done);
+- the host choosing the name (done).
+
+### Step 2a-2, on by default: built 2026-11-18
+
+The world host is now on by default (D-010), for a buddy that starts small
+(`worldHost` and `smallBeginnings` both on; the host stops when either is off).
+What changed:
+
+- **Only a real launch is the desktop.** With the setting on by default, every
+  Godot process would otherwise take the desktop role and the overlay would start a
+  world host: the CI parse check (`godot --headless --quit`), the test scenes,
+  `--script` tools, the fast-forward tool. `AppState._is_real_launch()` is false
+  for a headless process (the engine removes `--headless`, `--path` and `--quit`
+  before `OS.get_cmdline_args()` sees them, so the display server is the only way
+  to tell), and `_is_real_launch_args()` is false for a named test scene, a
+  `--script`, editor or import run, and the two smoke tests. A simulated life
+  (`begin_simulation`) is always solo.
+- **A journal line after the host was down.** When the host takes the buddy after
+  three or more hours since its last decision (the host was not running, or the PC
+  slept), one line says there was a long stretch it does not remember
+  (`note_still_world`). It is dated before the decisions that catch up.
+- **The host chooses a name** for a buddy that has none, with the same rules and
+  request as the app (Ollama only, never a name someone in the world has); it
+  retries after ten minutes. The app still names a nameless buddy on arrival.
+
+The owner's two answers (2026-11-18):
+
+1. **World host on by default.**
+2. **No watchdog on this PC.** A scheduled task that keeps the host running comes
+   only with the move to Nexus. Until then the host runs once the app has started
+   it, keeps running after the app closes, and after a restart waits until the app
+   is opened again.
+
+Found in review and fixed:
+
+- **A running host makes every other process read-only.** While a host is
+  running, any other process takes the desktop role and only reads the buddy,
+  tests, tools and checks included, whether or not it is a real launch. Only a
+  real launch (`AppState.is_real_launch()`) starts the visit and may start a
+  host. Without this, a test or tool run against the real save while the host
+  holds the buddy would have been a second writer.
+- **Time asleep is not lost time.** The gap before the "long stretch" line now
+  runs from when the buddy would next have done something (the later of its last
+  decision and `busy_until`). It is checked once after the host takes the buddy,
+  and once after the PC slept.
+- **A new buddy wakes before it visits.** On a new install the host answered the
+  app's call before the buddy's first decision, so its journal began with "You
+  were at your desk…" and never woke. The host now lets a buddy that has never
+  decided anything wake first, and a buddy that has only just woken comes when
+  called (bedtime still waits for the morning).
+
+Checked end to end with throwaway saves:
+
+- **A new install with no settings at all:**
+  - the app took the desktop role by default and started the host;
+  - the host gave the new buddy its start on the land;
+  - its journal opens with the waking line, then "You were at your desk, so I went over to see you.";
+  - closing the app sent it home.
+- **The host alone, with a nameless buddy last active five hours ago:**
+  - it wrote the "long stretch" line, dated before the catch-up decisions;
+  - it caught up;
+  - it chose the name "Jinx" through the local model, and wrote "I thought about what to call myself. I'm Jinx."
+- **Safety:** after the full suite and the `--quit` parse check, no world host was running.
+
+The owner's own launcher (`Launch Buddy.bat`) runs the windowed Godot 4.6.2
+(the WinGet `godot` link), not the console wrapper, so a host started by the app
+keeps running after the app closes.
 
 ## Direction (owner, 2026-11-16)
 
@@ -331,6 +397,8 @@ and land features, and the six characters are kept as copies for later.
 | How it grows | **Its own second brain**, separate from your SecondBrain vault: notes it writes and reorganises itself, which its plans come from, so it develops itself over time. It is the buddy's long-term memory (see Memory). |
 | How you talk to it | **Through the console in its room, like emailing a pen pal.** You write a letter; it reads it when it goes to the console and writes back in its own time. |
 | What it starts knowing | **Nothing about its world.** It learns everything for itself, into short-term and long-term memory (see Memory). |
+| Watchdog | **Only after the move to Nexus.** Until then the host is started by the app and is not restarted after a PC restart. |
+| Nexus | **Expected after a delivery due around 2026-12-05, no guarantee.** |
 
 What this changes in this plan:
 
@@ -943,7 +1011,8 @@ met.
 | 1a | Fast-forward tool (built 2026-11-17) | A 90-day run prints a timeline; the same seed gives the same life; nothing is saved |
 | 1b | The house and land with discovery, behind a setting (built 2026-11-17): land areas, exploring the edge of what it knows, the known filter at `get_town()` and the three people reads; characters, quests and encounters off in the new world | The first 30 days meet the novelty targets in fast-forward, across seeds |
 | 1c | Fresh start with backup (built 2026-11-17); characters, quests and encounters archived; the new world on by default; D-007 | The old save is backed up and a fresh buddy starts |
-| 2a | World host: the world runs headless on GGPC with a watchdog; the desktop app becomes the visit and sends requests; calling it over; D-010 | Close the desktop app for a day; the journal shows it kept living |
+| 2a-1 | World host (built 2026-11-18): the world runs headless on GGPC; the desktop app becomes the visit and sends requests; calling it over | Close the desktop app for a day; the journal shows it kept living |
+| 2a-2 | On by default (built 2026-11-18): only a real launch is the desktop; a journal line after the host was down; the host chooses the name; D-010 | The CI parse check and the tests start no host |
 | 2b | Memory: it is told nothing; short-term memory, the nightly pass that keeps what matters, long-term memory with sources and strength, recall, and the check on everything it says; D-012 | The done-gate in Memory: no made-up people, places or things on days 1, 7 and 30, and every memory traces to its source |
 | 2c | Letters through the console, like a pen pal: it learns to use the console, reads your letters there and writes back in its own time, from recalled memories, checked before they are sent | A letter sent on day 1 is answered from what it remembers, with the desktop app closed |
 | 3 | The world's rules and the things on the land: materials and properties, ways of working, building needs, outcomes with reasons; noticing and naming | First own names appear in week 1 in fast-forward; the basics check passes |
@@ -959,7 +1028,7 @@ met.
 | 13 | Commerce: trade ideas, making things to sell, the market it runs | You can buy something it made at its stall |
 | 14 | Mind view and library shelves, on the desktop and (filtered) on Hardlight | Visible in both; matches the save |
 | 15 | Things you leave appear on the land | Found on its rounds, remembered by who left it |
-| Later | Move the host to Nexus once it is reachable; a fully 3D buddy; other characters; visitors leaving things through the website | Their own plans |
+| Later | Move the host to Nexus once it is reachable, with the watchdog that keeps it running (expected after a delivery due around 2026-12-05); a fully 3D buddy; other characters; visitors leaving things through the website | Their own plans |
 
 Order agreed 2026-11-18: memory (2b) and letters (2c) come right after the
 world host (2a). Everything after them reads and writes memory, and letters

@@ -54,3 +54,15 @@ Recorded on: 2026-11-17 (owner direction of 2026-11-16, Plan 14)
   develop over time, not to start in a town full of people. See
   `PLAN14_SMALL_BEGINNINGS.md`.
 
+## D-010: The world host
+
+Recorded on: 2026-11-18 (owner direction of 2026-11-16 and 2026-11-18, Plan 14)
+
+- Decision: the buddy's world runs in a background world host, and the desktop
+  app is the buddy visiting you. It is on by default. The buddy is in one place
+  at a time, and only the program it is in writes it.
+- Status: locked
+- Why: the owner wants it always active, its world going on whether or not it
+  is on the desktop.
+- Note: GGPC hosts it for now, without a watchdog; a scheduled task that keeps
+  it running comes with the move to Nexus. See `PLAN14_SMALL_BEGINNINGS.md`.

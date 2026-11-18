@@ -1082,7 +1082,7 @@ func _build_settings_sections() -> void:
     _settings_btn_world_host = Button.new()
     _settings_btn_world_host.tooltip_text = "When on, your buddy lives on its own land in a background program that keeps running when this app is closed. This app is your buddy visiting you: it comes over when you open the app (unless it is asleep or busy) and goes home at bedtime, after two quiet hours, when you send it home, or when you close the app. Takes effect the next time the app starts."
     _settings_btn_world_host.pressed.connect(func() -> void:
-        _set_setting_with_audit("worldHost", not bool(AppState.settings.get("worldHost", false)), "menu")
+        _set_setting_with_audit("worldHost", not bool(AppState.settings.get("worldHost", true)), "menu")
         AppState.flush()
         _refresh_settings_menu()
     )
@@ -4412,7 +4412,7 @@ func _refresh_settings_menu() -> void:
     if _settings_btn_autonomy != null:
         _settings_btn_autonomy.text = "Acts on its own: %s" % ("on" if bool(AppState.settings.get("autonomyEnabled", true)) else "off")
     if _settings_btn_world_host != null:
-        _settings_btn_world_host.text = "World host: %s" % ("on" if bool(AppState.settings.get("worldHost", false)) else "off")
+        _settings_btn_world_host.text = "World host: %s" % ("on" if bool(AppState.settings.get("worldHost", true)) else "off")
     _refresh_visit_menu()
     if _settings_btn_model != null:
         _settings_btn_model.text = "Thinking model: %s" % ("on" if bool(AppState.settings.get("mindModelEnabled", true)) else "off")
@@ -6752,7 +6752,9 @@ func _note_visit_interaction() -> void:
 
 
 func _start_visit_controller() -> void:
-    if AppState.role() != "desktop":
+    # A test, a check or a tool that reads the buddy while a host runs is not the
+    # app: it never calls the buddy over or starts a host.
+    if AppState.role() != "desktop" or not AppState.is_real_launch():
         return
     _visit = VisitController.new()
     _visit.arrived.connect(_on_visit_arrived)

@@ -6,9 +6,12 @@ extends Node
 # node; there is no scene). While it holds the buddy it is the only process
 # that writes profile.json and world_state.json; it never writes settings.json.
 # The buddy is in one place at a time, by hand-over (buddy_whereabouts.gd).
-# The host never calls a language model.
+# The host runs only the land life, and only while worldHost and smallBeginnings
+# are both on. Its one use of a language model is choosing a name for a buddy
+# that has none (_maybe_choose_name); everything else it does without one.
 
 const Whereabouts = preload("res://scripts/persistence/buddy_whereabouts.gd")
+const MindThinker = preload("res://scripts/services/mind_thinker.gd")
 
 const HOST_TICK_SECONDS := 10
 const DESKTOP_REASONS := ["bedtime", "quiet", "sent", "closed"]
@@ -17,6 +20,8 @@ const DESKTOP_REASONS := ["bedtime", "quiet", "sent", "closed"]
 const HANDOVER_GRACE_SECONDS := 60
 # A call older than this (from an app that has since closed) is not answered.
 const REQUEST_MAX_AGE_SECONDS := 600
+# After a name request fails (or its answer is not used), wait this long.
+const NAME_RETRY_SECONDS := 600
 
 var _base: String = AppState.HOST_DIR
 var _timer: Timer
@@ -31,6 +36,13 @@ var _status: Dictionary = {}
 var _pending: Dictionary = {}
 # When this process last handed the buddy over (0: never).
 var _handed_over_at := 0.0
+# Set after taking the buddy or after the PC slept: the journal may say once
+# that time went by (mind_service.note_still_world).
+var _note_gap := false
+# Choosing a name: the request in flight, and when to try again.
+var _name_http: HTTPRequest = null
+var _name_pending := false
+var _name_next_try := 0.0
 
 
 func _ready() -> void:
@@ -84,13 +96,15 @@ func _tick() -> void:
 	# 1. Track being awake.
 	if _last_tick > 0.0 and now - _last_tick > 3.0 * HOST_TICK_SECONDS:
 		_awake_since = now
+		# The PC slept: the journal may need to say time went by (see 5).
+		_note_gap = true
 	_last_tick = now
 	# 2. Settings.
 	var mtime := FileAccess.get_modified_time(AppState.SETTINGS_PATH)
 	if mtime != _settings_mtime:
 		_settings_mtime = mtime
 		AppState.reload_settings_read_only()
-		if not bool(AppState.settings.get("worldHost", false)):
+		if not bool(AppState.settings.get("worldHost", true)) or not bool(AppState.settings.get("smallBeginnings", true)):
 			_stop()
 			return
 	# 3. Status and heartbeat.
@@ -139,9 +153,20 @@ func _tick() -> void:
 				reason = str(desktop["reason"])
 			AppState.mind_return_from_visit(int(now), reason)
 			print("world_host: took the buddy back (%s)" % reason)
+		# A long gap since its last decision (the host was not running) goes in the
+		# journal, once (see 5); a visit's return has just set it to now.
+		_note_gap = true
 		_status["state"] = "home"
 		_status["reason"] = ""
-	# 5. Holding.
+	# 5. Holding. Once after taking the buddy or after the PC slept, a gap of
+	# hours goes in the journal before it catches up.
+	if _note_gap:
+		_note_gap = false
+		AppState.mind_note_still_world(int(now))
+	# A buddy that has never decided anything has not woken up yet: it wakes
+	# first, so its first line is the waking line, and then answers any call.
+	if _never_decided():
+		AppState.tick_mind(int(now))
 	var present := _desktop_present(desktop, now)
 	# 5.1 Requests.
 	for request in Whereabouts.take_requests(_base):
@@ -181,7 +206,89 @@ func _tick() -> void:
 		return
 	# 5.4 Otherwise it lives its life.
 	AppState.tick_mind(int(now))
+	_maybe_choose_name(now)
 	_write_status()
+
+
+# 5.5 A buddy with no name asks the thinking model for one (the desktop does the
+# same on arrival if the host has not yet). Same rules as the overlay: Ollama
+# only, and never a name someone in the world already has.
+func _maybe_choose_name(now: float) -> void:
+	if _name_pending or now < _name_next_try:
+		return
+	var mind_variant = AppState.profile.get("mind", {})
+	if typeof(mind_variant) != TYPE_DICTIONARY or str((mind_variant as Dictionary).get("name", "")) != "":
+		return
+	if not bool(AppState.settings.get("mindModelEnabled", true)):
+		return
+	if str(AppState.settings.get("chatBackend", "ollama")) != "ollama":
+		return
+	var url := MindThinker.endpoint(str(AppState.settings.get("mindModelUrl", MindThinker.DEFAULT_URL)))
+	if url == "":
+		return
+	if _name_http == null:
+		_name_http = HTTPRequest.new()
+		_name_http.timeout = MindThinker.REQUEST_TIMEOUT_SECONDS
+		_name_http.body_size_limit = MindThinker.MAX_REPLY_BYTES
+		_name_http.max_redirects = 0
+		_name_http.request_completed.connect(_on_name_completed)
+		add_child(_name_http)
+	var model := str(AppState.settings.get("chatModelName", AppState.settings.get("mindModelName", MindThinker.DEFAULT_MODEL)))
+	var about := {
+		"mood": str(AppState.get_telemetry_snapshot().get("mood", "calm")),
+		"names_already_taken": ", ".join(_taken_names()),
+	}
+	var body := MindThinker.build_name_request(model, about)
+	if _name_http.request(url, ["Content-Type: application/json"], HTTPClient.METHOD_POST, body) != OK:
+		_name_next_try = now + NAME_RETRY_SECONDS
+		return
+	_name_pending = true
+
+
+# The names of the people in the world, which a new name must not be.
+func _taken_names() -> Array:
+	var names: Array = []
+	var world_variant = AppState.world_state.get("world", null)
+	if typeof(world_variant) != TYPE_DICTIONARY:
+		return names
+	var npcs_variant = (world_variant as Dictionary).get("npcs", [])
+	if typeof(npcs_variant) != TYPE_ARRAY:
+		return names
+	for npc_variant in npcs_variant:
+		if typeof(npc_variant) == TYPE_DICTIONARY:
+			var npc_name := str((npc_variant as Dictionary).get("name", "")).strip_edges()
+			if npc_name != "":
+				names.append(npc_name)
+	return names
+
+
+func _on_name_completed(result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
+	_name_pending = false
+	var now := Time.get_unix_time_from_system()
+	if result != HTTPRequest.RESULT_SUCCESS or response_code != 200:
+		_name_next_try = now + NAME_RETRY_SECONDS
+		return
+	var named: Dictionary = MindThinker.parse_name_reply(body.get_string_from_utf8())
+	var chosen := str(named.get("name", ""))
+	var usable := bool(named.get("ok", false)) and chosen != ""
+	for taken in _taken_names():
+		if str(taken).to_lower() == chosen.to_lower():
+			usable = false
+	# The buddy may have gone to the desktop while the model was thinking, and
+	# the desktop may have named it: then this answer is dropped.
+	var mind_variant = AppState.profile.get("mind", {})
+	if not AppState.is_holding_buddy() or typeof(mind_variant) != TYPE_DICTIONARY or str((mind_variant as Dictionary).get("name", "")) != "":
+		usable = false
+	if not usable:
+		_name_next_try = now + NAME_RETRY_SECONDS
+		return
+	AppState.mind_note_name(int(now), chosen)
+	print("world_host: the buddy chose its name")
+
+
+func _never_decided() -> bool:
+	var mind_variant = AppState.profile.get("mind", {})
+	return typeof(mind_variant) == TYPE_DICTIONARY and int((mind_variant as Dictionary).get("decision_count", 0)) == 0
 
 
 # 6. Hand over.

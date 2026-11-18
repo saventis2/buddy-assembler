@@ -212,7 +212,7 @@ func _poll() -> void:
 		return
 	_emit_health("running" if host_alive else "not_running")
 	if not host_alive:
-		if not bool(AppState.settings.get("worldHost", false)):
+		if not bool(AppState.settings.get("worldHost", true)):
 			# The setting is off (a host was running at start and stopped because
 			# of it): no host will come, so the buddy stays with you.
 			_stay_with_you(now)
@@ -293,7 +293,7 @@ func _go_home(reason: String) -> void:
 	# host is running), the visit ends here. Otherwise the save would say
 	# "visiting" with nobody to finish it, and the next run would count the
 	# visit as time on its land.
-	if should_finish_here(bool(AppState.settings.get("worldHost", false)), Whereabouts.is_alive(host, now)) and _buddy_is_visiting():
+	if should_finish_here(bool(AppState.settings.get("worldHost", true)), Whereabouts.is_alive(host, now)) and _buddy_is_visiting():
 		AppState.mind_return_from_visit(int(now), reason)
 	AppState.release_buddy()
 	Whereabouts.release(_base, "desktop", _pid)
