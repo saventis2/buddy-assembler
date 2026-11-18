@@ -745,7 +745,14 @@ func tick_mind(now_unix: int) -> Array:
         profile = next_profile
         # Where it went and who it saw are facts, so the memory graph links
         # them with what the person says about the same places and people.
-        _call_profile_service("memory", "record_town_events", [profile, events])
+        if small:
+            # On the land, today is kept and sorted into long-term memory at bedtime.
+            var land := _land()
+            _call_profile_service("memory", "note_today", [profile, events, land])
+            if bool(_call_service_with_fallback("memory", "night_pass_due", [profile, events, land, now_unix], false)):
+                _call_profile_service("memory", "nightly_pass", [profile, land, now_unix])
+        else:
+            _call_profile_service("memory", "record_town_events", [profile, events])
         for event_variant in events:
             if typeof(event_variant) == TYPE_DICTIONARY and str((event_variant as Dictionary).get("buy_want", "")) != "":
                 _buy_want(str((event_variant as Dictionary)["buy_want"]), int((event_variant as Dictionary).get("t", 0)))

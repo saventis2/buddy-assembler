@@ -351,6 +351,62 @@ The owner's own launcher (`Launch Buddy.bat`) runs the windowed Godot 4.6.2
 (the WinGet `godot` link), not the console wrapper, so a host started by the app
 keeps running after the app closes.
 
+### Step 2b-1, the buddy's memory: built 2026-11-18
+
+What the buddy keeps of its days on the land. Nothing it does changes: the town
+and land runs give the same rows and decisions as before, and the memory only
+grows. Chat does not use it yet (step 2b-2).
+
+- **Short-term memory is `memory.today`.** Each land decision adds one compact
+  item: when, the place, the activity and how it felt, plus, where there is one,
+  the place it found, the sign, the failed try or the sight, in the event's own
+  words. It holds at most 200 items; past that, the oldest goes. The journal is
+  not used for this, because it keeps only its last 40 lines. With
+  `small_beginnings()` off, the old town still records its events exactly as
+  before.
+- **The nightly pass.** When the buddy goes to bed, the pass turns today into
+  long-term memories, empties it and records when it ran. If it has not slept for
+  24 hours, the pass runs at its next decision instead. It keeps places found,
+  signs heard of, failed tries, sights noticed, places gone to and things done.
+  A buddy born before memory brings what its mind already knew on its first
+  pass: found places, signs, sights and things done.
+- **What it likes is what it likes most.** Each "did" memory keeps how every
+  time felt. It likes its five favourite activities by average feeling, among
+  those done at least three times with an average of 0.25 or more. It dislikes
+  an activity whose average is -0.1 or less. A single good moment is not a
+  liking, since one decision in six on the land feels at least 0.5. A threshold
+  on single moments had it "like" 52 of its 58 activities in 90 days. A liking
+  that drops out of the five is no longer reinforced and fades.
+- **Long-term memory is the B2 graph** (`memory_service.gd`), as edges with
+  `source: "land"` about stable world ids (`place:`, `sight:`, `activity:`,
+  `belief:`). A sign or a failed try is kept in the buddy's own words, never
+  the real name of a place it has not found.
+- **Fading** is B2's own. Strength halves every 21 days unless something
+  reinforces it, a memory below 0.05 is forgotten, and the weakest go first
+  above 300 edges.
+- **The alone belief.** A week after its first pass, if it has met nobody, it
+  believes "you are the only one here", and the belief grows stronger each
+  night.
+- **Chat is unchanged.** Land memories join a reply only when they match its
+  words, as town memories do. They are not yet shown to the model by default.
+
+Measured in fast-forward (90 days, land): `untraceable` is 0 in both runs, the
+belief forms on day 8, and the edges stay well under the cap of 300.
+
+| Seed | Edges at the end (by relation) | Max edges | Alone belief |
+|---|---|---|---|
+| 21 | believes 1, couldnt_reach 2, did 58, found 4, liked 21, noticed 58, went_to 14 (total 158) | 205 | day 8 |
+| 7 | believes 1, couldnt_reach 1, did 59, disliked 2, found 1, liked 17, noticed 58, went_to 14 (total 153) | 201 | day 8 |
+
+The "liked" counts include older likings that are still fading; only the
+current five are reinforced each night.
+
+For step 2b-2: by day 90 most "found" and "heard of" memories have faded,
+because nothing reinforces them once the place is known (at 30 days, seed 21,
+there were 13 found and 10 heard of). So the check on what it says must also use
+what it knows of its land (`known_places`), so that a place it found long ago
+and seldom visits does not count as unknown.
+
 ## Direction (owner, 2026-11-16)
 
 The buddy starts out knowing very little. It does not start in a town full of

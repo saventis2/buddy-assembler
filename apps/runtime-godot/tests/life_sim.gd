@@ -7,6 +7,7 @@ extends RefCounted
 
 const ContentLoader = preload("res://scripts/content/content_loader.gd")
 const MindService = preload("res://scripts/services/mind_service.gd")
+const MemoryService = preload("res://scripts/services/memory_service.gd")
 
 # 2027-01-01 00:00, read as local time (the simulation has no time zone).
 const DEFAULT_START_UNIX := 1798761600
@@ -71,6 +72,8 @@ static func run(app_state: Node, config: Dictionary) -> Dictionary:
 	var need_stats := {}
 	for need_key in MOOD_KEYS:
 		need_stats[need_key] = {"min": 1.0, "max": 0.0, "samples": 0, "at_limit": 0}
+	var memory_service = MemoryService.new()
+	var memory_max_edges := 0
 
 	for i in range(days * slots_per_day):
 		var t: int = start + i * interval
@@ -185,6 +188,8 @@ static func run(app_state: Node, config: Dictionary) -> Dictionary:
 				stats["samples"] = int(stats["samples"]) + 1
 				if level <= 0.02 or level >= 0.98:
 					stats["at_limit"] = int(stats["at_limit"]) + 1
+			var slot_memory: Dictionary = memory_service.land_memory_report(state.profile, {"home_place": home_place})
+			memory_max_edges = maxi(memory_max_edges, int(slot_memory.get("total_edges", 0)))
 		decisions_total += events.size()
 
 		if i % slots_per_day == slots_per_day - 1:
@@ -297,6 +302,7 @@ static func run(app_state: Node, config: Dictionary) -> Dictionary:
 			"night_rows": night_rows,
 			"top10_share": _snap(top10_share),
 			"needs": needs_report,
+			"memory_max_edges": memory_max_edges,
 		},
 		"final": {
 			"location": str(state.profile.get("mind", {}).get("location", "")),
@@ -308,6 +314,7 @@ static func run(app_state: Node, config: Dictionary) -> Dictionary:
 			"top_trait": str(state.get_behavior_context().get("top_trait", "")),
 			"meso": int(state.get_inventory_snapshot().get("meso", 0)),
 			"journal_tail": tail,
+			"memory": memory_service.land_memory_report(state.profile, {"home_place": home_place}),
 			"known_places": {"found": known_found, "signs": known_signs},
 		},
 	}
@@ -393,6 +400,10 @@ static func format_text(report: Dictionary, journal: String) -> String:
 			var first_entry: Dictionary = first_variant
 			var first_stamp: Dictionary = Time.get_datetime_dict_from_unix_time(int(first_entry.get("t", 0)))
 			lines.append("  day %d %02d:%02d  %s %s" % [int(firsts_day.get("day", 0)), int(first_stamp.get("hour", 0)), int(first_stamp.get("minute", 0)), str(first_entry.get("kind", "")), str(first_entry.get("name", first_entry.get("id", "")))])
+	var memory: Dictionary = (report.get("final", {}) as Dictionary).get("memory", {})
+	var alone_t: int = int(memory.get("alone_belief_t", 0))
+	var alone_text := "never" if alone_t <= 0 else "day %d" % (int((alone_t - start) / SECONDS_PER_DAY) + 1)
+	lines.append("memory: edges %s, total %d, max %d, alone belief %s, untraceable %d, today %d" % [_counts_text(memory.get("edges", {})), int(memory.get("total_edges", 0)), int(totals.get("memory_max_edges", 0)), alone_text, int(memory.get("untraceable", 0)), int(memory.get("today", 0))])
 	var final: Dictionary = report.get("final", {})
 	lines.append("Final: at %s, favourite %s, least %s, bond level %d, top trait %s, meso %d" % [str(final.get("location", "")), str(final.get("favourite", "")), str(final.get("least", "")), int(final.get("bond_level", 1)), str(final.get("top_trait", "")), int(final.get("meso", 0))])
 	for tail_text in final.get("journal_tail", []):

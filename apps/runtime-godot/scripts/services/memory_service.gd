@@ -29,6 +29,31 @@ const TALK_REINFORCE := 0.3
 const TOWN_START_STRENGTH := 0.5
 const TOWN_REINFORCE := 0.1
 const TOWN_IMPORTANCE := 0.3
+# Plan 14 step 2b-1: what the buddy keeps of its days on the land.
+# How many items today's short-term list holds; past it the oldest goes.
+const TODAY_LIMIT := 200
+# The pass runs at the next decision if the buddy has not slept for this long.
+const NIGHT_PASS_EVERY := 24 * 3600
+# What it likes (_note_likes): its favourite few activities by how they felt
+# on average, once done a few times. A single good moment is not a liking: one
+# decision in six on the land feels at least 0.5.
+const LIKED_TOP := 5
+const LIKED_MIN_DONE := 3
+const LIKED_AVERAGE := 0.25
+# An activity that felt this bad on average is disliked.
+const DISLIKED_AVERAGE := -0.1
+# Days on the land with nobody met before it believes it is alone.
+const ALONE_DAYS := 7
+const MAX_TODAY_TEXT := 200
+# Land relations: [start strength, boost when met again, importance].
+const LAND_FOUND := [0.8, 0.2, 0.7]
+const LAND_WENT_TO := [0.5, 0.1, 0.3]
+const LAND_NOTICED := [0.7, 0.1, 0.5]
+const LAND_HEARD_OF := [0.6, 0.1, 0.5]
+const LAND_COULDNT_REACH := [0.6, 0.1, 0.4]
+const LAND_DID := [0.5, 0.1, 0.3]
+const LAND_FELT := [0.6, 0.15, 0.6]
+const LAND_BELIEVES := [0.6, 0.05, 0.6]
 const USER_FACT_BONUS := 0.25
 const SUBJECT_WORDS_FOR_USER := ["them", "they", "the person", "person", "user", "the user"]
 const SUBJECT_WORDS_REFUSED := ["you", "me", "i", "myself", "yourself", "buddy", "the buddy", "us", "we"]
@@ -276,6 +301,275 @@ func record_town_events(profile: Dictionary, events: Array) -> Dictionary:
 	return out
 
 
+# --- The land: today, and the nightly pass -----------------------------------
+
+# Short-term memory: one compact item per land decision.
+func note_today(profile: Dictionary, events: Array, land: Dictionary) -> Dictionary:
+	var out: Dictionary = ensure_profile(profile)
+	var memory: Dictionary = out["memory"]
+	var today: Array = _today(memory)
+	for event in events:
+		if typeof(event) != TYPE_DICTIONARY:
+			continue
+		var item := {
+			"t": int(event.get("t", 0)),
+			"place": str(event.get("place_id", "")),
+			"place_name": str(event.get("place_name", "")),
+			"activity": str(event.get("activity_id", "")),
+			"activity_label": str(event.get("activity_label", "")),
+			"valence": float(event.get("valence", 0.0)),
+		}
+		for pair in [["found", "found_place"], ["sign", "sign_of"], ["blocked", "blocked_at"], ["sight", "sight"]]:
+			var value: String = str(event.get(pair[1], ""))
+			if value != "":
+				item[pair[0]] = value
+		if item.has("found") or item.has("sign") or item.has("blocked") or item.has("sight"):
+			item["text"] = str(event.get("text", "")).substr(0, MAX_TODAY_TEXT)
+		today.append(item)
+	if today.size() > TODAY_LIMIT:
+		today = today.slice(today.size() - TODAY_LIMIT)
+	memory["today"] = today
+	return out
+
+
+# True when the buddy has gone to bed, or has not slept for a day and has
+# something to sort.
+func night_pass_due(profile: Dictionary, events: Array, land: Dictionary, now: int) -> bool:
+	for event in events:
+		if typeof(event) != TYPE_DICTIONARY:
+			continue
+		var activity: Dictionary = _land_activity(land, str(event.get("place_id", "")), str(event.get("activity_id", "")))
+		if activity.has("until_hour"):
+			return true
+	var memory: Dictionary = _read(profile)
+	var last: int = int(memory.get("last_pass_t", 0))
+	return last > 0 and now - last >= NIGHT_PASS_EVERY and not _today(memory).is_empty()
+
+
+# Sorts today into long-term memories: every one is about a stable world id.
+func nightly_pass(profile: Dictionary, land: Dictionary, now: int) -> Dictionary:
+	var out: Dictionary = ensure_profile(profile)
+	var memory: Dictionary = out["memory"]
+	var me := {"id": "self", "label": "you"}
+	if int(memory.get("last_pass_t", 0)) <= 0:
+		_seed_from_mind(memory, out.get("mind", {}), land, me, now)
+	for item_variant in _today(memory):
+		if typeof(item_variant) != TYPE_DICTIONARY:
+			continue
+		var item: Dictionary = item_variant
+		var t: int = int(item.get("t", now))
+		var text: String = str(item.get("text", ""))
+		var found: String = str(item.get("found", ""))
+		if found != "":
+			_upsert(memory, me, "found", {"id": "place:" + found, "label": _place_name(land, found)}, LAND_FOUND[2], "land", LAND_FOUND[0], LAND_FOUND[1], t, 0)
+		var sign_id: String = str(item.get("sign", ""))
+		if sign_id != "":
+			# Its own words: it does not know the place's name yet.
+			_upsert(memory, me, "heard_of", {"id": "place:" + sign_id, "label": text}, LAND_HEARD_OF[2], "land", LAND_HEARD_OF[0], LAND_HEARD_OF[1], t, 0)
+		var blocked: String = str(item.get("blocked", ""))
+		if blocked != "":
+			_upsert(memory, me, "couldnt_reach", {"id": "place:" + blocked, "label": text}, LAND_COULDNT_REACH[2], "land", LAND_COULDNT_REACH[0], LAND_COULDNT_REACH[1], t, 0)
+		var sight_id: String = str(item.get("sight", ""))
+		if sight_id != "":
+			var line: String = _sight_line(land, sight_id)
+			_upsert(memory, me, "noticed", {"id": "sight:" + sight_id, "label": line if line != "" else text}, LAND_NOTICED[2], "land", LAND_NOTICED[0], LAND_NOTICED[1], t, 0)
+		var place_id: String = str(item.get("place", ""))
+		if place_id != "" and place_id != "visiting":
+			var place_name: String = str(item.get("place_name", ""))
+			_upsert(memory, me, "went_to", {"id": "place:" + place_id, "label": place_name if place_name != "" else place_id}, LAND_WENT_TO[2], "land", LAND_WENT_TO[0], LAND_WENT_TO[1], t, 0)
+		var activity_id: String = str(item.get("activity", ""))
+		if activity_id != "":
+			var label: String = str(item.get("activity_label", ""))
+			var activity := {"id": "activity:" + activity_id, "label": label if label != "" else activity_id}
+			var did: Dictionary = _upsert(memory, me, "did", activity, LAND_DID[2], "land", LAND_DID[0], LAND_DID[1], t, 0)
+			# How each time felt, so what it likes comes from all of them (_note_likes).
+			did["vsum"] = float(did.get("vsum", 0.0)) + float(item.get("valence", 0.0))
+			did["vn"] = int(did.get("vn", 0)) + 1
+	_note_likes(memory, me, now)
+	var first: int = int(memory.get("first_pass_t", 0))
+	if first > 0 and now - first >= ALONE_DAYS * 86400 and not _has_met_anyone(memory):
+		_upsert(memory, me, "believes", {"id": "belief:alone", "label": "you are the only one here"}, LAND_BELIEVES[2], "land", LAND_BELIEVES[0], LAND_BELIEVES[1], now, 0)
+	memory["today"] = []
+	memory["last_pass_t"] = now
+	_prune(memory, now)
+	return out
+
+
+# What it likes is what it likes most, not everything that once went well:
+# its LIKED_TOP activities by how they felt on average, among those done at
+# least LIKED_MIN_DONE times. One that falls out of them is no longer
+# reinforced and fades. It dislikes one that felt bad on average.
+func _note_likes(memory: Dictionary, me: Dictionary, now: int) -> void:
+	var ranked: Array = []
+	for edge in memory["edges"]:
+		if str(edge.get("source", "")) != "land" or str(edge.get("r", "")) != "did":
+			continue
+		var n: int = int(edge.get("vn", 0))
+		if n < LIKED_MIN_DONE:
+			continue
+		ranked.append({"id": str(edge.get("o", "")), "label": str(edge.get("o_label", "")), "average": float(edge.get("vsum", 0.0)) / float(n)})
+	# Ties go by id, so the same life always likes the same things.
+	ranked.sort_custom(func(a, b): return float(a["average"]) > float(b["average"]) or (float(a["average"]) == float(b["average"]) and str(a["id"]) < str(b["id"])))
+	var liked := 0
+	for row in ranked:
+		var activity := {"id": str(row["id"]), "label": str(row["label"])}
+		if liked < LIKED_TOP and float(row["average"]) >= LIKED_AVERAGE:
+			_upsert(memory, me, "liked", activity, LAND_FELT[2], "land", LAND_FELT[0], LAND_FELT[1], now, 0)
+			liked += 1
+		elif float(row["average"]) <= DISLIKED_AVERAGE:
+			_upsert(memory, me, "disliked", activity, LAND_FELT[2], "land", LAND_FELT[0], LAND_FELT[1], now, 0)
+
+
+# What the fast-forward tool reads: how many land memories, and whether each
+# one still traces back to something in the mind.
+func land_memory_report(profile: Dictionary, land: Dictionary = {}) -> Dictionary:
+	var memory: Dictionary = _read(profile)
+	var mind_variant = profile.get("mind", {})
+	var mind: Dictionary = mind_variant if typeof(mind_variant) == TYPE_DICTIONARY else {}
+	var known: Dictionary = _dict(mind.get("known_places", {}))
+	var seen: Dictionary = _dict(mind.get("seen", {}))
+	var done: Dictionary = _dict(mind.get("done", {}))
+	var home: String = str(land.get("home_place", "home"))
+	var by_relation := {}
+	var total := 0
+	var alone_t := 0
+	var untraceable := 0
+	for edge in memory["edges"]:
+		if str(edge.get("source", "")) != "land":
+			continue
+		total += 1
+		var r: String = str(edge.get("r", ""))
+		by_relation[r] = int(by_relation.get(r, 0)) + 1
+		var o: String = str(edge.get("o", ""))
+		if o == "belief:alone":
+			alone_t = int(edge.get("t", 0))
+		var traced := true
+		if o.begins_with("place:"):
+			var id: String = o.substr(6)
+			traced = id == home or known.has(id)
+		elif o.begins_with("sight:"):
+			traced = seen.has(o.substr(6))
+		elif o.begins_with("activity:"):
+			traced = done.has(o.substr(9))
+		if not traced:
+			untraceable += 1
+	return {
+		"edges": by_relation,
+		"total_edges": total,
+		"alone_belief_t": alone_t,
+		"today": _today(memory).size(),
+		"last_pass_t": int(memory.get("last_pass_t", 0)),
+		"first_pass_t": int(memory.get("first_pass_t", 0)),
+		"untraceable": untraceable,
+	}
+
+
+func _today(memory: Dictionary) -> Array:
+	var raw = memory.get("today", [])
+	return raw if typeof(raw) == TYPE_ARRAY else []
+
+
+func _dict(value: Variant) -> Dictionary:
+	return value if typeof(value) == TYPE_DICTIONARY else {}
+
+
+func _has_met_anyone(memory: Dictionary) -> bool:
+	for edge in memory["edges"]:
+		if str(edge.get("s", "")) == "self" and str(edge.get("r", "")) == "saw" and str(edge.get("o", "")).begins_with("npc:"):
+			return true
+	return false
+
+
+func _land_places(land: Dictionary) -> Array:
+	var places = land.get("places", [])
+	return places if typeof(places) == TYPE_ARRAY else []
+
+
+func _land_place(land: Dictionary, place_id: String) -> Dictionary:
+	for place in _land_places(land):
+		if typeof(place) == TYPE_DICTIONARY and str(place.get("id", "")) == place_id:
+			return place
+	return {}
+
+
+func _place_name(land: Dictionary, place_id: String) -> String:
+	var name: String = str(_land_place(land, place_id).get("name", ""))
+	return name if name != "" else place_id
+
+
+func _land_activity(land: Dictionary, place_id: String, activity_id: String) -> Dictionary:
+	var activities = _land_place(land, place_id).get("activities", [])
+	if typeof(activities) == TYPE_ARRAY:
+		for activity in activities:
+			if typeof(activity) == TYPE_DICTIONARY and str(activity.get("id", "")) == activity_id:
+				return activity
+	return {}
+
+
+func _any_activity_label(land: Dictionary, activity_id: String) -> String:
+	for place in _land_places(land):
+		if typeof(place) != TYPE_DICTIONARY:
+			continue
+		var found: Dictionary = _land_activity(land, str(place.get("id", "")), activity_id)
+		if not found.is_empty():
+			return str(found.get("label", activity_id))
+	return activity_id
+
+
+func _sight_line(land: Dictionary, sight_id: String) -> String:
+	for place in _land_places(land):
+		if typeof(place) != TYPE_DICTIONARY:
+			continue
+		var sights = place.get("sights", [])
+		if typeof(sights) != TYPE_ARRAY:
+			continue
+		for sight in sights:
+			if typeof(sight) == TYPE_DICTIONARY and str(sight.get("id", "")) == sight_id:
+				return str(sight.get("line", ""))
+	return ""
+
+
+# A sign's own words, from the place it points to.
+func _sign_line(land: Dictionary, place_id: String) -> String:
+	var discover = _land_place(land, place_id).get("discover", null)
+	if typeof(discover) != TYPE_DICTIONARY:
+		return ""
+	var sign_variant = (discover as Dictionary).get("sign", "")
+	if typeof(sign_variant) == TYPE_DICTIONARY:
+		for key in (sign_variant as Dictionary).keys():
+			return str((sign_variant as Dictionary)[key])
+		return ""
+	return str(sign_variant)
+
+
+# A buddy born before memory brings what its mind already knows.
+func _seed_from_mind(memory: Dictionary, mind_variant: Variant, land: Dictionary, me: Dictionary, now: int) -> void:
+	var mind: Dictionary = _dict(mind_variant)
+	var known: Dictionary = _dict(mind.get("known_places", {}))
+	for place_id in known.keys():
+		var record: Dictionary = _dict(known[place_id])
+		var t: int = int(record.get("t", now))
+		var node := {"id": "place:" + str(place_id)}
+		if str(record.get("stage", "")) == "found":
+			node["label"] = _place_name(land, str(place_id))
+			_upsert(memory, me, "found", node, LAND_FOUND[2], "land", LAND_FOUND[0], LAND_FOUND[1], t, 0)
+		elif str(record.get("stage", "")) == "sign":
+			var line: String = _sign_line(land, str(place_id))
+			node["label"] = line if line != "" else "something I have not found yet"
+			_upsert(memory, me, "heard_of", node, LAND_HEARD_OF[2], "land", LAND_HEARD_OF[0], LAND_HEARD_OF[1], t, 0)
+	var seen: Dictionary = _dict(mind.get("seen", {}))
+	for sight_id in seen.keys():
+		var line: String = _sight_line(land, str(sight_id))
+		var sight := {"id": "sight:" + str(sight_id), "label": line if line != "" else str(sight_id)}
+		_upsert(memory, me, "noticed", sight, LAND_NOTICED[2], "land", LAND_NOTICED[0], LAND_NOTICED[1], int(seen[sight_id]), 0)
+	var done: Dictionary = _dict(mind.get("done", {}))
+	for activity_id in done.keys():
+		var activity := {"id": "activity:" + str(activity_id), "label": _any_activity_label(land, str(activity_id))}
+		var edge: Dictionary = _upsert(memory, me, "did", activity, LAND_DID[2], "land", LAND_DID[0], LAND_DID[1], now, 0)
+		edge["count"] = maxi(1, int(done[activity_id]))
+	memory["first_pass_t"] = now
+
+
 # --- Forgetting --------------------------------------------------------------
 
 func forget(profile: Dictionary, id: int) -> Dictionary:
@@ -377,7 +671,8 @@ func recall(profile: Dictionary, text: String, now_unix: int) -> Dictionary:
 			if words.has(key):
 				relevant = 1.0
 				break
-		if str(edge.get("source", "")) == "town" and relevant <= 0.0:
+		var edge_source: String = str(edge.get("source", ""))
+		if (edge_source == "town" or edge_source == "land") and relevant <= 0.0:
 			continue
 		var seen: int = int(edge.get("seen", 0))
 		var score: float = relevant + _recency(seen, now_unix) + float(edge.get("importance", 0.0)) + (USER_FACT_BONUS if s == "user" else 0.0) + 0.25 * eff
@@ -444,6 +739,26 @@ func _render_edge(edge: Dictionary, now_unix: int) -> String:
 				line = "you went to %s %s" % [o_label, _when(seen, now_unix)]
 		elif r == "saw":
 			line = "you last saw %s %s" % [o_label, _when(seen, now_unix)]
+		elif r == "found":
+			line = "you found %s %s" % [o_label, _when(seen, now_unix)]
+		elif r == "noticed":
+			line = "you noticed: %s" % o_label
+		elif r == "heard_of":
+			line = "you noticed a sign of somewhere you have not been: %s" % o_label
+		elif r == "couldnt_reach":
+			line = "you tried to get somewhere and could not: %s" % o_label
+		elif r == "did":
+			var did_count: int = int(edge.get("count", 1))
+			if did_count > 1:
+				line = "you have %s %d times, last %s" % [o_label, did_count, _when(seen, now_unix)]
+			else:
+				line = "you %s %s" % [o_label, _when(seen, now_unix)]
+		elif r == "liked":
+			line = "you liked it when you %s" % o_label
+		elif r == "disliked":
+			line = "you did not like it when you %s" % o_label
+		elif r == "believes":
+			line = "you have come to believe %s" % o_label
 	else:
 		line = str(edge.get("s_label", "")) + " " + str(VERB_SINGULAR.get(r, r)) + " " + o_label
 	return _collapse(line)
