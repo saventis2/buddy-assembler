@@ -5,6 +5,7 @@ const SchemaMigrations = preload("res://scripts/persistence/schema_migrations.gd
 const MindServiceScript = preload("res://scripts/services/mind_service.gd")
 const UnlockTable = preload("res://scripts/progression/unlock_table.gd")
 const ContentLoader = preload("res://scripts/content/content_loader.gd")
+const Whereabouts = preload("res://scripts/persistence/buddy_whereabouts.gd")
 
 const SETTINGS_PATH := "user://settings.json"
 const PROFILE_PATH := "user://profile.json"
@@ -16,6 +17,10 @@ const BORN_ON_THE_LAND := "land"
 # A process started with this user argument (after "--") never reads or writes
 # the save files. The fast-forward tool always passes it.
 const NO_SAVE_ARG := "--no-save"
+# A process started with this user argument is the world host (Plan 14 step 2a):
+# a headless process that lives the buddy's life on its land while it is at home.
+const WORLD_HOST_ARG := "--world-host"
+const HOST_DIR := "user://host"
 
 const SERVICE_PATHS := {
     "identity": "res://scripts/services/identity_service.gd",
@@ -49,6 +54,11 @@ var _fresh_start_failed := false
 # Whether a profile was on disk when this run loaded its state, read before
 # anything could save. A brand-new install has none, so nothing to back up.
 var _profile_was_on_disk := false
+# Who this process is (Plan 14 step 2a): "solo" writes everything, as before;
+# "host" and "desktop" write the buddy's files only while they hold the buddy,
+# and only the desktop writes settings. See _may_write.
+var _role := "solo"
+var _holding := false
 
 const DEFERRED_SAVE_DELAY_SECONDS := 1.5
 # Things the buddy can notice in a shop and want (Plan 13 C1+C2): wearable
@@ -62,10 +72,49 @@ var _want_shop_catalog_size := -1
 
 func _ready() -> void:
     _load_services()
-    if OS.get_cmdline_user_args().has(NO_SAVE_ARG):
+    var args := OS.get_cmdline_user_args()
+    if args.has(NO_SAVE_ARG):
         _start_without_saves()
         return
+    if args.has(WORLD_HOST_ARG):
+        _role = "host"
+        _load_read_only()
+        return
+    var peeked: Dictionary = SaveStore.peek_versioned(
+        SETTINGS_PATH,
+        _default_settings,
+        SchemaMigrations.SETTINGS_CURRENT_VERSION,
+        SchemaMigrations.SETTINGS_MIGRATORS
+    )
+    var host_status := Whereabouts.read_status("%s/host.json" % HOST_DIR)
+    if bool(peeked.get("worldHost", false)) or Whereabouts.is_alive(host_status, Time.get_unix_time_from_system()):
+        _role = "desktop"
+        _load_read_only()
+        return
     load_state()
+
+
+# For the world host and the desktop app at startup: everything is read without
+# writing or renaming anything, because neither holds the buddy yet.
+func _load_read_only() -> void:
+    var peeked_settings: Dictionary = SaveStore.peek_versioned(
+        SETTINGS_PATH, _default_settings, SchemaMigrations.SETTINGS_CURRENT_VERSION, SchemaMigrations.SETTINGS_MIGRATORS
+    )
+    settings = peeked_settings if not peeked_settings.is_empty() else _default_settings()
+    var peeked_profile: Dictionary = SaveStore.peek_versioned(
+        PROFILE_PATH, _default_profile, SchemaMigrations.PROFILE_CURRENT_VERSION, SchemaMigrations.PROFILE_MIGRATORS
+    )
+    profile = peeked_profile if not peeked_profile.is_empty() else _default_profile()
+    var peeked_world: Dictionary = SaveStore.peek_versioned(
+        WORLD_STATE_PATH, _default_world_state, SchemaMigrations.WORLD_STATE_CURRENT_VERSION, SchemaMigrations.WORLD_STATE_MIGRATORS
+    )
+    world_state = peeked_world if not peeked_world.is_empty() else _default_world_state()
+    profile = _ensure_profile_modules(profile)
+    world_state = _ensure_world_modules(world_state)
+    _reconcile_progression_from_xp()
+    _sync_growth_mode_flags()
+    _refresh_unlocks()
+    _prune_event_buckets()
 
 
 # For a process started with NO_SAVE_ARG: default state, saving off, and the
@@ -99,14 +148,24 @@ func _load_services() -> void:
         _services[key] = instance
 
 
-func load_state() -> void:
+func load_state(include_settings: bool = true) -> void:
     _profile_was_on_disk = FileAccess.file_exists(PROFILE_PATH)
-    settings = SaveStore.load_versioned(
-        SETTINGS_PATH,
-        _default_settings,
-        SchemaMigrations.SETTINGS_CURRENT_VERSION,
-        SchemaMigrations.SETTINGS_MIGRATORS
-    )
+    if include_settings:
+        settings = SaveStore.load_versioned(
+            SETTINGS_PATH,
+            _default_settings,
+            SchemaMigrations.SETTINGS_CURRENT_VERSION,
+            SchemaMigrations.SETTINGS_MIGRATORS
+        )
+    else:
+        # A process that does not own settings.json never renames a damaged one.
+        var peeked: Dictionary = SaveStore.peek_versioned(
+            SETTINGS_PATH,
+            _default_settings,
+            SchemaMigrations.SETTINGS_CURRENT_VERSION,
+            SchemaMigrations.SETTINGS_MIGRATORS
+        )
+        settings = peeked if not peeked.is_empty() else _default_settings()
     profile = SaveStore.load_versioned(
         PROFILE_PATH,
         _default_profile,
@@ -175,8 +234,78 @@ func _persistable_world_state() -> Dictionary:
     return slim
 
 
+# Who may write which save file (Plan 14 step 2a). The buddy is in one place at
+# a time: the files holding it (profile, world state) are written only by the
+# process that holds it; settings.json belongs to the desktop app.
+func _may_write(path: String) -> bool:
+    if _role == "solo":
+        return true
+    if path == SETTINGS_PATH:
+        return _role == "desktop"
+    if path == PROFILE_PATH or path == WORLD_STATE_PATH:
+        return _holding
+    return false
+
+
+func role() -> String:
+    return _role
+
+
+func is_holding_buddy() -> bool:
+    return _holding
+
+
+# This process takes the buddy: reads its files for real (the holder is the only
+# one who may write them) and, in a new world, runs the fresh start. The caller
+# must already hold the lock (buddy_whereabouts.gd).
+func take_buddy() -> void:
+    if _role == "desktop":
+        # Keeps a pending window position; only settings.json is writable yet.
+        flush()
+    _holding = true
+    load_state(_role != "host")
+    var fresh: Dictionary = fresh_start_if_due()
+    if str(fresh.get("status", "")) == "started" and str(fresh.get("backup", "")) != "":
+        var shown := ProjectSettings.globalize_path(str(fresh["backup"]))
+        print("app_state: the buddy from before is saved in %s" % shown)
+        if _role == "host":
+            # settings.json is not the host's to write, so it says so in host.json.
+            var status := Whereabouts.read_status("%s/host.json" % HOST_DIR)
+            status["freshStartBackup"] = str(fresh["backup"])
+            Whereabouts.write_status("%s/host.json" % HOST_DIR, status)
+
+
+# Hands the buddy back: writes what it has, and stops writing its files.
+func release_buddy() -> void:
+    flush()
+    _holding = false
+
+
+# For the host, which only reads settings.json (the desktop app owns it): picks up
+# a change made there. A missing or damaged file keeps what it had.
+func reload_settings_read_only() -> void:
+    var peeked: Dictionary = SaveStore.peek_versioned(
+        SETTINGS_PATH, _default_settings, SchemaMigrations.SETTINGS_CURRENT_VERSION, SchemaMigrations.SETTINGS_MIGRATORS
+    )
+    if not peeked.is_empty():
+        settings = peeked
+
+
+# For a process that does not hold the buddy and only shows what it is doing.
+func reload_buddy_read_only() -> void:
+    var peeked: Dictionary = SaveStore.peek_versioned(
+        PROFILE_PATH, _default_profile, SchemaMigrations.PROFILE_CURRENT_VERSION, SchemaMigrations.PROFILE_MIGRATORS
+    )
+    # The holder's write removes then renames, so the file can be missing for a moment.
+    if peeked.is_empty():
+        return
+    profile = _ensure_profile_modules(peeked)
+
+
 func _write_if_changed(path: String, data: Dictionary) -> void:
     if not _persistence_enabled:
+        return
+    if not _may_write(path):
         return
     var digest := JSON.stringify(data).md5_text()
     if str(_saved_digest.get(path, "")) == digest and FileAccess.file_exists(path):
@@ -391,7 +520,7 @@ func get_continuity_hint() -> String:
 
 func clear_last_active_summary() -> void:
     profile["last_active_summary"] = ""
-    if not _persistence_enabled:
+    if not _persistence_enabled or not _may_write(PROFILE_PATH):
         return
     SaveStore.write_json(PROFILE_PATH, profile)
 
@@ -490,6 +619,12 @@ func _fresh_start(had_profile: bool, save_paths: Array, backup_root: String) -> 
     var mind: Dictionary = fresh["mind"]
     mind["born"] = BORN_ON_THE_LAND
     fresh["mind"] = mind
+    # It is not lonely yet: on its land its need for company falls slowly from
+    # here, and a visit to you fills it up again (Plan 14 step 2a).
+    var mods_variant = fresh.get("mood_modifiers", {})
+    var mods: Dictionary = (mods_variant as Dictionary).duplicate() if typeof(mods_variant) == TYPE_DICTIONARY else {}
+    mods["social_fulfillment"] = MindServiceScript.LAND_START_COMPANY
+    fresh["mood_modifiers"] = mods
     profile = fresh
     _reconcile_progression_from_xp()
     _sync_growth_mode_flags()
@@ -514,6 +649,9 @@ func get_town() -> Dictionary:
 # (including ones from while the app was closed). Returns the resulting
 # journal events, oldest first; empty when nothing was due or autonomy is off.
 func tick_mind(now_unix: int) -> Array:
+    # The buddy's life on its land runs only at home, in the world host.
+    if _role == "desktop":
+        return []
     if not bool(settings.get("autonomyEnabled", true)):
         return []
     var small := small_beginnings()
@@ -858,6 +996,36 @@ func mind_consider(target: Dictionary) -> Dictionary:
         profile = result["profile"]
         flush()
     return {"answer": str(result.get("answer", "")), "reason": str(result.get("reason", ""))}
+
+
+# --- Visits (Plan 14 step 2a) --------------------------------------------
+# Whether it can come over now ({"come": "now"|"later"|"asleep", "at", "why"}).
+func mind_consider_call(now: int) -> Dictionary:
+    var answer = _call_service_with_fallback("mind", "consider_call", [profile, _land(), now], {})
+    return answer if typeof(answer) == TYPE_DICTIONARY else {"come": "now", "at": now, "why": ""}
+
+
+# These three are for the process that holds the buddy only.
+func mind_leave_for_visit(now: int, reason: String) -> void:
+    var result = _call_service_with_fallback("mind", "leave_for_visit", [profile, _land(), now, reason], null)
+    if typeof(result) == TYPE_DICTIONARY:
+        profile = result
+        flush()
+
+
+func mind_return_from_visit(now: int, reason: String) -> void:
+    var result = _call_service_with_fallback("mind", "return_from_visit", [profile, _land(), now, reason], null)
+    if typeof(result) == TYPE_DICTIONARY:
+        profile = result
+        flush()
+
+
+func mind_wants_company(now: int) -> bool:
+    return bool(_call_service_with_fallback("mind", "wants_company", [profile, _land(), now], false))
+
+
+func mind_is_bedtime(now: int) -> bool:
+    return bool(_call_service_with_fallback("mind", "is_bedtime", [profile, now], false))
 
 
 # A finished talk is an event in its day (social need, journal, maybe a wish).
@@ -1365,7 +1533,7 @@ func is_first_run() -> bool:
 
 func mark_first_run_seen() -> void:
     settings["firstRunSeen"] = true
-    if not _persistence_enabled:
+    if not _persistence_enabled or not _may_write(SETTINGS_PATH):
         return
     SaveStore.write_json(SETTINGS_PATH, settings)
 
@@ -1636,6 +1804,7 @@ func _default_settings() -> Dictionary:
         "continuityDigestEnabled": true,
         "autonomyEnabled": true,
         "smallBeginnings": true,
+        "worldHost": false,
         "inventoryCompact": false,
         "mindModelEnabled": true,
         "mindModelUrl": "http://127.0.0.1:11434",

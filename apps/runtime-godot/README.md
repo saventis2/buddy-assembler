@@ -101,6 +101,29 @@ name with the chat model, so it stays nameless while the model is off.
 The current implementation is intentionally minimal and is a vertical-slice
 scaffold, not final production content.
 
+## World host
+
+Off by default. Turn it on with Menu > Settings > Its own mind > World host, or
+`"worldHost": true` in `settings.json`; it takes effect the next time the app
+starts. Then your buddy lives on its own land in a background program that
+keeps running when the app is closed, and the app is the buddy visiting you.
+
+- Opening the app starts the host if it is not running and asks the buddy to
+  come over. It comes at once unless it is asleep or busy; then the app says
+  when it will come. While it is at home the app shows a small panel with its
+  latest journal line and a "Call over" button.
+- A visit ends when the app closes, at bedtime, after two quiet hours, or when
+  you choose "Send home" in the menu. Closing the app sends it home first.
+  Called at its bedtime, it says it will come in the morning (07:00).
+- Start the app with the windowed program (or an exported build). Through
+  Godot's console wrapper (`..._console.exe`), the host the app starts stops
+  when the app does.
+- Its files are in the save folder under `host/`: `buddy.lock/`, `host.json`,
+  `desktop.json` and `inbox/`. Only the program that holds the buddy writes
+  `profile.json` and `world_state.json`; `settings.json` belongs to the app.
+- The host is the same program run as `--headless -- --world-host`. To stop
+  it, turn the setting off: it notices within ten seconds and quits.
+
 ## Maple-Agnostic Slice
 
 A separate architecture-first slice is available at:
