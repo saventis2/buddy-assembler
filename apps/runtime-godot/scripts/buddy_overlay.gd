@@ -54,6 +54,14 @@ const MAPLE_LAYOUT_MEMORY := {
     "offset": Vector2i(72, 48),
     "margins": [14, 12, 14, 12],
 }
+# Letters (Plan 14 step 2c-1): the open window is refreshed this often.
+const LETTERS_REFRESH_SECONDS := 4.0
+const MAPLE_LAYOUT_LETTERS := {
+    "base_size": Vector2i(460, 560),
+    "min_size": Vector2i(360, 420),
+    "offset": Vector2i(80, 52),
+    "margins": [14, 12, 14, 12],
+}
 const CHAT_FONT_SIZE_M := 13
 const CHAT_FONT_SIZE_L := 16
 const SETTINGS_CHANGE_HISTORY_MAX := 20
@@ -331,6 +339,7 @@ const PortableBuddyFallback = preload("res://scripts/visual/portable_buddy_fallb
 const MindThinker = preload("res://scripts/services/mind_thinker.gd")
 const MapleTheme = preload("res://scripts/ui/maple_theme.gd")
 const VisitController = preload("res://scripts/visit_controller.gd")
+const LetterService = preload("res://scripts/services/letter_service.gd")
 const PORTABLE_FALLBACK_TEXTURE := preload("res://content/core_pack/character/idle.png")
 
 @onready var tick_timer: Timer = $TickTimer
@@ -542,6 +551,16 @@ var _memory_intro: Label = null
 var _memory_btn_toggle: Button = null
 var _memory_btn_forget_all: Button = null
 var _memory_forget_all_armed_until := 0
+var _letters_window: Window = null
+var _letters_note: Label = null
+var _letters_rows: VBoxContainer = null
+var _letters_input: TextEdit = null
+var _letters_counter: Label = null
+var _letters_send_btn: Button = null
+var _letters_error: Label = null
+var _letters_signature := ""
+var _letters_next_refresh := 0.0
+var _main_menu_btn_letters: Button = null
 var _town_window: Window = null
 var _town_map: Control = null
 var _town_heading: Label = null
@@ -1001,6 +1020,8 @@ func _ensure_settings_main_menu_ui() -> void:
         _main_menu_btn_call = _add_main_menu_button("Call over", "Ask your buddy to come and visit.", _call_or_send_home)
     _add_main_menu_button("Journal", "Read what your buddy has been doing on its own.", _open_journal)
     _add_main_menu_button("Memory", "What your buddy remembers about you. You can make it forget anything.", _toggle_memory_window)
+    if AppState.small_beginnings():
+        _main_menu_btn_letters = _add_main_menu_button("Letters", "Write to your buddy at the glowing box in its house, and read what it writes back.", _toggle_letters_window)
     _add_main_menu_button("Town", "Where your buddy is, and the town it lives in.", _toggle_town_window)
     _main_menu_btn_stats = _add_main_menu_button("Stats", "Level, bond and stat points.", _toggle_stats_menu)
     _main_menu_btn_inventory = _add_main_menu_button("Inventory", "Items your buddy has collected.", _toggle_inventory_menu)
@@ -3308,6 +3329,232 @@ func _on_forget_all_pressed() -> void:
     _refresh_memory_window()
 
 
+# --- Letters window (Plan 14 step 2c-1) ----------------------------------------
+# Write to the buddy at the glowing box in its house, and read what it writes
+# back. Land world only. The writing box is built once and never rebuilt, so a
+# refresh cannot lose what is being typed; the list is rebuilt only when it changes.
+func _toggle_letters_window() -> void:
+    _ensure_letters_window()
+    var opening := not _letters_window.visible
+    if opening:
+        _letters_signature = ""
+        _refresh_letters_window()
+    _layout_popup_window(_letters_window, opening, MAPLE_LAYOUT_LETTERS)
+
+
+func _ensure_letters_window() -> void:
+    if _letters_window != null:
+        return
+    var window := Window.new()
+    window.name = "LettersWindow"
+    window.title = "Letters"
+    window.visible = false
+    window.always_on_top = true
+    window.wrap_controls = true
+    add_child(window)
+    _letters_window = window
+    window.close_requested.connect(func() -> void:
+        window.hide()
+    )
+    _ensure_maple_window_background(window)
+
+    var margin := MarginContainer.new()
+    margin.name = "MarginContainer"
+    margin.anchor_right = 1.0
+    margin.anchor_bottom = 1.0
+    window.add_child(margin)
+    var root := VBoxContainer.new()
+    root.add_theme_constant_override("separation", 8)
+    margin.add_child(root)
+
+    _letters_note = Label.new()
+    _letters_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    _letters_note.custom_minimum_size = Vector2(300, 0)
+    _letters_note.add_theme_color_override("font_color", MapleTheme.TEXT_DIM)
+    root.add_child(_letters_note)
+
+    var scroll := ScrollContainer.new()
+    scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+    root.add_child(scroll)
+    _letters_rows = VBoxContainer.new()
+    _letters_rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    _letters_rows.add_theme_constant_override("separation", 6)
+    scroll.add_child(_letters_rows)
+
+    _letters_input = TextEdit.new()
+    _letters_input.custom_minimum_size = Vector2(300, 90)
+    _letters_input.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
+    _letters_input.placeholder_text = "Write a letter. Ctrl+Enter sends it."
+    _letters_input.text_changed.connect(_on_letters_input_changed)
+    _letters_input.gui_input.connect(_on_letters_input_gui)
+    root.add_child(_letters_input)
+
+    var send_row := HBoxContainer.new()
+    send_row.add_theme_constant_override("separation", 8)
+    root.add_child(send_row)
+    _letters_counter = Label.new()
+    _letters_counter.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    _letters_counter.add_theme_color_override("font_color", MapleTheme.TEXT_DIM)
+    send_row.add_child(_letters_counter)
+    _letters_send_btn = Button.new()
+    _letters_send_btn.text = "Send"
+    _letters_send_btn.tooltip_text = "Leave the letter at the glowing box. Your buddy reads it the next time it goes there."
+    _letters_send_btn.pressed.connect(_on_letters_send_pressed)
+    send_row.add_child(_letters_send_btn)
+
+    _letters_error = Label.new()
+    _letters_error.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    _letters_error.custom_minimum_size = Vector2(300, 0)
+    _letters_error.add_theme_color_override("font_color", Color(0.95, 0.55, 0.45))
+    _letters_error.visible = false
+    root.add_child(_letters_error)
+    _on_letters_input_changed()
+
+
+func _on_letters_input_changed() -> void:
+    if _letters_input == null:
+        return
+    var length: int = _letters_input.text.length()
+    var limit: int = LetterService.MAX_LETTER_CHARS
+    _letters_counter.text = "%d / %d" % [length, limit]
+    _letters_send_btn.disabled = _letters_input.text.strip_edges() == "" or length > limit
+
+
+func _on_letters_input_gui(event: InputEvent) -> void:
+    var key_event := event as InputEventKey
+    if key_event != null and key_event.pressed and key_event.ctrl_pressed and (key_event.keycode == KEY_ENTER or key_event.keycode == KEY_KP_ENTER):
+        _letters_input.accept_event()
+        if not _letters_send_btn.disabled:
+            _on_letters_send_pressed()
+
+
+func _on_letters_send_pressed() -> void:
+    _send_letter(_letters_input.text, "")
+
+
+# A refusal shows under the writing box; a letter that was sent clears it.
+func _send_letter(text: String, resend_of: String) -> void:
+    var result: Dictionary = AppState.letters_send(text, resend_of)
+    if bool(result.get("ok", false)):
+        if resend_of == "":
+            _letters_input.text = ""
+            _on_letters_input_changed()
+        _letters_error.visible = false
+        _letters_signature = ""
+        _refresh_letters_window()
+        return
+    _letters_error.text = _letters_refusal_text(str(result.get("reason", "")))
+    _letters_error.visible = true
+
+
+func _letters_refusal_text(reason: String) -> String:
+    if reason == "empty":
+        return "Write something first."
+    if reason == "too_long":
+        return "That is too long for one letter. The most is %d characters." % LetterService.MAX_LETTER_CHARS
+    if reason == "sensitive":
+        return "That looks like a password or a key. Letters are kept in your buddy's save, so it was not sent."
+    if reason == "too_many_waiting":
+        return "%d letters are already waiting at the glowing box. Let your buddy read some first." % LetterService.MAX_WAITING
+    if reason == "no_host":
+        return "Your buddy's world is not running right now, so the letter was not sent. Try again in a moment."
+    if reason == "town":
+        return "Letters are only for the small-beginnings world."
+    return "The letter could not be sent."
+
+
+func _letters_when(unix_time: int) -> String:
+    var bias := int(Time.get_time_zone_from_system().get("bias", 0))
+    var stamp: Dictionary = Time.get_datetime_dict_from_unix_time(unix_time + bias * 60)
+    return "%02d/%02d %02d:%02d" % [int(stamp.get("day", 0)), int(stamp.get("month", 0)), int(stamp.get("hour", 0)), int(stamp.get("minute", 0))]
+
+
+# Every few seconds while the window is open, on the overlay's own timer.
+func _tick_letters_window() -> void:
+    if _letters_window == null or not _letters_window.visible:
+        return
+    var now := Time.get_unix_time_from_system()
+    if now < _letters_next_refresh:
+        return
+    _letters_next_refresh = now + LETTERS_REFRESH_SECONDS
+    _refresh_letters_window()
+
+
+func _refresh_letters_window() -> void:
+    if _letters_window == null or _letters_rows == null:
+        return
+    var items: Array = AppState.letters_items()
+    # Rows are rebuilt only when something in them changed, so the scroll stays put.
+    var rows: Array = []
+    for item_variant in items:
+        var item: Dictionary = item_variant
+        var state := ""
+        if str(item.get("from", "")) == "you":
+            state = AppState.letters_delivery_state(str(item.get("id", "")), int(item.get("t", 0)))
+        rows.append([str(item.get("id", "")), state, int(item.get("read_t", 0)), _away_name()])
+    var console_known := AppState.letters_console_known()
+    var signature := str([rows, console_known])
+    # The person has seen what is here.
+    AppState.letters_mark_seen()
+    if signature == _letters_signature:
+        return
+    _letters_signature = signature
+    _letters_note.text = "" if console_known else "Your buddy has not worked out the glowing box yet. Letters wait there until it does."
+    _letters_note.visible = not console_known
+    for child in _letters_rows.get_children():
+        _letters_rows.remove_child(child)
+        child.queue_free()
+    if items.is_empty():
+        var empty := Label.new()
+        empty.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+        empty.custom_minimum_size = Vector2(300, 0)
+        empty.text = "No letters yet. Write one below."
+        _letters_rows.add_child(empty)
+    for index in range(items.size()):
+        var letter: Dictionary = items[index]
+        var from_you: bool = str(letter.get("from", "")) == "you"
+        var header := Label.new()
+        header.add_theme_color_override("font_color", MapleTheme.TEXT_DIM)
+        header.add_theme_font_size_override("font_size", 12)
+        header.text = "%s · %s" % ["You" if from_you else _away_name(), _letters_when(int(letter.get("t", 0)))]
+        _letters_rows.add_child(header)
+        var body := Label.new()
+        body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+        body.custom_minimum_size = Vector2(300, 0)
+        body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+        body.text = str(letter.get("text", ""))
+        _letters_rows.add_child(body)
+        if from_you:
+            var row: Array = rows[index]
+            var status := Label.new()
+            status.add_theme_color_override("font_color", MapleTheme.TEXT_DIM)
+            status.add_theme_font_size_override("font_size", 12)
+            var state_now: String = str(row[1])
+            if state_now == "read":
+                status.text = "Read %s" % _letters_when(int(letter.get("read_t", 0)))
+            elif state_now == "waiting":
+                status.text = "Waiting at the glowing box"
+            elif state_now == "on_its_way":
+                status.text = "On its way"
+            else:
+                status.text = "Not delivered"
+            _letters_rows.add_child(status)
+            if state_now == "lost":
+                var again := Button.new()
+                again.text = "Send again"
+                again.tooltip_text = "Send the same letter as a new one."
+                again.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+                var again_text := str(letter.get("text", ""))
+                var again_id := str(letter.get("id", ""))
+                again.pressed.connect(func() -> void:
+                    _send_letter(again_text, again_id)
+                )
+                _letters_rows.add_child(again)
+        if index < items.size() - 1:
+            _letters_rows.add_child(HSeparator.new())
+
+
 # --- Town window (Plan 13 A2) -------------------------------------------------
 # A map of the town drawn in code: places as tiles joined by paths, the
 # buddy's marker where it is now, who is about at each open place, and a
@@ -3886,6 +4133,7 @@ func _pack_scale_for_slot(slot_index: int) -> float:
 
 func _on_telemetry_timer_timeout() -> void:
     _refresh_telemetry()
+    _tick_letters_window()
 
 
 func _refresh_telemetry() -> void:
@@ -4436,6 +4684,9 @@ func _refresh_settings_menu() -> void:
         _main_menu_status.text = status_text
     if _main_menu_btn_chat != null:
         _main_menu_btn_chat.text = "Chat (%d new)" % _chat_unread_prompt_count if _chat_unread_prompt_count > 0 else "Chat"
+    if _main_menu_btn_letters != null:
+        var new_letters := AppState.letters_new_from_buddy()
+        _main_menu_btn_letters.text = "Letters (%d new)" % new_letters if new_letters > 0 else "Letters"
     if _main_menu_btn_stats != null:
         var spare_points := int(snapshot.get("stat_points_unspent", 0))
         _main_menu_btn_stats.text = "Stats (%d points to spend)" % spare_points if spare_points > 0 else "Stats"

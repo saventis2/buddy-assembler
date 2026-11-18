@@ -282,7 +282,8 @@ Status: `in_progress` (see `PLAN14_SMALL_BEGINNINGS.md`)
 - [x] 2a-2 The world host on by default (D-010), a journal line after the host was down, the host choosing the name (`_is_real_launch_args`, `note_still_world`, `note_name`, `WorldHostTest`)
 - [x] 2b-1 Memory: short-term (`memory.today`) and long-term memory, the nightly pass, fading, the alone belief (`memory_service.gd`, `MemoryNightTest`, D-012)
 - [x] 2b-2 Memory: recall into chat, the check on what it says, the land wording goes (`recall_land`, `check_reply`, `ChatCheckTest`, `ChatEval.tscn`, D-012)
-- [ ] 2c Letters through the console, like a pen pal
+- [x] 2c-1 Letters arrive: the mailbox, working out the console, the pull and reading, delivery through the host's inbox, the Letters window (`letter_service.gd`, `LetterTest`, 2026-11-19)
+- [ ] 2c-2 Writing back with the model: its first letter when it works out the console, answers from recalled memories checked before they go, letters into its memory
 - [ ] 3 The world's rules and the things on the land
 - [ ] 4 2.5D view on the desktop
 - [ ] 5 Public world on Hardlight, nothing about you published

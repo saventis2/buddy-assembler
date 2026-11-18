@@ -137,6 +137,18 @@ fast-forward tool) never takes the app's role and never starts a host.
 - The host is the same program run as `--headless -- --world-host`. To stop
   it, turn the setting off: it notices within ten seconds and quits.
 
+## Letters
+
+On the land, the main menu has a Letters window: write to your buddy and it
+reads the letter at the glowing box in its house, the next time it goes there
+(a waiting letter draws it). It has to work out the glowing box first, which
+takes a few visits; until then letters wait there and the box blinks. While it is
+at home the letter goes through the world host's inbox, and the window shows it
+as on its way, waiting or read. Letters are kept in the buddy's save, so
+anything that looks like a password or a key is refused. Writing back is step
+2c-2. To see how soon a letter is read, add `--letter DAY:HH:MM:TEXT` (repeatable)
+to the fast-forward tool, for example `--letter 1:10:00:Hello`.
+
 ## Maple-Agnostic Slice
 
 A separate architecture-first slice is available at:

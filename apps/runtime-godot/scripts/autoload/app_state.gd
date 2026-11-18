@@ -6,6 +6,7 @@ const MindServiceScript = preload("res://scripts/services/mind_service.gd")
 const UnlockTable = preload("res://scripts/progression/unlock_table.gd")
 const ContentLoader = preload("res://scripts/content/content_loader.gd")
 const Whereabouts = preload("res://scripts/persistence/buddy_whereabouts.gd")
+const LetterService = preload("res://scripts/services/letter_service.gd")
 
 const SETTINGS_PATH := "user://settings.json"
 const PROFILE_PATH := "user://profile.json"
@@ -32,6 +33,7 @@ const SERVICE_PATHS := {
     "report": "res://scripts/services/report_service.gd",
     "mind": "res://scripts/services/mind_service.gd",
     "memory": "res://scripts/services/memory_service.gd",
+    "letters": "res://scripts/services/letter_service.gd",
 }
 
 var settings := {}
@@ -70,6 +72,10 @@ const WANT_PRICE_BY_RARITY := {"common": 40, "uncommon": 80, "rare": 150, "epic"
 const WANT_SHOP_SIZE := 40
 var _want_shop_cache: Array = []
 var _want_shop_catalog_size := -1
+# Letters the desktop sent through the inbox and has not yet seen in the
+# mailbox, in memory only: {"id", "text", "sent_at"} (Plan 14 step 2c-1).
+var _letters_outbox: Array = []
+const LETTERS_OUTBOX_LIMIT := 20
 
 
 func _ready() -> void:
@@ -848,6 +854,122 @@ func apply_mind_thought(decision_unix: int, thought: String, want: String) -> vo
     if typeof(result) == TYPE_DICTIONARY:
         profile = result
         flush()
+
+
+# --- Letters (Plan 14 step 2c-1) -----------------------------------------
+# The person writes to the buddy at the glowing box in its house; the buddy reads
+# a letter the next time it goes there (mind_service.gd). The mailbox is
+# profile["letters"] (letter_service.gd), so only the process that holds the
+# buddy writes it. The desktop, while the buddy is at home, leaves the letter in
+# the host's inbox instead. Land world only.
+#
+# Returns {"ok", "id", "reason", "via": "direct"|"inbox"|""}. `resend_of` is a
+# letter that was never delivered: it is dropped from the desktop's list once
+# this one is sent in its place.
+func letters_send(text: String, resend_of: String = "") -> Dictionary:
+    if not small_beginnings():
+        return {"ok": false, "id": "", "reason": "town", "via": ""}
+    var now := _now_unix()
+    if _role == "solo" or _still_holding():
+        var added: Dictionary = LetterService.add_from_you(profile, LetterService.new_id(now), text, now)
+        if not bool(added["ok"]):
+            return {"ok": false, "id": "", "reason": str(added["reason"]), "via": ""}
+        profile = added["profile"]
+        _letters_forget_outbox(resend_of)
+        flush_soon()
+        return {"ok": true, "id": str(added["id"]), "reason": "", "via": "direct"}
+    if not Whereabouts.is_alive(Whereabouts.read_status("%s/host.json" % _host_dir), float(now)):
+        return {"ok": false, "id": "", "reason": "no_host", "via": ""}
+    # The same rules as the mailbox's, so nothing refused is ever written to the inbox.
+    var checked: Dictionary = LetterService.check_text(text)
+    if not bool(checked["ok"]):
+        return {"ok": false, "id": "", "reason": str(checked["reason"]), "via": ""}
+    if _letters_waiting_count() >= LetterService.MAX_WAITING:
+        return {"ok": false, "id": "", "reason": "too_many_waiting", "via": ""}
+    var sent_id: String = Whereabouts.send_request(_host_dir, "letter", {"text": str(checked["text"])}, float(now))
+    _letters_forget_outbox(resend_of)
+    _letters_outbox.append({"id": sent_id, "text": str(checked["text"]), "sent_at": now})
+    while _letters_outbox.size() > LETTERS_OUTBOX_LIMIT:
+        _letters_outbox.remove_at(0)
+    return {"ok": true, "id": sent_id, "reason": "", "via": "inbox"}
+
+
+# Letters waiting at the glowing box as this desktop sees them: the unread ones
+# in the mailbox, and the ones it sent that have not turned up there yet.
+func _letters_waiting_count() -> int:
+    var have := {}
+    for item in (LetterService.ensure_letters(profile)["letters"] as Dictionary)["items"]:
+        have[str((item as Dictionary)["id"])] = true
+    var count: int = LetterService.unread_count(profile)
+    for sent in _letters_outbox:
+        if not have.has(str((sent as Dictionary).get("id", ""))):
+            count += 1
+    return count
+
+
+func _letters_forget_outbox(id: String) -> void:
+    if id == "":
+        return
+    for index in range(_letters_outbox.size() - 1, -1, -1):
+        if str((_letters_outbox[index] as Dictionary).get("id", "")) == id:
+            _letters_outbox.remove_at(index)
+
+
+# A letter request the world host took from the inbox. Holder only.
+func letters_receive(request: Dictionary) -> void:
+    if not small_beginnings() or not (_role == "solo" or _still_holding()):
+        return
+    var received_at := int(request.get("t", _now_unix()))
+    var added: Dictionary = LetterService.add_from_you(profile, str(request.get("id", "")), str(request.get("text", "")), received_at)
+    if bool(added["ok"]):
+        profile = added["profile"]
+        flush_soon()
+
+
+# The letters to show, oldest first: the mailbox, then what this desktop has sent
+# and not yet seen there. A copy, and each one has {"id", "from", "text", "t",
+# "read_t", "reply_due", "reply_to"} (a letter still in the outbox has "t" = when it was sent).
+func letters_items() -> Array:
+    var items: Array = (LetterService.ensure_letters(profile)["letters"] as Dictionary)["items"]
+    var have := {}
+    for item in items:
+        have[str((item as Dictionary)["id"])] = true
+    for sent_variant in _letters_outbox:
+        var sent: Dictionary = sent_variant
+        if have.has(str(sent.get("id", ""))):
+            continue
+        items.append({"id": str(sent["id"]), "from": LetterService.FROM_YOU, "text": str(sent["text"]), "t": int(sent["sent_at"]), "read_t": 0, "reply_due": false, "reply_to": ""})
+    return items
+
+
+func letters_console_known() -> bool:
+    var mind_variant = profile.get("mind", null)
+    if typeof(mind_variant) != TYPE_DICTIONARY:
+        return false
+    var console_variant = (mind_variant as Dictionary).get("console", null)
+    return typeof(console_variant) == TYPE_DICTIONARY and bool((console_variant as Dictionary).get("known", false))
+
+
+func letters_inbox_file_exists(id: String) -> bool:
+    return FileAccess.file_exists("%s/%s/%s.json" % [_host_dir, Whereabouts.INBOX_NAME, id])
+
+
+func letters_delivery_state(id: String, sent_at: int) -> String:
+    return LetterService.delivery_state(profile, id, letters_inbox_file_exists(id), sent_at, _now_unix())
+
+
+# How many letters from the buddy it has written since the person last had the
+# Letters window open (settings.lettersSeenT).
+func letters_new_from_buddy() -> int:
+    return LetterService.count_from_buddy_after(profile, int(settings.get("lettersSeenT", 0)))
+
+
+# The Letters window is open and showing them. Only settings.json's owner saves it.
+func letters_mark_seen() -> void:
+    if letters_new_from_buddy() == 0:
+        return
+    settings["lettersSeenT"] = _now_unix()
+    flush_soon()
 
 
 # --- Memory (Plan 13 B2) -------------------------------------------------
@@ -1947,6 +2069,7 @@ func _default_settings() -> Dictionary:
         "lastWindowPosition": [120, 120],
         "firstRunSeen": false,
         "inventoryBackfillMigrationVersion": 0,
+        "lettersSeenT": 0,
     }
 
 

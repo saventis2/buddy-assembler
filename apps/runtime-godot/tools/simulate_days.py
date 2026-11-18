@@ -6,7 +6,11 @@ AppState code with a supplied clock and never writes the save files. See
 apps/runtime-godot/README.md ("Fast-forward").
 
     python apps/runtime-godot/tools/simulate_days.py --godot <path> \\
-        [--days 30] [--seed 1] [--journal firsts] [--world land|town] [--out report.json]
+        [--days 30] [--seed 1] [--journal firsts] [--world land|town] [--out report.json] \\
+        [--letter DAY:HH:MM:TEXT ...]
+
+--letter (repeatable, land world) puts a letter from the person in the buddy's
+mailbox at that simulated time (day 1 is the first day), to see when it is read.
 """
 
 from __future__ import annotations
@@ -46,6 +50,7 @@ def run_simulation(
     journal: str,
     world: str,
     out: Path | None,
+    letters: list[str] | None = None,
     command_runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
 ) -> int:
     try:
@@ -85,6 +90,8 @@ def run_simulation(
     args = [NO_SAVE_ARG, f"--days={days}", f"--seed={seed}", f"--journal={journal}", f"--world={world}"]
     if out is not None:
         args.append(f"--out={out.resolve()}")
+    for letter in letters or []:
+        args.append(f"--letter={letter}")
     command = [godot, "--headless", "--path", str(project), SCENE, "--", *args]
     try:
         result = command_runner(
@@ -112,6 +119,17 @@ def run_simulation(
     return 0
 
 
+def _letter_spec(value: str) -> str:
+    """Checks DAY:HH:MM:TEXT (the text may hold colons) and returns it unchanged."""
+    parts = value.split(":", 3)
+    if len(parts) != 4 or not all(part.isdigit() for part in parts[:3]) or not parts[3].strip():
+        raise argparse.ArgumentTypeError(f"want DAY:HH:MM:TEXT, got {value!r}")
+    day, hour, minute = (int(part) for part in parts[:3])
+    if day < 1 or hour > 23 or minute > 59:
+        raise argparse.ArgumentTypeError(f"day must be 1 or more, hour 0-23, minute 0-59: {value!r}")
+    return value
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--godot", required=True)
@@ -120,6 +138,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--journal", choices=("all", "firsts", "none"), default="firsts")
     parser.add_argument("--world", choices=("town", "land"), default="land")
     parser.add_argument("--out", type=Path)
+    parser.add_argument("--letter", action="append", type=_letter_spec, default=[], metavar="DAY:HH:MM:TEXT")
     parser.add_argument("--project", type=Path, default=PROJECT_DEFAULT)
     args = parser.parse_args(argv)
     if not 1 <= args.days <= 3650:
@@ -132,6 +151,7 @@ def main(argv: list[str] | None = None) -> int:
         journal=args.journal,
         world=args.world,
         out=args.out,
+        letters=args.letter,
     )
 
 

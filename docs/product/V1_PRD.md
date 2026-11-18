@@ -35,6 +35,9 @@ companionship.
 - free-form AI chat with hosted or cloud models (reopened 2026-11-16 for an
   optional local Ollama model only; see `DEFERRED.md` and
   `PLAN13_TOWN_AND_CONVERSATION.md`)
+- a buddy that writes letters back (letters you write arrive and are read at
+  its console from step 2c-1; writing back comes in step 2c-2, see
+  `PLAN14_SMALL_BEGINNINGS.md`)
 - cross-platform parity
 - marketplace/plugin scripting runtime
 - large multi-character world simulation (unchanged by D-007: the buddy's own

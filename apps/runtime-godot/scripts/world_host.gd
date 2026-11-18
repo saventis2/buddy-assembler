@@ -168,8 +168,11 @@ func _tick() -> void:
 	if _never_decided():
 		AppState.tick_mind(int(now))
 	var present := _desktop_present(desktop, now)
-	# 5.1 Requests.
-	for request in Whereabouts.take_requests(_base):
+	# 5.1 Requests. Letters are stored first, so one that came with a call is kept
+	# even when the call hands the buddy over; any other kind is ignored.
+	var requests: Array = Whereabouts.take_requests(_base)
+	take_letters(requests)
+	for request in requests:
 		if str(request.get("kind", "")) != "call_over":
 			continue
 		if now - float(request.get("t", now)) > REQUEST_MAX_AGE_SECONDS:
@@ -208,6 +211,14 @@ func _tick() -> void:
 	AppState.tick_mind(int(now))
 	_maybe_choose_name(now)
 	_write_status()
+
+
+# A letter in the inbox is stored in the mailbox under its request id. It is
+# never too old: unlike a call, it is not dropped for its age.
+func take_letters(requests: Array) -> void:
+	for request in requests:
+		if typeof(request) == TYPE_DICTIONARY and str((request as Dictionary).get("kind", "")) == "letter":
+			AppState.letters_receive(request)
 
 
 # 5.5 A buddy with no name asks the thinking model for one (the desktop does the

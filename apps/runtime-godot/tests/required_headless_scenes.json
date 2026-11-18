@@ -25,6 +25,7 @@
     {"id": "fresh-start", "scene": "res://tests/FreshStartTest.tscn", "pass_marker": "fresh_start_test: PASS (9 cases)"},
     {"id": "no-save-start", "scene": "res://tests/NoSaveStartTest.tscn", "args": ["--", "--no-save"], "pass_marker": "no_save_start_test: PASS (4 cases)"},
     {"id": "world-host", "scene": "res://tests/WorldHostTest.tscn", "pass_marker": "world_host_test: PASS (26 cases)"},
+    {"id": "letters", "scene": "res://tests/LetterTest.tscn", "pass_marker": "letter_test: PASS (14 cases)"},
     {"id": "manual-verification-report", "scene": "res://tests/ManualVerificationReportTest.tscn", "pass_marker": "manual_verification_report_test: PASS (2 cases)"}
   ]
 }

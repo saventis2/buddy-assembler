@@ -2,6 +2,7 @@ extends Node
 
 # Command-line fast-forward: lives a new buddy through N days and prints the
 # report. Usage (after --): --no-save --days=N --seed=N --journal=all|firsts|none --world=town|land --out=<path>
+# --letter=DAY:HH:MM:TEXT (repeatable) puts a letter from the person in the mailbox at that time (land world).
 # --no-save is required: it makes the app start without opening the save files
 # (see AppState.NO_SAVE_ARG). tools/simulate_days.py, the launcher, passes it.
 
@@ -23,6 +24,7 @@ func _ready() -> void:
 	var journal := "firsts"
 	var world := "land"
 	var out_path := ""
+	var letters: Array = []
 	for arg in OS.get_cmdline_user_args():
 		var text := str(arg)
 		if text == AppState.NO_SAVE_ARG:
@@ -45,6 +47,12 @@ func _ready() -> void:
 			world = text.substr(8)
 		elif text.begins_with("--out="):
 			out_path = text.substr(6)
+		elif text.begins_with("--letter="):
+			var parts: PackedStringArray = text.substr(9).split(":", true, 3)
+			if parts.size() != 4 or not parts[0].is_valid_int() or not parts[1].is_valid_int() or not parts[2].is_valid_int() or parts[3].strip_edges() == "":
+				_fail("simulate_days: bad --letter value '%s' (want DAY:HH:MM:TEXT)" % text.substr(9))
+				return
+			letters.append({"day": int(parts[0]), "hour": int(parts[1]), "minute": int(parts[2]), "text": parts[3]})
 		else:
 			_fail("simulate_days: unknown argument '%s'" % text)
 			return
@@ -60,7 +68,7 @@ func _ready() -> void:
 		return
 
 	var started := Time.get_ticks_msec()
-	var report: Dictionary = LifeSim.run(AppState, {"days": days, "seed": seed_value, "small_beginnings": world == "land"})
+	var report: Dictionary = LifeSim.run(AppState, {"days": days, "seed": seed_value, "small_beginnings": world == "land", "letters": letters})
 	if report.has("error"):
 		_fail("simulate_days: " + str(report["error"]))
 		return

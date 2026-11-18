@@ -74,10 +74,26 @@ static func run(app_state: Node, config: Dictionary) -> Dictionary:
 		need_stats[need_key] = {"min": 1.0, "max": 0.0, "samples": 0, "at_limit": 0}
 	var memory_service = MemoryService.new()
 	var memory_max_edges := 0
+	# Letters from the person (config "letters"): each goes in the mailbox at its
+	# time, as the world host would on taking the request.
+	var letter_plan: Array = []
+	for letter_variant in config.get("letters", []):
+		var spec: Dictionary = letter_variant
+		var target: int = start + (int(spec.get("day", 1)) - 1) * SECONDS_PER_DAY + int(spec.get("hour", 0)) * 3600 + int(spec.get("minute", 0)) * 60
+		letter_plan.append({"target": maxi(target, start), "text": str(spec.get("text", "")), "sent": false})
+	var letter_timeline: Array = []
 
 	for i in range(days * slots_per_day):
 		var t: int = start + i * interval
 		var day: int = int(i / slots_per_day) + 1
+		for plan_variant in letter_plan:
+			var plan: Dictionary = plan_variant
+			if not bool(plan["sent"]) and int(plan["target"]) <= t:
+				plan["sent"] = true
+				state.set_sim_clock(int(plan["target"]))
+				var sent: Dictionary = state.letters_send(str(plan["text"]))
+				if not bool(sent.get("ok", false)):
+					letter_timeline.append({"t": int(plan["target"]), "text": "a letter was refused (%s)" % str(sent.get("reason", ""))})
 		state.set_sim_clock(t)
 		var events: Array = state.tick_mind(t)
 		if not events.is_empty():
@@ -167,6 +183,11 @@ static func run(app_state: Node, config: Dictionary) -> Dictionary:
 
 			for event_variant in events:
 				var event: Dictionary = event_variant
+				if str(event.get("learned", "")) == "console":
+					letter_timeline.append({"t": int(event.get("t", t)), "text": "it worked out the glowing box"})
+				var read_variant = event.get("read_letters", [])
+				if typeof(read_variant) == TYPE_ARRAY and not (read_variant as Array).is_empty():
+					letter_timeline.append({"t": int(event.get("t", t)), "text": "it read %d letter%s" % [(read_variant as Array).size(), "" if (read_variant as Array).size() == 1 else "s"]})
 				var intent: String = str(event.get("intent", ""))
 				day_decisions += 1
 				day_intents[intent] = int(day_intents.get(intent, 0)) + 1
@@ -278,6 +299,22 @@ static func run(app_state: Node, config: Dictionary) -> Dictionary:
 			"status": str(want.get("status", "")),
 		})
 
+	var console_record: Dictionary = {}
+	var console_variant = state.profile.get("mind", {}).get("console", null)
+	if typeof(console_variant) == TYPE_DICTIONARY:
+		console_record = console_variant
+	var final_letters: Array = []
+	for letter_row_variant in state.letters_items():
+		var letter_row: Dictionary = letter_row_variant
+		if str(letter_row.get("from", "")) == "you":
+			final_letters.append({"text": str(letter_row.get("text", "")), "sent_t": int(letter_row.get("t", 0)), "read_t": int(letter_row.get("read_t", 0))})
+	for timeline_row_variant in letter_timeline:
+		var timeline_row: Dictionary = timeline_row_variant
+		var timeline_stamp: Dictionary = Time.get_datetime_dict_from_unix_time(int(timeline_row["t"]))
+		timeline_row["day"] = int((int(timeline_row["t"]) - start) / SECONDS_PER_DAY) + 1
+		timeline_row["hour"] = int(timeline_stamp.get("hour", 0))
+		timeline_row["minute"] = int(timeline_stamp.get("minute", 0))
+
 	return {
 		"schema": 1,
 		"config": {"days": days, "seed": seed_value, "start_unix": start, "pack_id": pack_id, "small_beginnings": small},
@@ -316,7 +353,13 @@ static func run(app_state: Node, config: Dictionary) -> Dictionary:
 			"journal_tail": tail,
 			"memory": memory_service.land_memory_report(state.profile, {"home_place": home_place}),
 			"known_places": {"found": known_found, "signs": known_signs},
+			"letters": {
+				"console_goes": int(console_record.get("goes", 0)),
+				"console_known_t": int(console_record.get("known_t", 0)),
+				"letters": final_letters,
+			},
 		},
+		"letter_timeline": letter_timeline,
 	}
 
 
@@ -404,11 +447,38 @@ static func format_text(report: Dictionary, journal: String) -> String:
 	var alone_t: int = int(memory.get("alone_belief_t", 0))
 	var alone_text := "never" if alone_t <= 0 else "day %d" % (int((alone_t - start) / SECONDS_PER_DAY) + 1)
 	lines.append("memory: edges %s, total %d, max %d, alone belief %s, untraceable %d, today %d" % [_counts_text(memory.get("edges", {})), int(memory.get("total_edges", 0)), int(totals.get("memory_max_edges", 0)), alone_text, int(memory.get("untraceable", 0)), int(memory.get("today", 0))])
+	if bool(config.get("small_beginnings", false)):
+		var letters_final: Dictionary = (report.get("final", {}) as Dictionary).get("letters", {})
+		var known_t: int = int(letters_final.get("console_known_t", 0))
+		lines.append("console worked out: %s (%d goes to the glowing box so far)" % ["not yet" if known_t <= 0 else _day_clock(known_t, start), int(letters_final.get("console_goes", 0))])
+		var letter_number := 0
+		for letter_variant in letters_final.get("letters", []):
+			var letter: Dictionary = letter_variant
+			letter_number += 1
+			var sent_t: int = int(letter.get("sent_t", 0))
+			var read_t: int = int(letter.get("read_t", 0))
+			if read_t <= 0:
+				lines.append("letter %d: sent %s, not read" % [letter_number, _day_clock(sent_t, start)])
+			else:
+				var minutes_after: int = int((read_t - sent_t) / 60)
+				lines.append("letter %d: sent %s, read %s (after %d h %d min)" % [letter_number, _day_clock(sent_t, start), _day_clock(read_t, start), int(minutes_after / 60), minutes_after % 60])
+		var timeline: Array = report.get("letter_timeline", [])
+		if not timeline.is_empty():
+			lines.append("Letter timeline:")
+			for timeline_variant in timeline:
+				var timeline_row: Dictionary = timeline_variant
+				lines.append("  day %d %02d:%02d  %s" % [int(timeline_row.get("day", 0)), int(timeline_row.get("hour", 0)), int(timeline_row.get("minute", 0)), str(timeline_row.get("text", ""))])
 	var final: Dictionary = report.get("final", {})
 	lines.append("Final: at %s, favourite %s, least %s, bond level %d, top trait %s, meso %d" % [str(final.get("location", "")), str(final.get("favourite", "")), str(final.get("least", "")), int(final.get("bond_level", 1)), str(final.get("top_trait", "")), int(final.get("meso", 0))])
 	for tail_text in final.get("journal_tail", []):
 		lines.append("  > " + str(tail_text))
 	return "\n".join(lines)
+
+
+# "day D HH:MM" for a simulated time.
+static func _day_clock(unix_time: int, start: int) -> String:
+	var stamp: Dictionary = Time.get_datetime_dict_from_unix_time(unix_time)
+	return "day %d %02d:%02d" % [int((unix_time - start) / SECONDS_PER_DAY) + 1, int(stamp.get("hour", 0)), int(stamp.get("minute", 0))]
 
 
 static func _counts_text(counts: Dictionary) -> String:

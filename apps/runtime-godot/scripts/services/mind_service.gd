@@ -9,6 +9,8 @@ extends RefCounted
 # Deterministic by design: decisions are seeded from the profile and the
 # decision timestamp, so a given history always replays the same way.
 
+const LetterService = preload("res://scripts/services/letter_service.gd")
+
 const DECISION_INTERVAL_SECONDS := 600
 const MAX_CATCHUP_DECISIONS := 8
 const JOURNAL_LIMIT := 40
@@ -160,6 +162,20 @@ const LAND_CONFIDENCE_PULL := 0.03
 const LAND_EDGE_ACTIVITY := {"id": "edge", "label": "went to the edge of what I know", "satisfies": "curiosity", "minutes": 30}
 const LAND_ARRIVE_ACTIVITY := {"id": "arrive", "label": "found somewhere new", "satisfies": "curiosity", "minutes": 40}
 const LAND_WAKE_ACTIVITY := {"id": "wake", "label": "woke up", "satisfies": "reflection", "minutes": 20}
+
+# The glowing box is the console (Plan 14 step 2c-1). On the third time it goes
+# to it, it works out that the box is a way to talk to the person; until then,
+# letters wait there. mind["console"] = {"goes", "known", "known_t"}.
+const CONSOLE_ACTIVITY_ID := "glowing_box"
+const CONSOLE_GOES_TO_LEARN := 3
+# While a letter waits and it does not know the box yet, each awake, rested
+# decision has this chance to go and look at the blinking box.
+const LETTER_BLINK_CHANCE := 0.25
+const CONSOLE_LEARNED_LINE := "I watched the glowing box for a long time. Small marks came up on it, and when I touched them they changed. I think it is a way to talk to you."
+const CONSOLE_READ_AFTER_LEARNING := " Then I read what you wrote."
+const CONSOLE_READ_ONE_LINE := "I read your letter at the glowing box."
+const CONSOLE_READ_MANY_LINE := "I read your letters at the glowing box."
+const CONSOLE_BLINK_LINE := "The glowing box was blinking. I watched it for a while, but I don't know what it wants."
 
 
 func ensure_profile(profile: Dictionary) -> Dictionary:
@@ -651,6 +667,27 @@ func _decide(
 			if _has_open_sign(mind):
 				scores["explore"] = float(scores["explore"]) + LAND_SIGN_PULL
 
+	# A letter waiting at the glowing box draws it there before anything else it
+	# had in mind (asleep it does not wake for one: it has no decisions then, and
+	# at night the pull waits for morning). Once it knows the box it goes to read;
+	# before, the blinking box draws it now and then. Draws no rng without a letter.
+	var letter_pull := ""
+	var box_place: Dictionary = {}
+	var box_activity: Dictionary = {}
+	if small and count > 0 and not is_night and float(mods["energy_strain"]) < TIRED_LIMIT and LetterService.has_unread(merged):
+		for place_variant in places:
+			if str((place_variant as Dictionary).get("id", "")) != home_id:
+				continue
+			for activity_variant in ((place_variant as Dictionary).get("activities", []) as Array):
+				if typeof(activity_variant) == TYPE_DICTIONARY and str((activity_variant as Dictionary).get("id", "")) == CONSOLE_ACTIVITY_ID:
+					box_place = place_variant
+					box_activity = activity_variant
+		if not box_place.is_empty():
+			if bool(_console(mind).get("known", false)):
+				letter_pull = "read"
+			elif rng.randf() < LETTER_BLINK_CHANCE:
+				letter_pull = "blink"
+
 	# Something agreed to earlier (see consider / note_talk). Expired ones are
 	# dropped; at night the buddy sleeps on it; otherwise it is honoured if the
 	# place is open / the person is around, and kept for later if not.
@@ -665,7 +702,7 @@ func _decide(
 			mind["intention"] = {}
 		# Worn out, it rests first: "later" for tiredness promised to go after
 		# a rest, so nothing it agreed to is done while it is still this tired.
-		elif not is_night and float(mods["energy_strain"]) < TIRED_LIMIT:
+		elif not is_night and float(mods["energy_strain"]) < TIRED_LIMIT and letter_pull == "":
 			honoured = _honour_intention(intention, mind["feelings"], open_places, subjects, scores, rng, mind["wants"], gate_hour)
 			if not honoured.is_empty():
 				mind["intention"] = {}
@@ -673,7 +710,7 @@ func _decide(
 	# Saved up enough for something it wants: head for the shop.
 	var intention_now = mind.get("intention", {})
 	var rested := float(mods["energy_strain"]) < TIRED_LIMIT
-	if honoured.is_empty() and not is_night and rested and typeof(intention_now) == TYPE_DICTIONARY and (intention_now as Dictionary).is_empty():
+	if honoured.is_empty() and letter_pull == "" and not is_night and rested and typeof(intention_now) == TYPE_DICTIONARY and (intention_now as Dictionary).is_empty():
 		var meso := int(context.get("meso", 0))
 		var wanted := {}
 		for want_variant in mind["wants"]:
@@ -694,7 +731,7 @@ func _decide(
 					mind["intention"] = {}
 
 	# Today's plan: do the item for this part of the day if nothing else is steering.
-	if plans_on and honoured.is_empty() and not is_night and rested:
+	if plans_on and honoured.is_empty() and letter_pull == "" and not is_night and rested:
 		var plan_items_variant = (mind["day_plan"] as Dictionary).get("items", [])
 		var plan_items: Array = plan_items_variant if typeof(plan_items_variant) == TYPE_ARRAY else []
 		for item_index in range(plan_items.size()):
@@ -718,6 +755,8 @@ func _decide(
 	var best := -1.0
 	if not honoured.is_empty():
 		intent = str(honoured["intent"])
+	elif letter_pull != "":
+		intent = "explore"
 	else:
 		for candidate in INTENTS:
 			if small and candidate == "visit":
@@ -739,7 +778,7 @@ func _decide(
 	var waking := ""
 	if small and count == 0 and honoured.is_empty():
 		waking = str(town.get("waking", ""))
-	if small and waking == "" and honoured.is_empty() and intent == "explore":
+	if small and waking == "" and honoured.is_empty() and letter_pull == "" and intent == "explore":
 		edge = _try_the_edge(all_places, mind, home_id, hour, decision_unix, rng)
 	if waking != "":
 		intent = "reflect"
@@ -753,6 +792,9 @@ func _decide(
 	elif not honoured.is_empty():
 		place = honoured["place"]
 		activity = honoured["activity"]
+	elif letter_pull != "":
+		place = box_place
+		activity = box_activity
 	elif candidates.is_empty():
 		intent = "reflect"
 		for home_variant in places:
@@ -812,6 +854,11 @@ func _decide(
 
 	var text := ""
 	var times_before := 0
+	# At the glowing box: what it worked out or read there (its own line, with
+	# no tail or afterthought after it).
+	var box_text := false
+	var learned := ""
+	var read_ids: Array = []
 	if small:
 		var done: Dictionary = mind["done"]
 		times_before = int(done.get(activity_id, 0))
@@ -822,6 +869,32 @@ func _decide(
 		else:
 			text = _land_text(activity, times_before, valence, int(merged.get("personality_seed", 0)), rng)
 		done[activity_id] = times_before + 1
+		if activity_id == CONSOLE_ACTIVITY_ID and place_id == home_id:
+			var console: Dictionary = _console(mind)
+			console["goes"] = int(console["goes"]) + 1
+			var waiting_ids: Array = []
+			for waiting_letter in LetterService.unread_from_you(merged):
+				waiting_ids.append(str((waiting_letter as Dictionary)["id"]))
+			if not bool(console["known"]) and int(console["goes"]) >= CONSOLE_GOES_TO_LEARN:
+				console["known"] = true
+				console["known_t"] = decision_unix
+				mind["first_letter_due"] = true
+				learned = "console"
+				text = CONSOLE_LEARNED_LINE
+				if not waiting_ids.is_empty():
+					text += CONSOLE_READ_AFTER_LEARNING
+					read_ids = waiting_ids
+				box_text = true
+			elif bool(console["known"]) and not waiting_ids.is_empty():
+				read_ids = waiting_ids
+				text = CONSOLE_READ_ONE_LINE if waiting_ids.size() == 1 else CONSOLE_READ_MANY_LINE
+				box_text = true
+			elif letter_pull == "blink":
+				text = CONSOLE_BLINK_LINE
+				box_text = true
+			mind["console"] = console
+			if not read_ids.is_empty():
+				merged["letters"] = LetterService.mark_read(merged, read_ids, decision_unix)["letters"]
 	if text == "":
 		text = _compose_thought(
 			intent, place, activity, companion_name, valence, get_preferences(merged), mind["feelings"], places
@@ -839,6 +912,10 @@ func _decide(
 		"activity_label": str(activity.get("label", "")),
 		"companion_name": companion_name,
 	}
+	if learned != "":
+		entry["learned"] = learned
+	if not read_ids.is_empty():
+		entry["read_letters"] = read_ids
 	if not honoured.is_empty():
 		var prefix := str(honoured["prefix"])
 		if small and str(honoured["because"]) == "plan":
@@ -891,7 +968,7 @@ func _decide(
 		if not edge.is_empty():
 			var edge_keys := {"sign": "sign_of", "blocked": "blocked_at", "found": "found_place"}
 			entry[str(edge_keys[str(edge["kind"])])] = str(edge["target"])
-		elif waking == "" and intent != "rest":
+		elif waking == "" and intent != "rest" and not box_text:
 			# Something noticed or wondered about takes the place of the tail.
 			# Going to sleep gets neither: its line is the last thing it knows.
 			if not _land_afterthought(entry, intent, place, hour, mind, all_places, decision_unix, rng):
@@ -1801,6 +1878,17 @@ func _strongest_place_or_person(feelings: Dictionary, want_highest: bool) -> Str
 func _hour_is_night(unix_time: int) -> bool:
 	var hour := _local_hour(unix_time)
 	return hour < 7 or hour >= 22
+
+
+# The console record, with a default for anything missing (a copy to write back).
+func _console(mind: Dictionary) -> Dictionary:
+	var console := {"goes": 0, "known": false, "known_t": 0}
+	var stored = mind.get("console", null)
+	if typeof(stored) == TYPE_DICTIONARY:
+		console["goes"] = int((stored as Dictionary).get("goes", 0))
+		console["known"] = bool((stored as Dictionary).get("known", false))
+		console["known_t"] = int((stored as Dictionary).get("known_t", 0))
+	return console
 
 
 func _clamp01(value: float) -> float:

@@ -333,11 +333,11 @@ func note_today(profile: Dictionary, events: Array, land: Dictionary) -> Diction
 			"activity_label": str(event.get("activity_label", "")),
 			"valence": float(event.get("valence", 0.0)),
 		}
-		for pair in [["found", "found_place"], ["sign", "sign_of"], ["blocked", "blocked_at"], ["sight", "sight"]]:
+		for pair in [["found", "found_place"], ["sign", "sign_of"], ["blocked", "blocked_at"], ["sight", "sight"], ["learned", "learned"]]:
 			var value: String = str(event.get(pair[1], ""))
 			if value != "":
 				item[pair[0]] = value
-		if item.has("found") or item.has("sign") or item.has("blocked") or item.has("sight"):
+		if item.has("found") or item.has("sign") or item.has("blocked") or item.has("sight") or item.has("learned"):
 			item["text"] = str(event.get("text", "")).substr(0, MAX_TODAY_TEXT)
 		today.append(item)
 	if today.size() > TODAY_LIMIT:
@@ -398,6 +398,8 @@ func nightly_pass(profile: Dictionary, land: Dictionary, now: int) -> Dictionary
 		if sight_id != "":
 			var line: String = _sight_line(land, sight_id)
 			_upsert(memory, me, "noticed", {"id": "sight:" + sight_id, "label": line if line != "" else text}, LAND_NOTICED[2], "land", LAND_NOTICED[0], LAND_NOTICED[1], t, 0)
+		if str(item.get("learned", "")) == "console":
+			_upsert(memory, me, "believes", {"id": "belief:console", "label": "the glowing box is a way to talk to you"}, LAND_BELIEVES[2], "land", LAND_BELIEVES[0], LAND_BELIEVES[1], t, 0)
 		var place_id: String = str(item.get("place", ""))
 		if place_id != "" and place_id != "visiting":
 			var place_name: String = str(item.get("place_name", ""))
@@ -1005,6 +1007,12 @@ func _clean(text: String, limit: int) -> String:
 
 
 func _sensitive(text: String) -> bool:
+	return looks_sensitive(text)
+
+
+# Whether text looks like a secret (a password, a card, a long number). Static,
+# so the mailbox can ask without a memory service (letter_service.gd).
+static func looks_sensitive(text: String) -> bool:
 	var lowered := text.to_lower()
 	for word in SENSITIVE_WORDS:
 		if lowered.contains(word):

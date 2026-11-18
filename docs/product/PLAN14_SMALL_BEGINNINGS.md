@@ -571,6 +571,89 @@ often and needs the fallback half as often or less. gemma3:4b stays the
 default because of its graphics memory; the check keeps it honest at the cost
 of more fixed lines.
 
+### Step 2c-1, letters arrive: built 2026-11-19
+
+You can write to the buddy, and it reads what you wrote at the glowing box (the
+console) in its house. It does not write back yet: that is step 2c-2, which
+needs the model. Nothing here calls a model. Land world only
+(`AppState.small_beginnings()`); the old town has no console and no letters,
+and its saves are unchanged.
+
+Owner decisions (2026-11-19):
+
+1. **Chat stays while the buddy visits the desktop.** Letters are how you reach
+   it in its world.
+2. **It reads and, in 2c-2, answers a letter the next time it goes to the
+   console.** A waiting letter draws it there. Asleep, it reads after it wakes.
+3. **It has to work out the glowing box before it can read letters.** They wait
+   there until then.
+4. **It writes to you unprompted only once**: a first letter when it works out
+   the console. Writing is step 2c-2; here only the flag is set
+   (`mind.first_letter_due`).
+
+What is built:
+
+- **The mailbox** (`letter_service.gd`, static functions on the profile):
+  `profile.letters.items`, each `{id, from: you|buddy, text, t, read_t,
+  reply_due, reply_to}`. Letters are cleaned (ends stripped, line breaks kept,
+  runs of spaces made one) and refused when empty, over 1,500 characters, or
+  when they look like a secret (the memory service's own check, now also public
+  as `MemoryService.looks_sensitive`). A letter id seen twice is stored once.
+  At most 20 of your letters wait unread at once; another is refused, on the
+  desktop too, until it reads some. Over 60 letters the oldest go: first those
+  read and answered, then the oldest still waiting for an answer. A letter
+  waiting to be read is never dropped. `delivery_state` tells the desktop whether a letter is on its way,
+  waiting at the box, read, or lost (an old host that does not know letters
+  deletes the request without storing it).
+- **Working out the console** (`mind_service.gd`): each land decision at the
+  glowing box counts a go in `mind.console`. On the third it works the box out
+  (the event carries `learned: "console"`, `known_t` is set, and so is
+  `first_letter_due`). Memory keeps it: today's memory holds the item, and the
+  nightly pass turns it into the belief "the glowing box is a way to talk to
+  you" (`belief:console`), with the same strengths as the alone belief.
+- **Pull and reading.** With the box known, awake, by day and not too tired, a
+  waiting letter makes the next decision the glowing box (before wishes,
+  promises and plans; from elsewhere it heads home). There it reads them all:
+  `read_t` is set, `reply_due` is set, the event carries `read_letters`, and its
+  line says "I read your letter at the glowing box." Before it knows the box, a
+  waiting letter makes the box blink: a quarter of awake, rested decisions go
+  and look at it ("The glowing box was blinking. I watched it for a while, but I
+  don't know what it wants."), and that still counts towards learning. A
+  blinking go that is the third go works the box out and reads, in one line.
+- **Delivery** (`app_state.gd`, `world_host.gd`): the process holding the buddy
+  stores a letter directly. Otherwise, while a host is alive, the desktop checks
+  the text with the same rules (so a refused letter never reaches the inbox) and
+  leaves a `letter` request, whose id is the letter's id. The host stores it
+  (`WorldHost.take_letters`, no age limit) before it looks at any call.
+- **The Letters window** (`buddy_overlay.gd`, main menu, land only): the letters
+  oldest first, with "You" or the buddy's name and when, a status on yours
+  ("On its way", "Waiting at the glowing box", "Read ...", or "Not delivered"
+  with "Send again"), a line at the top until it has worked out the box, a
+  writing box with a counter (Ctrl+Enter sends), and a line under it when a
+  letter is refused. The menu says "Letters (N new)" for letters from the buddy
+  newer than `settings.lettersSeenT`; no buddy letters exist yet.
+- **Fast-forward**: `LifeSim.run` takes `letters`, and `simulate_days.py` takes
+  `--letter DAY:HH:MM:TEXT` (repeatable). The text report says when the console
+  was worked out and, per letter, when it was read.
+
+Calls the spec left open: the pull and the blink happen only by day (07:00 to
+22:00, `not is_night`), so the first decision after it wakes comes first and
+the box after; a promise it had made is kept for later, not spent, when a
+letter pulls it to the box.
+
+Fast-forward, 3 days, one letter sent on day 1 at 10:00 ("Hello, how is your
+day?"):
+
+| Seed | Console worked out | Letter read |
+|---|---|---|
+| 21 | day 1 08:00 (before the letter) | day 1 10:30, 30 min after it was sent |
+| 7 | day 1 12:30 | day 1 12:30, on the learning go itself, 2 h 30 min after |
+| 3 | day 1 11:00 | day 1 11:00, on the learning go itself, 1 h after |
+
+Without letters the life is unchanged: the land for 30 days at seed 21 is still
+819 decisions and the town at seed 7 still 4,320 (on the land only the third
+glowing-box go reads differently). Tests: `letter_test` (13 cases).
+
 ## Direction (owner, 2026-11-16)
 
 The buddy starts out knowing very little. It does not start in a town full of
@@ -634,9 +717,10 @@ What this changes in this plan:
   (step 2b), then letters (step 2c). Everything after them reads and writes
   memory, and the world host can answer letters while the desktop app is
   closed. Asking for and sending materials stay in step 9.
-- **Open:** whether the quick desktop chat stays for when it is visiting you,
-  and how soon it writes back: the next time it goes to the console, or
-  within a set time.
+- **Answered (2026-11-19):** the quick desktop chat stays while the buddy is
+  visiting you, and letters are how you reach it in its world. It reads, and in
+  step 2c-2 answers, a letter the next time it goes to the console (not within
+  a set time).
 
 ## What the reference shows, and what it does not
 
@@ -1344,10 +1428,10 @@ view screens, things you leave) goes to cheaper models from Fable's specs.
 
 ## Still open
 
-Two owner questions are open (2026-11-18): whether the quick desktop chat
-stays for when it visits you, and how soon it writes back (the next time it
-goes to the console, or within a set time). Smaller design choices that are
-recommended above and can be changed when their step comes up:
+The two owner questions of 2026-11-18 are answered (2026-11-19): the quick
+desktop chat stays while it visits you, and it writes back the next time it
+goes to the console. Smaller design choices that are recommended above and can
+be changed when their step comes up:
 
 - Memory's starting limits and what sleep keeps (Memory), tuned in
   fast-forward.
