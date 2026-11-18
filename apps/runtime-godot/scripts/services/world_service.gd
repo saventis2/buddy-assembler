@@ -1,5 +1,7 @@
 extends RefCounted
 
+const LandData = preload("res://scripts/services/land_data.gd")
+
 const DEFAULT_TOWN := {
 	"home_place": "home",
 	# Where each place sits on the town map (0..1 across and down), and the
@@ -308,6 +310,12 @@ func get_town(world_state: Dictionary) -> Dictionary:
 		if typeof(places) == TYPE_ARRAY and not (places as Array).is_empty():
 			return town
 	return DEFAULT_TOWN.duplicate(true)
+
+
+# The whole land of a buddy that starts small (Plan 14). The mind decides how
+# much of it the buddy knows; see mind_service.known_town.
+func get_land() -> Dictionary:
+	return LandData.LAND.duplicate(true)
 
 
 func configure_from_manifest(world_state: Dictionary, manifest: Dictionary) -> Dictionary:
