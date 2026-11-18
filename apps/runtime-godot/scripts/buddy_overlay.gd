@@ -2761,7 +2761,7 @@ func _start_chat_request(user_text: String) -> bool:
         decision = _decision_for(target, AppState.mind_consider(target))
     var body: String = MindThinker.build_chat_request(
         _chat_model_name(), _chat_about(), _recent_journal_texts(4), _chat_turns, user_text, town, memory,
-        str(decision.get("fact", "")), str(decision.get("say", ""))
+        str(decision.get("fact", "")), str(decision.get("say", "")), AppState.small_beginnings()
     )
     var error: int = _chat_http.request(url, ["Content-Type: application/json"], HTTPClient.METHOD_POST, body)
     if error != OK:
@@ -2843,7 +2843,8 @@ func _maybe_greet() -> void:
     _ensure_chat_http()
     var town := {"places": _town_place_names(), "people": _town_people()}
     var body: String = MindThinker.build_greeting_request(
-        _chat_model_name(), _chat_about(), _recent_journal_texts(4), town, memory, str(news.get("text", ""))
+        _chat_model_name(), _chat_about(), _recent_journal_texts(4), town, memory, str(news.get("text", "")),
+        AppState.small_beginnings()
     )
     if _chat_http.request(url, ["Content-Type: application/json"], HTTPClient.METHOD_POST, body) == OK:
         _chat_pending = {"kind": "greeting", "news_t": int(news.get("t", 0))}
