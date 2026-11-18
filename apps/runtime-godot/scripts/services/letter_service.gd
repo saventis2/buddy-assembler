@@ -65,11 +65,13 @@ static func add_from_you(profile: Dictionary, id: String, text: String, now: int
 	return {"profile": out, "ok": true, "id": letter_id, "reason": ""}
 
 
-# Letters from the person that the buddy has not read yet, oldest first.
-static func unread_from_you(profile: Dictionary) -> Array:
+# Letters from the person that the buddy has not read yet, oldest first. With
+# `upto` (a time), only those sent by then: a decision replayed for a time
+# before a letter came must not see it.
+static func unread_from_you(profile: Dictionary, upto: int = -1) -> Array:
 	var rows: Array = []
 	for item in _items(profile):
-		if _waiting(item):
+		if _waiting(item) and (upto < 0 or int((item as Dictionary)["t"]) <= upto):
 			rows.append(item)
 	return rows
 
@@ -82,9 +84,9 @@ static func unread_count(profile: Dictionary) -> int:
 	return count
 
 
-static func has_unread(profile: Dictionary) -> bool:
+static func has_unread(profile: Dictionary, upto: int = -1) -> bool:
 	for item in _items(profile):
-		if _waiting(item):
+		if _waiting(item) and (upto < 0 or int((item as Dictionary)["t"]) <= upto):
 			return true
 	return false
 

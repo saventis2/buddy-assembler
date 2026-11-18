@@ -671,10 +671,12 @@ func _decide(
 	# had in mind (asleep it does not wake for one: it has no decisions then, and
 	# at night the pull waits for morning). Once it knows the box it goes to read;
 	# before, the blinking box draws it now and then. Draws no rng without a letter.
+	# Only letters sent by the time of this decision count: catch-up decisions are
+	# replayed for times already past.
 	var letter_pull := ""
 	var box_place: Dictionary = {}
 	var box_activity: Dictionary = {}
-	if small and count > 0 and not is_night and float(mods["energy_strain"]) < TIRED_LIMIT and LetterService.has_unread(merged):
+	if small and count > 0 and not is_night and float(mods["energy_strain"]) < TIRED_LIMIT and LetterService.has_unread(merged, decision_unix):
 		for place_variant in places:
 			if str((place_variant as Dictionary).get("id", "")) != home_id:
 				continue
@@ -873,7 +875,7 @@ func _decide(
 			var console: Dictionary = _console(mind)
 			console["goes"] = int(console["goes"]) + 1
 			var waiting_ids: Array = []
-			for waiting_letter in LetterService.unread_from_you(merged):
+			for waiting_letter in LetterService.unread_from_you(merged, decision_unix):
 				waiting_ids.append(str((waiting_letter as Dictionary)["id"]))
 			if not bool(console["known"]) and int(console["goes"]) >= CONSOLE_GOES_TO_LEARN:
 				console["known"] = true

@@ -12,6 +12,7 @@ const LifeSim = preload("res://tests/life_sim.gd")
 const ContentLoader = preload("res://scripts/content/content_loader.gd")
 const VisitController = preload("res://scripts/visit_controller.gd")
 const BuddyOverlayScript = preload("res://scripts/buddy_overlay.gd")
+const WorldHostScript = preload("res://scripts/world_host.gd")
 
 
 # Stands in for the overlay's visit controller: whether the buddy is here.
@@ -82,6 +83,7 @@ func _run_all() -> void:
 	# Last: it puts this process into simulation and the desktop role aside.
 	_case("a_simulation_is_solo", func(): return _test_a_simulation_is_solo())
 	_case("a_visit_that_ends_drops_model_work", func(): return _test_visit_end_drops_model_work())
+	_case("a_visit_answers_a_waiting_call", func(): return _test_hand_over_clears_pending())
 	Whereabouts.process_check = Callable()
 	_wipe(ROOT)
 
@@ -260,6 +262,27 @@ func _test_call_now_later_asleep() -> Variant:
 		return "a sleeping buddy answered %s" % [asleep]
 	if svc.consider_call(busy_profile, _land(), now + 1200).get("come", "") != "now":
 		return "a buddy whose time is up was still busy"
+	return null
+
+
+# Handing the buddy over, for a newer call or any other reason, also answers an
+# older call it told "later": after Send home, that old call must not bring it
+# straight back.
+func _test_hand_over_clears_pending() -> Variant:
+	var start := LifeSim.DEFAULT_START_UNIX
+	if not AppState.begin_simulation(2, start):
+		return "begin_simulation refused"
+	var base := "%s/hand_over" % ROOT
+	_wipe(base)
+	var host = WorldHostScript.new()
+	host._base = base
+	host._pending = {"id": "1-aaaaaaaa", "reason": "called", "at": start - 60}
+	host._hand_over(float(start), "called")
+	var left: Dictionary = host._pending
+	host.free()
+	_wipe(base)
+	if not left.is_empty():
+		return "a visit should answer the call that was waiting: %s" % [left]
 	return null
 
 

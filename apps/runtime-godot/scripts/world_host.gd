@@ -304,6 +304,9 @@ func _never_decided() -> bool:
 
 # 6. Hand over.
 func _hand_over(now: float, reason: String) -> void:
+	# A visit answers any call still waiting: one told "later" must not hand the
+	# buddy over again once it has been sent home.
+	_pending = {}
 	AppState.mind_leave_for_visit(int(now), reason)
 	AppState.release_buddy()
 	Whereabouts.release(_base, "host", OS.get_process_id())

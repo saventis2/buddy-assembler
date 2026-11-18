@@ -884,7 +884,7 @@ func letters_send(text: String, resend_of: String = "") -> Dictionary:
     var checked: Dictionary = LetterService.check_text(text)
     if not bool(checked["ok"]):
         return {"ok": false, "id": "", "reason": str(checked["reason"]), "via": ""}
-    if _letters_waiting_count() >= LetterService.MAX_WAITING:
+    if _letters_waiting_count(resend_of) >= LetterService.MAX_WAITING:
         return {"ok": false, "id": "", "reason": "too_many_waiting", "via": ""}
     var sent_id: String = Whereabouts.send_request(_host_dir, "letter", {"text": str(checked["text"])}, float(now))
     _letters_forget_outbox(resend_of)
@@ -895,14 +895,21 @@ func letters_send(text: String, resend_of: String = "") -> Dictionary:
 
 
 # Letters waiting at the glowing box as this desktop sees them: the unread ones
-# in the mailbox, and the ones it sent that have not turned up there yet.
-func _letters_waiting_count() -> int:
+# in the mailbox, and the ones it sent that are still on their way (in the
+# inbox, or only just sent). A lost one holds no place, and nor does `except`,
+# a lost letter being sent again in its place.
+func _letters_waiting_count(except: String = "") -> int:
     var have := {}
     for item in (LetterService.ensure_letters(profile)["letters"] as Dictionary)["items"]:
         have[str((item as Dictionary)["id"])] = true
     var count: int = LetterService.unread_count(profile)
-    for sent in _letters_outbox:
-        if not have.has(str((sent as Dictionary).get("id", ""))):
+    var now: int = _now_unix()
+    for sent_variant in _letters_outbox:
+        var sent: Dictionary = sent_variant
+        var id: String = str(sent.get("id", ""))
+        if id == except or have.has(id):
+            continue
+        if LetterService.delivery_state(profile, id, letters_inbox_file_exists(id), int(sent.get("sent_at", 0)), now) == "on_its_way":
             count += 1
     return count
 

@@ -39,6 +39,7 @@ func _run_all() -> void:
 	_case("mailbox_basics", func(): return _test_mailbox_basics())
 	_case("the_cap_keeps_waiting_letters", func(): return _test_the_cap())
 	_case("waiting_letters_are_limited", func(): return _test_waiting_is_limited())
+	_case("a_replayed_decision_reads_no_letter_early", func(): return _test_catch_up_reads_no_letter_early())
 	_case("refusals", func(): return _test_refusals())
 	_case("learning_the_box", func(): return _test_learning())
 	_case("letters_wait_until_known", func(): return _test_letters_wait())
@@ -323,6 +324,19 @@ func _test_waiting_is_limited() -> Variant:
 		var too_many: Dictionary = AppState.letters_send("One too many")
 		if bool(too_many["ok"]) or str(too_many["reason"]) != "too_many_waiting":
 			problem = "the desktop should hold back letter %d: %s" % [LetterService.MAX_WAITING + 1, str(too_many)]
+	# Letters the host never stored (lost) hold no place, and a lost letter can
+	# always be sent again.
+	if problem == "":
+		for sent_variant in AppState._letters_outbox:
+			var sent: Dictionary = sent_variant
+			DirAccess.remove_absolute("%s/inbox/%s.json" % [base, str(sent["id"])])
+			sent["sent_at"] = now - 1000
+		var lost_id: String = str((AppState._letters_outbox[0] as Dictionary)["id"])
+		var after_lost: Dictionary = AppState.letters_send("After the lost ones")
+		if not bool(after_lost["ok"]):
+			problem = "lost letters should hold no place in the queue: %s" % str(after_lost)
+		elif not bool(AppState.letters_send("Sent again", lost_id)["ok"]):
+			problem = "a lost letter can always be sent again"
 	AppState._role = saved_role
 	AppState._holding = saved_holding
 	AppState._host_dir = saved_dir
@@ -474,6 +488,24 @@ func _test_letters_wait() -> Variant:
 
 
 # --- 5: the pull -----------------------------------------------------------
+
+# Catch-up decisions are replayed for times already past. One for a time before
+# a letter was sent neither goes to the box for it nor reads it.
+func _test_catch_up_reads_no_letter_early() -> Variant:
+	var svc := _service()
+	var land: Dictionary = _land()
+	var known := {"console": {"goes": 3, "known": true, "known_t": 5}}
+	var t: int = _at(2, 10)
+	for seed_value in [1, 2, 3, 4, 5]:
+		var buddy: Dictionary = _buddy(seed_value, known, [_letter("A", t + 1800)])
+		var early: Dictionary = _decide_at(svc, buddy, land, t)
+		if (early["event"] as Dictionary).has("read_letters") or int(_letter_row(early["profile"], "A")["read_t"]) != 0:
+			return "seed %d: a decision before the letter was sent read it: %s" % [seed_value, str(early["event"])]
+		var later: Dictionary = _decide_at(svc, buddy, land, t + 3600)
+		if int(_letter_row(later["profile"], "A")["read_t"]) != t + 3600:
+			return "seed %d: once it has been sent, it is read: %s" % [seed_value, str(later["event"])]
+	return null
+
 
 func _test_the_pull() -> Variant:
 	var svc := _service()
