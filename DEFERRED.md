@@ -18,7 +18,8 @@ unless the V1 exit criteria in `PR_PLAN.md` are signed off.
   together with `docs/product/V1_PRD.md`): a buddy that starts small lives
   alone, and the six town characters, their quests and encounters are switched
   off for it and kept as an archive. Other characters stay deferred to a later
-  plan.
+  plan. Also, from 2026-11-18 (D-010): a watchdog that keeps the world host
+  running is deferred to the move to Nexus.
 - Cross-platform parity (macOS, Linux, mobile).
 - Marketplace or user-submitted content hosting.
 

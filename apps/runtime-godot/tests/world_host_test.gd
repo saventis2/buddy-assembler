@@ -60,10 +60,18 @@ func _run_all() -> void:
 	_case("only_the_holder_writes", func(): return _test_only_the_holder_writes())
 	_case("a_lost_lock_stops_writes", func(): return _test_a_lost_lock_stops_writes())
 	_case("the_visit_ends_here_without_a_host", func(): return _test_the_visit_ends_here_without_a_host())
+	_case("a_host_needs_both_settings", func(): return _test_a_host_needs_both_settings())
 	_case("peek_never_writes", func(): return _test_peek_never_writes())
 	_case("solo_is_unchanged", func(): return _test_solo_is_unchanged())
 	_case("bedtime_call_waits_for_morning", func(): return _test_bedtime_call_waits_for_morning())
 	_case("new_buddy_has_company", func(): return _test_new_buddy_has_company())
+	_case("only_a_real_launch_is_the_desktop", func(): return _test_only_a_real_launch_is_the_desktop())
+	_case("on_by_default", func(): return _test_on_by_default())
+	_case("still_world_after_hours", func(): return _test_still_world_after_hours())
+	_case("just_woke_comes_now", func(): return _test_just_woke_comes_now())
+	_case("chose_name_line", func(): return _test_chose_name_line())
+	# Last: it puts this process into simulation and the desktop role aside.
+	_case("a_simulation_is_solo", func(): return _test_a_simulation_is_solo())
 	Whereabouts.process_check = Callable()
 	_wipe(ROOT)
 
@@ -459,6 +467,20 @@ func _test_a_lost_lock_stops_writes() -> Variant:
 
 # When the buddy goes home and no host will take it back (the setting is off,
 # or no host is running), the app finishes the visit itself.
+# The app wants a host only when both settings the host checks are on, so with
+# small beginnings off it keeps the buddy instead of restarting hosts that stop.
+func _test_a_host_needs_both_settings() -> Variant:
+	if not VisitController.host_wanted({}):
+		return "with the defaults a host should be wanted"
+	if VisitController.host_wanted({"worldHost": false, "smallBeginnings": true}):
+		return "with World host off no host should be wanted"
+	if VisitController.host_wanted({"worldHost": true, "smallBeginnings": false}):
+		return "with small beginnings off no host should be wanted"
+	if not VisitController.host_wanted({"worldHost": true, "smallBeginnings": true}):
+		return "with both on a host should be wanted"
+	return null
+
+
 func _test_the_visit_ends_here_without_a_host() -> Variant:
 	if not VisitController.should_finish_here(false, true):
 		return "with the setting off, the app must finish the visit itself"
@@ -546,8 +568,11 @@ func _test_solo_is_unchanged() -> Variant:
 		return "role is %s in a test process with the setting off and no host" % AppState.role()
 	if AppState.is_holding_buddy():
 		return "a solo process says it holds the buddy"
-	if bool(AppState.settings.get("worldHost", false)):
-		return "worldHost is on by default"
+	# The test process ran a test scene, so it is solo although the setting is on
+	# by default. (The default, not this machine's saved settings, which an
+	# earlier run may have written either way.)
+	if not bool(AppState._default_settings().get("worldHost", false)):
+		return "worldHost is off by default"
 	var start: int = LifeSim.DEFAULT_START_UNIX
 	if not AppState.begin_simulation(2, start):
 		return "begin_simulation refused"
@@ -560,4 +585,133 @@ func _test_solo_is_unchanged() -> Variant:
 		return "tick_mind made no decision in role solo"
 	if AppState.role() != "solo":
 		return "the role changed"
+	return null
+
+
+func _test_only_a_real_launch_is_the_desktop() -> Variant:
+	var no := [
+		[["--headless", "--quit"], []],
+		[["--headless", "--quit-after", "2"], []],
+		[["--path", "x", "res://tests/LifeSimTest.tscn"], []],
+		[["-s", "res://x.gd"], []],
+		[["--check-only"], []],
+		[["--import"], []],
+		[["--editor"], []],
+		[["-e"], []],
+		[["--path", "x"], ["--ci-startup-smoke"]],
+		[["--path", "x"], ["--verify-export-closure"]],
+	]
+	for row in no:
+		if AppState._is_real_launch_args(PackedStringArray(row[0]), PackedStringArray(row[1])):
+			return "%s with user args %s counted as a real launch" % [row[0], row[1]]
+	var yes := [
+		[["--path", "x"], []],
+		[["--path", "x", "res://scenes/LaunchRouter.tscn"], []],
+		[["--path", "x"], ["--vertical-slice"]],
+	]
+	for row in yes:
+		if not AppState._is_real_launch_args(PackedStringArray(row[0]), PackedStringArray(row[1])):
+			return "%s with user args %s did not count as a real launch" % [row[0], row[1]]
+	return null
+
+
+func _test_on_by_default() -> Variant:
+	if not bool(AppState._default_settings().get("worldHost", false)):
+		return "worldHost is not on in the default settings"
+	return null
+
+
+func _test_a_simulation_is_solo() -> Variant:
+	AppState._role = "desktop"
+	AppState._holding = true
+	var start: int = LifeSim.DEFAULT_START_UNIX
+	if not AppState.begin_simulation(2, start):
+		return "begin_simulation refused"
+	if AppState.role() != "solo" or AppState._holding:
+		return "a simulation is role %s, holding %s" % [AppState.role(), AppState._holding]
+	var loaded: Dictionary = ContentLoader.load_with_fallback("core_pack", "", false)
+	AppState.apply_loaded_pack(str(loaded.get("pack_id", "core_pack")), loaded.get("manifest", {}))
+	AppState.settings["smallBeginnings"] = true
+	AppState.set_sim_clock(start + 9 * 3600)
+	if AppState.tick_mind(start + 9 * 3600).is_empty():
+		return "tick_mind was short-circuited in a simulation"
+	return null
+
+
+# A buddy that has just woken for the first time comes when called, though its
+# waking takes a little while; at bedtime it still waits for the morning.
+func _test_just_woke_comes_now() -> Variant:
+	var svc := _service()
+	var noon := _midnight() + 12 * 3600
+	var profile := svc.ensure_profile(_profile())
+	var mind: Dictionary = profile["mind"]
+	mind["journal"] = [{"t": noon, "place_id": "home", "activity_id": "wake", "activity_label": "woke up", "text": "I woke up."}]
+	mind["busy_until"] = noon + 1200
+	profile["mind"] = mind
+	var answer: Dictionary = svc.consider_call(profile, _land(), noon + 60)
+	if str(answer.get("come", "")) != "now":
+		return "a buddy that has just woken answered %s" % [answer]
+	var night_profile := profile.duplicate(true)
+	(night_profile["mind"] as Dictionary)["busy_until"] = _midnight() + 22 * 3600 + 1200
+	var night: Dictionary = svc.consider_call(night_profile, _land(), _midnight() + 22 * 3600)
+	if str(night.get("come", "")) != "asleep":
+		return "a buddy that has just woken at 22:00 answered %s" % [night]
+	return null
+
+
+func _test_still_world_after_hours() -> Variant:
+	var svc := _service()
+	var now: int = _midnight() + 12 * 3600
+	var base := _profile()
+	base["mind"] = {"last_decision_unix": now - 5 * 3600, "location": "home", "journal": []}
+	var long_gap: Dictionary = svc.note_still_world(base, _land(), now)
+	var journal: Array = long_gap["mind"]["journal"]
+	if journal.size() != 1:
+		return "a 5-hour gap made %d entries" % journal.size()
+	var entry: Dictionary = journal[0]
+	if str(entry.get("text", "")) != "There was a long stretch I don't remember. When I noticed again, everything was just where I left it.":
+		return "wrong text: %s" % [entry.get("text", "")]
+	if str(entry.get("activity_id", "")) != "still_world" or str(entry.get("place_id", "")) != "home":
+		return "wrong activity or place: %s" % [entry]
+	if int(entry.get("t", 0)) >= now - 8 * 600:
+		return "the line is dated %d, not before the catch-up decisions" % int(entry.get("t", 0))
+	for case_name in ["short", "visiting", "never", "asleep"]:
+		var other := _profile()
+		var mind := {"last_decision_unix": now - 2 * 3600, "location": "home", "journal": []}
+		if case_name == "visiting":
+			mind["last_decision_unix"] = now - 5 * 3600
+			mind["location"] = "visiting"
+		elif case_name == "never":
+			mind["last_decision_unix"] = 0
+		elif case_name == "asleep":
+			# Went to bed ten hours ago and sleeps on for another hour: no lost time.
+			mind["last_decision_unix"] = now - 10 * 3600
+			mind["busy_until"] = now + 3600
+		other["mind"] = mind
+		var after: Dictionary = svc.note_still_world(other, _land(), now)
+		if not (after["mind"]["journal"] as Array).is_empty():
+			return "a %s gap still got a line" % case_name
+	# Woke up four hours ago after a long sleep, and nothing happened since: the
+	# lost time runs from waking, and the line is dated after it.
+	var woke := _profile()
+	woke["mind"] = {"last_decision_unix": now - 14 * 3600, "busy_until": now - 4 * 3600, "location": "home", "journal": []}
+	var woke_after: Dictionary = svc.note_still_world(woke, _land(), now)
+	var woke_journal: Array = woke_after["mind"]["journal"]
+	if woke_journal.size() != 1 or int((woke_journal[0] as Dictionary).get("t", 0)) <= now - 4 * 3600:
+		return "after waking four hours ago it should get one line dated after it woke: %s" % [woke_journal]
+	return null
+
+
+func _test_chose_name_line() -> Variant:
+	var base := _profile()
+	base["mind"] = {"location": "home", "journal": []}
+	var named: Dictionary = _service().note_name(base, _midnight(), "Pip", _land())
+	var journal: Array = named["mind"]["journal"]
+	if journal.size() != 1:
+		return "%d entries" % journal.size()
+	var entry: Dictionary = journal[0]
+	if str(entry.get("text", "")) != "I thought about what to call myself. I'm Pip.":
+		return "wrong text: %s" % [entry.get("text", "")]
+	if str(entry.get("activity_id", "")) != "chose_name" or str(entry.get("place_id", "")) != "home" or str(entry.get("place_name", "")) != "the house":
+		return "wrong place or activity: %s" % [entry]
 	return null

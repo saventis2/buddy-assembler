@@ -103,10 +103,14 @@ scaffold, not final production content.
 
 ## World host
 
-Off by default. Turn it on with Menu > Settings > Its own mind > World host, or
-`"worldHost": true` in `settings.json`; it takes effect the next time the app
-starts. Then your buddy lives on its own land in a background program that
-keeps running when the app is closed, and the app is the buddy visiting you.
+On by default (D-010). Turn it off with Menu > Settings > Its own mind > World
+host, or `"worldHost": false` in `settings.json`; it takes effect the next time
+the app starts, and a running host notices within ten seconds and quits. The
+same goes for `"smallBeginnings": false`: the host runs only the land life.
+Your buddy lives on its own land in a background program that keeps running
+when the app is closed, and the app is the buddy visiting you. Only a real
+launch of the app counts: a headless run (the CI parse check, the tests, the
+fast-forward tool) never takes the app's role and never starts a host.
 
 - Opening the app starts the host if it is not running and asks the buddy to
   come over. It comes at once unless it is asleep or busy; then the app says
@@ -118,6 +122,8 @@ keeps running when the app is closed, and the app is the buddy visiting you.
 - Start the app with the windowed program (or an exported build). Through
   Godot's console wrapper (`..._console.exe`), the host the app starts stops
   when the app does.
+- After a restart of the PC its world waits until the app is opened again:
+  there is no watchdog until the move to Nexus.
 - Its files are in the save folder under `host/`: `buddy.lock/`, `host.json`,
   `desktop.json` and `inbox/`. Only the program that holds the buddy writes
   `profile.json` and `world_state.json`; `settings.json` belongs to the app.
