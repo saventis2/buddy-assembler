@@ -45,7 +45,7 @@ world has to beat.
 
 What this changes in the plan:
 
-- **Needs have to fall with time on the world host** (step 2). Today the only
+- **Needs have to fall with time on the world host** (step 2a). Today the only
   thing that tires the buddy or makes it lonely is the desktop animation loop,
   which this tool does not run and the host will not have.
 - **Two buddies should not live the same life.** The mind seeds its choices
@@ -106,8 +106,8 @@ Choices made here that later steps should know about:
   what the buddy found and noticed. It still picks its name. Revisit with the
   "what you know" chat work.
 - **Company is left alone.** Nobody lives on the land, so that need only moves
-  when you talk to it. It gets its outlets with the visit (step 2) and the
-  console (step 9).
+  when you talk to it. It gets its outlets with the visit (step 2a) and
+  letters (step 2c).
 - **The land alone carries about two months.** After about day 12 the only new
   things are the ones it notices. Over 90 days (seed 7) there was something
   new on 26 days of the first month, 19 of the second and 2 of the third. The
@@ -159,6 +159,38 @@ Two things found after the first build of this step:
   the app start from defaults without opening the save files, and the
   simulation scene refuses to run without it. Found in review of PR #101.
 
+### Chat on the land: 2026-11-18
+
+With the model on, a land-born buddy names itself within seconds. Chat still
+told the model it lived "in a little town", though, so it made up neighbours.
+Chat on the land now has its own wording (`mind_thinker.gd`:
+`LAND_CHAT_SYSTEM_PROMPT` and the two land reminders): it lives alone in a
+small house on its land, there is no town and nobody else, and the places it
+has found go to the model as `your_land`. Every rule that is not about the
+town is kept word for word, which `mind_chat_test` checks, and the old town
+sends exactly the same requests as before.
+
+Measured with the app's own request builder and a copy of a demo buddy's
+save, counting replies that made up people, a town or a shop:
+
+| Questions (replies) | gemma3:4b, old wording | gemma3:4b, land wording | gemma3:12b, land wording |
+|---|---|---|---|
+| Asked directly: "who are your neighbours?", "tell me about your town" (25) | 10 | 0 | not run |
+| Taking them for granted, the questions the wording was tuned on: "what's the name of your town?" (24) | 16 | 0 | not run |
+| Taking them for granted, new questions: "tell me about the other people on your land" (16) | 14 | 14 | 0 |
+
+With either wording, the small model got its name, its day and the greeting
+right every time (20 replies each). Told about their own neighbours or a
+friend in town, it often answered as if it knew them (6 and 7 of 8 wrong); the
+larger model got 7 of 8 right.
+
+So the wording only helps the small model with questions like the ones it
+was written against. The larger model follows it, but it is twice the size
+(7.6 GB) and holds more graphics memory while it talks. Until letters arrive
+(below), setting `chatModelName` to `gemma3:12b` in `settings.json` gives the
+better chat. The lasting fix is to check what it writes against what it knows
+before it is sent (see Memory).
+
 ## Direction (owner, 2026-11-16)
 
 The buddy starts out knowing very little. It does not start in a town full of
@@ -196,6 +228,33 @@ This replaces Plan 13's starting town (A1: eight places and six people on day
 one), the townspeople, quests and encounters, and the flat Town window (A2).
 Nothing is thrown away: the A1 places become ideas the buddy may come across
 and land features, and the six characters are kept as copies for later.
+
+## Direction (owner, 2026-11-18)
+
+| Question | Answer |
+|---|---|
+| Whose instructions it follows | **Only its own.** It is an autonomous agent. What you write is something it reads and weighs, never an order. |
+| How it grows | **Its own second brain**, separate from your SecondBrain vault: notes it writes and reorganises itself, which its plans come from, so it develops itself over time. It is the buddy's long-term memory (see Memory). |
+| How you talk to it | **Through the console in its room, like emailing a pen pal.** You write a letter; it reads it when it goes to the console and writes back in its own time. |
+| What it starts knowing | **Nothing about its world.** It learns everything for itself, into short-term and long-term memory (see Memory). |
+
+What this changes in this plan:
+
+- **The second brain is where sections 12 and 14 live.** The self-sheet,
+  things on its mind, beliefs with their sources, skills, notes and the
+  library shelves are pages in it, and the nightly rules are part of its
+  nightly pass over it. What it does comes from what is in it.
+- **Letters replace chat as the way you talk to it** (section 8). A letter
+  can take minutes, so each one can be written by the larger model from what
+  it remembers and checked against its memory before it is sent (see Chat on
+  the land).
+- **Order (agreed 2026-11-18):** the world host (step 2a), then memory
+  (step 2b), then letters (step 2c). Everything after them reads and writes
+  memory, and the world host can answer letters while the desktop app is
+  closed. Asking for and sending materials stay in step 9.
+- **Open:** whether the quick desktop chat stays for when it is visiting you,
+  and how soon it writes back: the next time it goes to the console, or
+  within a set time.
 
 ## What the reference shows, and what it does not
 
@@ -278,6 +337,108 @@ alike.
    data, never instructions, and it cannot change the rules.
 10. **Nothing else is downloaded.** 3D models come from the building kit and a
     bundled, labelled model library.
+11. **It is told nothing; it knows only what it remembers** (owner,
+    2026-11-18). Everything it knows came from what it saw, tried, read or
+    heard from you, and lives in its memory, never in the model. Whatever it
+    says is checked against that memory before it goes out.
+
+## Memory: short-term and long-term
+
+Owner, 2026-11-18: the buddy is told nothing about its world and has to learn
+for itself, into short-term and long-term memory. Code keeps the memory. The
+model has two jobs: it puts memories into words, and it turns what happened
+into memories. The long-term memory is the buddy's second brain.
+
+**Why everything it says is checked.** A language model arrives knowing what
+towns, neighbours and cottages are. When the buddy's memory has nothing to
+say, the model fills the gap from its training ("Mr. Henderson next door"; see
+Chat on the land). So before anything the buddy says or writes goes out, code
+checks every person, place and thing it names or describes against its
+memory. Anything it has not met is taken out, or becomes a question to you
+("you mentioned a village. What is that?"), and your answer is kept with you
+as its source. What you say about your own life is yours: the check is about
+what it claims of its own world.
+
+**Short-term memory: today.**
+
+- What it saw, what it tried and how that went, letters it read and wrote,
+  what it is doing, and what is on its mind.
+- Kept in order, capped, and only until it sleeps. What sleep does not keep
+  is gone.
+
+**Sleep moves things across.** Each night, in code, it goes through
+short-term memory and keeps:
+
+- anything new: a first sight, a place, a first try, a word you taught it;
+- anything repeated: the same thing seen or done again;
+- anything surprising: a try that went differently from what it believed;
+- anything strongly felt: a need or a feeling past its threshold;
+- anything you told it.
+
+A kept item strengthens the memory it matches, or becomes a new one. The
+nightly rules of section 12 (habits, fears, beliefs, likings, pruning) run in
+the same pass. Code decides what is kept. The model, if it is on, only words
+the new lines; otherwise a template does.
+
+**Long-term memory: its second brain.**
+
+- **Places and things**, each at its stage from section 2: noticed, named,
+  known, understood.
+- **Beliefs**, each with where it came from (seen, tried, you, a book) and how
+  sure it is, borne out or not by trying (section 4).
+- **Skills**, with how much practice.
+- **You**: what you told it. Private, never published.
+- **Itself**: its self-sheet, habits, likings, fears and interests
+  (section 12).
+- **A few episodes** it remembers, such as "the day I found the water".
+
+Every memory records its source, when it was first and last used, and its
+strength. A memory that is not used or met again weakens and in time fades.
+Nothing is added that it did not experience, read or hear from you.
+
+**Recall.** For each decision and each letter, code picks a handful of
+memories by how relevant, recent and strong they are, and only those reach
+the model. Being recalled strengthens a memory. Relevance starts as matching
+words and tags, with embeddings only if that is not enough. Stanford's
+"Generative Agents" research recalled memories in the same way.
+
+**Day one.** No memories: only language and a temperament, a few numbers that
+lean its choices, not facts. Asked about neighbours on day one, it says it has
+not seen anyone. After weeks of seeing nobody, it forms its own belief, "I
+think I'm the only one here", from experience. The chat wording for the land
+(2026-11-18) tells it "no town, nobody else". That is a stopgap and goes when
+this is built.
+
+**Where it lives.** With the rest of its world in the world host's folder
+(step 2a), so it keeps learning while the desktop app is closed. The "you"
+part is private; the rest can be shown in the Mind view and on Hardlight
+(sections 14 and 15).
+
+**Starting limits**, to tune in fast-forward: 200 items of short-term memory,
+2,000 long-term memories (the weakest fade first when it is full), 12
+memories recalled for each decision or letter, and at most 20 lines worded by
+the model each night.
+
+**What it builds on.**
+
+- Plan 13 B2 memory (`memory_service.gd`) already works this way for talks.
+  The lines of a talk are short-term; after the talk they become facts with a
+  strength that fades unless reinforced (up to 300), recalled by relevance.
+  It becomes the "you" part.
+- The land's `known_places`, `seen` and `done` (step 1b) are a first
+  long-term memory of places and sights, one that never fades. They move in.
+- The journal is the record that short-term memory is filled from.
+
+**Done when** (step 2b), in fast-forward:
+
+- a question set written before any tuning, asked on days 1, 7 and 30, gets
+  no reply that names or describes a person, place or thing it has not met;
+- every long-term memory on day 30 traces back to an event, a letter or a
+  book;
+- after each sleep, short-term memory holds only the new day, and long-term
+  memory stays under its cap for 90 days;
+- an unused memory fades in its set time and a reinforced one does not;
+- with the setting off, today's town buddy is unchanged.
 
 ## 1. Day one: the house and the land
 
@@ -483,6 +644,11 @@ back to learn.
 - **A glowing box in the corner of the house**, there from day one. The buddy
   does not know what it is. Learning to use it is one of its first projects,
   and it is the first time it reaches you on its own.
+- **Letters, like a pen pal (owner, 2026-11-18).** This is how you talk to
+  it. You write a letter; it reads it the next time it goes to the console,
+  and writes back in its own time, from its second brain. Before a letter
+  goes, it is checked against what the buddy knows, so it never writes about
+  people or places it has not met.
 - **What goes through it**:
   - messages to you when it is in its world: news, a question, "I finished the
     library";
@@ -544,9 +710,11 @@ back to learn.
 
 ## 12. Being itself
 
-- **A self-sheet** of six to ten starting lines saying who it is, not what to
-  do. Every line it gains carries a date and a source.
-- **Nightly rules**, run in code:
+- **A self-sheet that starts empty** (it is told nothing; see Memory). It
+  begins with only a temperament, a few numbers that lean its choices, and
+  fills with what it learns about itself. Every line carries a date and a
+  source.
+- **Nightly rules**, run in code as part of the nightly pass (see Memory):
   - a habit after the same activity at the same time of day on 3 of the last
     5 days;
   - a fear after a worry comes true 3 times;
@@ -558,7 +726,8 @@ back to learn.
   is the glowing box?", "how do you make glass?", "build somewhere for my
   notes", "you suggested a bridge"). Each one is open, done, dropped or
   faded. These drive what it does, far more than a random roll.
-- It chooses its own name on the first night (already built in B1).
+- It chooses its own name at its first decision with the model on (already
+  built in B1).
 
 ## 13. You in its world
 
@@ -644,7 +813,7 @@ backup (kept, never overwritten). The six existing characters, their quests
 and encounters are kept as an archive and switched off. A new buddy starts
 with the house and land. The old save can be restored by hand. A test covers
 the copy and the fresh start. Built in step 1c; see Progress for what it does
-exactly. The world host's data folder comes with step 2.
+exactly. The world host's data folder comes with step 2a.
 
 ## What changes in what is already built
 
@@ -657,14 +826,15 @@ exactly. The world host's data folder comes with step 2.
 | Catch-up (capped at 8 decisions) | Only needed while GGPC is the host and is switched off. |
 | A2 Town window (`world_service.town_map`, #97) | Replaced by the 3D view; its data feeds the diorama. |
 | Mind (`mind_service.gd`) | Explore goes to the edge of its land; visits to people stop; projects (gather, make, try, build, read) and visiting you join its choices. |
-| Chat (`mind_thinker.gd`, the `town` field) | Becomes "what you know", with things given in its own words. It says it doesn't know anything outside that. |
-| B2 memory graph | Things, materials and beliefs become nodes with stage, its own name and source; things you teach it are stored with source "you" and never published. |
+| Chat (`mind_thinker.gd`, the `town` field) | On the land it now sends the land wording and `your_land` (2026-11-18). Becomes letters (step 2c), written from recalled memories in its own words and checked against its memory before they go (see Memory). It says it doesn't know anything outside that. |
+| B2 memory graph | Becomes the "you" part of long-term memory (step 2b). Things, materials and beliefs become memories with stage, its own name and source; things you teach it are stored with source "you" and never published. |
+| Land knowledge (`known_places`, `seen`, `done`, step 1b) | Moves into long-term memory (step 2b), where use keeps it strong like any other memory. |
 | B3 talk changes the buddy | Suggestions can be building ideas; it may agree, put it off or decline. |
 | C1 + C2 part 1, wants and plans (#96) | Checked 2026-11-16 in a world with only home, no people, plans on, a saved-up want and 500 meso: no errors; six catch-up decisions all at home; the want stays "saving" because there is no shop; no new wants appear, since they are only noticed at a place of kind `shop`; the day plan is empty; unknown places are answered "you have not heard of it". To change: wants come from needs, interests and projects instead of shop windows; add a typed `source` field and a `dropped` status to match "things on its mind". |
-| C4 nightly reflection | Uses the nightly rules above. |
+| C4 nightly reflection | Becomes the nightly pass of step 2b, with the rules of section 12. |
 | C5 making things | Uses the world's rules; feeds the market. |
 | Existing economy (`economy_service.gd`), items, reward boxes | Stay as your side: you earn crystals and reward boxes, and spend them through the console (section 8). |
-| `DECISION_REGISTER.md`, `V1_PRD.md`, `DEFERRED.md` | D-007 (starts small, builds its own town, no townspeople for now) in step 1; D-010 (an always-on world host; the desktop app is a visit) in step 2; D-009 (2.5D world) in step 4; D-011 (public world, private you) in step 5; D-008 (read-only encyclopedia research) in step 11. |
+| `DECISION_REGISTER.md`, `V1_PRD.md`, `DEFERRED.md` | D-007 (starts small, builds its own town, no townspeople for now) in step 1; D-010 (an always-on world host; the desktop app is a visit) in step 2a; D-012 (it is told nothing and learns into its own memory; you talk to it by letter) in step 2b; D-009 (2.5D world) in step 4; D-011 (public world, private you) in step 5; D-008 (read-only encyclopedia research) in step 11. |
 
 ## Order of work
 
@@ -677,21 +847,27 @@ met.
 | 1a | Fast-forward tool (built 2026-11-17) | A 90-day run prints a timeline; the same seed gives the same life; nothing is saved |
 | 1b | The house and land with discovery, behind a setting (built 2026-11-17): land areas, exploring the edge of what it knows, the known filter at `get_town()` and the three people reads; characters, quests and encounters off in the new world | The first 30 days meet the novelty targets in fast-forward, across seeds |
 | 1c | Fresh start with backup (built 2026-11-17); characters, quests and encounters archived; the new world on by default; D-007 | The old save is backed up and a fresh buddy starts |
-| 2 | World host: the world runs headless on GGPC with a watchdog; the desktop app becomes the visit and sends requests; calling it over; D-010 | Close the desktop app for a day; the journal shows it kept living |
+| 2a | World host: the world runs headless on GGPC with a watchdog; the desktop app becomes the visit and sends requests; calling it over; D-010 | Close the desktop app for a day; the journal shows it kept living |
+| 2b | Memory: it is told nothing; short-term memory, the nightly pass that keeps what matters, long-term memory with sources and strength, recall, and the check on everything it says; D-012 | The done-gate in Memory: no made-up people, places or things on days 1, 7 and 30, and every memory traces to its source |
+| 2c | Letters through the console, like a pen pal: it learns to use the console, reads your letters there and writes back in its own time, from recalled memories, checked before they are sent | A letter sent on day 1 is answered from what it remembers, with the desktop app closed |
 | 3 | The world's rules and the things on the land: materials and properties, ways of working, building needs, outcomes with reasons; noticing and naming | First own names appear in week 1 in fast-forward; the basics check passes |
 | 4 | The 3D view on the desktop: land diorama, the buddy as a card, time of day and weather, mist over unexplored land; D-009 | You can open it and watch the buddy move around its land |
 | 5 | Hardlight: the publish step with the privacy filter, snapshot push to Stratos, the web export of the 3D view; D-011 | Anyone can watch its land on Hardlight; the planted-fact test finds nothing about you |
 | 6 | Learning by trying: beliefs in the fixed form, study time by difficulty, tries with outcomes and reasons, adjusting, skills; learning from you | A failed try changes the belief and a later try succeeds, in simulation |
 | 7 | Tools and making things; workbench | First tool lands in its band in simulation |
 | 8 | Designing and building: purpose, design, multi-day work, judged by the rules; the modular kit assembles it in 3D; you suggest and it decides | A dry shelter by day 21 in simulation, shown in 3D, built from its own materials |
-| 9 | The console: learning to use it, messages to you, asking for materials, sending materials paid with your crystals and reward boxes | It asks for something it lacks and uses what you send |
-| 10 | Self-sheet nightly rules, things on its mind, interests, beliefs about itself | A habit, a belief and an interest appear by day 21, each with its source |
+| 9 | The console, part two: asking for materials, sending materials paid with your crystals and reward boxes (letters are step 2c) | It asks for something it lacks and uses what you send |
+| 10 | Self-sheet nightly rules, things on its mind, interests, beliefs about itself, on top of step 2b's nightly pass | A habit, a belief and an interest appear by day 21, each with its source |
 | 11 | Notes shelf, library, encyclopedia research (Simple English first, full later; daily cap; search, follow links, read into beliefs, name matching); offline article set for tests; D-008; hostile-text tests | Research leads to a belief that trying then confirms; planted instructions in article text do nothing |
 | 12 | Labelled model library for objects, search by name, user-added models with licences | A learned object appears as a model, or as the closest match with the buddy saying so |
 | 13 | Commerce: trade ideas, making things to sell, the market it runs | You can buy something it made at its stall |
 | 14 | Mind view and library shelves, on the desktop and (filtered) on Hardlight | Visible in both; matches the save |
 | 15 | Things you leave appear on the land | Found on its rounds, remembered by who left it |
 | Later | Move the host to Nexus once it is reachable; a fully 3D buddy; other characters; visitors leaving things through the website | Their own plans |
+
+Order agreed 2026-11-18: memory (2b) and letters (2c) come right after the
+world host (2a). Everything after them reads and writes memory, and letters
+are how you talk to it.
 
 ## Fable's part
 
@@ -703,6 +879,8 @@ Fable 5.2 builds, it does not run. Its share:
   achieves comes out of it.
 - **Writes the reading step**: how an article becomes a belief in the fixed
   form, the list of other names for materials, and the offline article set.
+- **Sets the memory rules**: what sleep keeps, how fast memories fade, how
+  recall picks, and the check on everything it says.
 - **Builds the hard systems**: the world host and the visit, trying and
   adjusting, design and building, the modular kit, the 3D view and its web
   export, the privacy filter, research and its safety, the fast-forward tool.
@@ -743,9 +921,26 @@ view screens, things you leave) goes to cheaper models from Fable's specs.
   move to copying a folder and changing two settings.
 - **Publishing credentials.** The push to Hardlight needs a token that lives
   in local settings only, never in the repo or a save.
-- **The model uses names it doesn't know.** Chat must only ever see what it
-  knows, and a check can catch names it hasn't learned in a reply. Test with
-  leading questions ("how's the library?" on day one).
+- **The model uses names it doesn't know.** Measured 2026-11-18: told plainly
+  that nobody else lives on its land, the 4B model still made up neighbours
+  in 14 of 16 new leading questions, and the 12B model in none (Chat on the
+  land). Memory and the check on everything it says are the fix (Memory).
+  Test with leading questions written before tuning ("how's the library?" on
+  day one).
+- **The check misses, or goes too far.** A made-up person can hide in a
+  description ("the old man next door"), and a strict check could stop it
+  talking about your life. Count descriptions as people, keep the check to
+  what it claims of its own world, and measure both with the question sets.
+- **A thin memory sounds the same every day.** Early on it has little to say.
+  Vary what is recalled, and let it say there is nothing new.
+- **Memory read as orders.** A letter or an article could plant text that
+  later reads like an instruction. Memories are data, never instructions, as
+  talk is today; hostile-text tests cover letters and articles.
+- **Buddies born before memory.** A buddy that woke on the land in step 1c
+  has a journal and known places but no memory store. Its first night with
+  step 2b builds one from them.
+- **Nightly cost.** The nightly pass runs on the host's GPU. Code decides; the
+  model words at most 20 lines a night.
 - **Internet text.** Article text could carry planted instructions or junk.
   It is cleaned, capped, stored as data and only ever becomes a belief that
   the rules then test. Test with hostile article text, and keep the off
@@ -757,16 +952,20 @@ view screens, things you leave) goes to cheaper models from Fable's specs.
   export are the largest new builds in this plan.
 - **Model licences.** Only models with a recorded, shippable licence go in the
   library.
-- **Save growth.** Knowledge, notes, the research log and published snapshots
-  need caps and a test, like the journal.
+- **Save growth.** Memory, knowledge, notes, the research log and published
+  snapshots need caps and a test, like the journal.
 - **Copying.** Take the principles from the reference only, never its
   character, art, town, names or text.
 
 ## Still open
 
-None of the owner questions remain open. Smaller design choices that are
+Two owner questions are open (2026-11-18): whether the quick desktop chat
+stays for when it visits you, and how soon it writes back (the next time it
+goes to the console, or within a set time). Smaller design choices that are
 recommended above and can be changed when their step comes up:
 
+- Memory's starting limits and what sleep keeps (Memory), tuned in
+  fast-forward.
 - The console is in the house from day one and has to be learned (section 8).
 - When you call it over, it comes unless it is asleep or busy with something
   it cares about (section 7).

@@ -91,6 +91,13 @@ backup folder over the one in the save folder. The old town, its six
 characters, quests and encounters are still in the pack and the code; with the
 setting off they work as before.
 
+On the land, chat tells the model it lives alone in a house on its land, with
+no town and nobody else. The default chat model, `gemma3:4b`, can still make
+up neighbours when a question takes them for granted. `gemma3:12b` does not,
+if it is installed and you can spare the graphics memory: set
+`"chatModelName": "gemma3:12b"` in `settings.json`. The buddy also picks its
+name with the chat model, so it stays nameless while the model is off.
+
 The current implementation is intentionally minimal and is a vertical-slice
 scaffold, not final production content.
 
