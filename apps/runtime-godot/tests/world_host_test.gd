@@ -11,6 +11,15 @@ const MindService = preload("res://scripts/services/mind_service.gd")
 const LifeSim = preload("res://tests/life_sim.gd")
 const ContentLoader = preload("res://scripts/content/content_loader.gd")
 const VisitController = preload("res://scripts/visit_controller.gd")
+const BuddyOverlayScript = preload("res://scripts/buddy_overlay.gd")
+
+
+# Stands in for the overlay's visit controller: whether the buddy is here.
+class StubVisit extends Node:
+	var here := false
+
+	func is_visiting() -> bool:
+		return here
 
 const ROOT := "user://world_host_test"
 const MINI_LAND := {
@@ -72,6 +81,7 @@ func _run_all() -> void:
 	_case("chose_name_line", func(): return _test_chose_name_line())
 	# Last: it puts this process into simulation and the desktop role aside.
 	_case("a_simulation_is_solo", func(): return _test_a_simulation_is_solo())
+	_case("a_visit_that_ends_drops_model_work", func(): return _test_visit_end_drops_model_work())
 	Whereabouts.process_check = Callable()
 	_wipe(ROOT)
 
@@ -251,6 +261,32 @@ func _test_call_now_later_asleep() -> Variant:
 	if svc.consider_call(busy_profile, _land(), now + 1200).get("come", "") != "now":
 		return "a buddy whose time is up was still busy"
 	return null
+
+
+# Sent home while the model was thinking: the request is cancelled, and an
+# answer that still arrives is not said or used, because the buddy (and its
+# profile) is the host's now.
+func _test_visit_end_drops_model_work() -> Variant:
+	var overlay = BuddyOverlayScript.new()
+	var http := HTTPRequest.new()
+	var visit := StubVisit.new()
+	overlay._chat_http = http
+	overlay._visit = visit
+	var err := ""
+	overlay._chat_pending = {"kind": "chat", "user_text": "hello"}
+	overlay._drop_model_work()
+	if not (overlay._chat_pending as Dictionary).is_empty():
+		err = "the reply on its way was not dropped when the visit ended"
+	if err == "":
+		overlay._chat_pending = {"kind": "name"}
+		var reply := JSON.stringify({"message": {"content": JSON.stringify({"reply": "Hello!", "name": "Pip"})}})
+		overlay._on_chat_http_completed(HTTPRequest.RESULT_SUCCESS, 200, PackedStringArray(), reply.to_utf8_buffer())
+		if not (overlay._chat_turns as Array).is_empty() or not (overlay._chat_pending as Dictionary).is_empty():
+			err = "an answer that came after the buddy went home was used"
+	http.free()
+	visit.free()
+	overlay.free()
+	return null if err == "" else err
 
 
 func _test_visit_round_trip() -> Variant:

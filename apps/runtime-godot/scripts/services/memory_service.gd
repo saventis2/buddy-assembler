@@ -839,32 +839,36 @@ func strengthen_recalled(profile: Dictionary, ids: Array, now_unix: int) -> Dict
 	return out
 
 
-# What it may talk about as real in its own world (lowercase words, as keys):
-# the places it knows (faded memories included), the words of its own memories
-# of the land, its own name, and what it knows of the person's life.
+# What it may talk about as real (lowercase words, as keys), each marked whose
+# it is: "own" for its own world (the places it knows, faded memories included,
+# the words of its own memories of the land, its own name) and "theirs" for
+# what it knows of the person's life ("their sister Ana"). Its own wins where a
+# word is both. check_reply keeps them apart: knowing your sister does not give
+# it one.
 func known_words(profile: Dictionary, land: Dictionary) -> Dictionary:
 	var known := {}
 	var mind: Dictionary = _dict(profile.get("mind", {}))
-	_add_keys(known, _place_name(land, str(land.get("home_place", "home"))))
+	_add_keys(known, _place_name(land, str(land.get("home_place", "home"))), "own")
 	var places: Dictionary = _dict(mind.get("known_places", {}))
 	for place_id in places.keys():
 		if str(_dict(places[place_id]).get("stage", "")) == "found":
-			_add_keys(known, _place_name(land, str(place_id)))
-	_add_keys(known, str(mind.get("name", "")))
+			_add_keys(known, _place_name(land, str(place_id)), "own")
+	_add_keys(known, str(mind.get("name", "")), "own")
 	for edge in _read(profile)["edges"]:
 		var source: String = str(edge.get("source", ""))
 		if source == "land":
-			_add_keys(known, str(edge.get("o_label", "")))
+			_add_keys(known, str(edge.get("o_label", "")), "own")
 		elif source == "talk" or source == "note" or str(edge.get("s", "")) == "user":
 			# The person's own people and things ("their sister Ana").
-			_add_keys(known, str(edge.get("s_label", "")))
-			_add_keys(known, str(edge.get("o_label", "")))
+			_add_keys(known, str(edge.get("s_label", "")), "theirs")
+			_add_keys(known, str(edge.get("o_label", "")), "theirs")
 	return known
 
 
-func _add_keys(known: Dictionary, text: String) -> void:
+func _add_keys(known: Dictionary, text: String, whose: String = "own") -> void:
 	for key in _keys(text):
-		known[key] = true
+		if whose == "own" or not known.has(key):
+			known[key] = whose
 
 
 func _land_edge_keys(edge: Dictionary) -> Array:

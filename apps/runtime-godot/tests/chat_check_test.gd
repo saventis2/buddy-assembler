@@ -43,6 +43,7 @@ func _run_all() -> void:
 	_case("questions_and_claims", func(): return _test_questions_and_claims())
 	_case("fallbacks_use_their_words", func(): return _test_fallbacks_use_their_words())
 	_case("denials_and_premises", func(): return _test_denials_and_premises())
+	_case("their_life_is_not_its_own", func(): return _test_their_life_is_not_its_own())
 
 
 func _case(name: String, body: Callable) -> void:
@@ -307,6 +308,29 @@ func _test_denials_and_premises() -> Variant:
 	])
 
 
+# What it knows of your life is yours, not its own world: it may talk about
+# your sister, but knowing her gives it no sister of its own.
+func _test_their_life_is_not_its_own() -> Variant:
+	var known := {"sister": "theirs", "ana": "theirs", "farm": "own"}
+	for row in [
+		["My sister visits on Sundays.", "hello", false, "sister", false],
+		["How is your sister Ana?", "hello", true, "", false],
+		["I hope Ana is well.", "hello", true, "", false],
+		# "Your sister" asks about a sister of its own, whatever it knows of yours.
+		["She is lovely.", "is your sister nice?", false, "", true],
+		# Its own world is its own, "my" and all.
+		["I went to my farm today.", "hello", true, "", false],
+	]:
+		var result: Dictionary = MindThinker.check_reply(str(row[0]), str(row[1]), known)
+		if bool(result.get("ok", false)) != bool(row[2]):
+			return "'%s' (they said '%s'): ok should be %s, got %s" % [row[0], row[1], row[2], result]
+		if str(row[3]) != "" and not (result.get("unknown", []) as Array).has(str(row[3])):
+			return "'%s': unknown should hold '%s', got %s" % [row[0], row[3], result]
+		if bool(result.get("premise", false)) != bool(row[4]):
+			return "'%s' (they said '%s'): premise should be %s, got %s" % [row[0], row[1], row[4], result]
+	return null
+
+
 func _edge(id: int, relation: String, o: String, label: String, seen: int, importance: float = 0.5, source: String = "land") -> Dictionary:
 	return {
 		"id": id, "s": "self", "s_label": "you", "r": relation, "o": o, "o_label": label,
@@ -425,6 +449,10 @@ func _test_known_words_cover_its_world() -> Variant:
 			return "'%s' should be something it may talk about: %s" % [word, known.keys()]
 	if known.has("well"):
 		return "a place it has only seen a sign of is not known by name: %s" % [known.keys()]
+	# Whose each word is: its own world's, or what it knows of your life.
+	for pair in [["house", "own"], ["library", "own"], ["dandelion", "own"], ["moss", "own"], ["sister", "theirs"], ["ana", "theirs"]]:
+		if str(known.get(pair[0], "")) != str(pair[1]):
+			return "'%s' should be %s, got '%s'" % [pair[0], pair[1], known.get(pair[0], "")]
 	# And so the check lets it talk about them.
 	if not bool(MindThinker.check_reply("I found the old Library, and saw dandelions.", "hello", known).get("ok", false)):
 		return "it should be able to talk about what it found"

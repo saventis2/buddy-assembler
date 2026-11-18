@@ -35,6 +35,7 @@ func _run_all() -> void:
 	_case("land_chat_request_speaks_from_memories", func(): return _test_land_chat_request_speaks_from_memories())
 	_case("land_greeting_speaks_from_memories", func(): return _test_land_greeting_speaks_from_memories())
 	_case("extra_task_follows_the_task", func(): return _test_extra_task_follows_the_task())
+	_case("a_visiting_yes_waits_for_home", func(): return _test_a_visiting_yes_waits_for_home())
 
 
 func _case(name: String, body: Callable) -> void:
@@ -498,6 +499,26 @@ func _test_land_greeting_speaks_from_memories() -> Variant:
 	var town := {"places": ["the pond"], "people": ["Mira the mentor"]}
 	if MindThinker.build_greeting_request("m", {"name": "Moss"}, [], town, {}, "news", false, lines) != MindThinker.build_greeting_request("m", {"name": "Moss"}, [], town, {}, "news"):
 		return "land = false must send exactly the town greeting"
+	return null
+
+
+# On a visit its life on the land waits until it is home again, so a yes to a
+# suggestion is for then, not "in a few minutes". At home nothing changes.
+func _test_a_visiting_yes_waits_for_home() -> Variant:
+	var target := {"kind": "place", "id": "water", "name": "the water"}
+	var considered := {"answer": "yes", "reason": "you like it there"}
+	var home: Dictionary = MindThinker.decision_lines(target, considered)
+	if str(home.get("say", "")) != "Tell them yes: you are going to the water in a few minutes, not later.":
+		return "the yes at home must stay as it was: %s" % [home]
+	var visiting: Dictionary = MindThinker.decision_lines(target, considered, true)
+	var say := str(visiting.get("say", ""))
+	if say.contains("few minutes") or not say.contains("back home"):
+		return "on a visit a yes is for when it is back home: %s" % say
+	if str(visiting.get("fact", "")) != str(home.get("fact", "")):
+		return "the fact does not change on a visit: %s" % [visiting]
+	var later: Dictionary = MindThinker.decision_lines(target, {"answer": "later", "reason": "it's late"}, true)
+	if str(later.get("say", "")) != "Tell them not yet, and why.":
+		return "a not yet stays as it was on a visit: %s" % [later]
 	return null
 
 

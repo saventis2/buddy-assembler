@@ -2866,32 +2866,12 @@ func _pick_bring_up(memory: Dictionary) -> String:
     return ""
 
 
-# The decision about a suggestion: a fact with the reason, and the one thing
-# the reply must say. Both models turned a soft "yes, next" into "maybe
-# tomorrow", so the answer is spelled out where the model reads it last.
+# The decision about a suggestion, worded in MindThinker.decision_lines. On a
+# visit (the desktop holds the buddy on its land) its life there waits until
+# it is home again, so a yes is for then.
 func _decision_for(target: Dictionary, considered: Dictionary) -> Dictionary:
-    var target_name: String = str(target.get("name", ""))
-    var is_npc: bool = str(target.get("kind", "")) == "npc"
-    var asked: String = ("They suggested you go and see %s." if is_npc else "They suggested you go to %s.") % target_name
-    var going: String = ("going to see %s" if is_npc else "going to %s") % target_name
-    var reason: String = str(considered.get("reason", ""))
-    match str(considered.get("answer", "")):
-        "yes":
-            return {
-                "fact": "%s You said yes, because %s." % [asked, reason],
-                "say": "Tell them yes: you are %s in a few minutes, not later." % going,
-            }
-        "later":
-            return {
-                "fact": "%s You said not yet, because %s." % [asked, reason],
-                "say": "Tell them not yet, and why.",
-            }
-        "no":
-            return {
-                "fact": "%s You said no, because %s." % [asked, reason],
-                "say": "Tell them no, kindly, and why.",
-            }
-    return {}
+    var visiting: bool = AppState.small_beginnings() and AppState.role() == "desktop"
+    return MindThinker.decision_lines(target, considered, visiting)
 
 
 # Opening the chat after a while: the buddy says hello first and shares one
@@ -2985,6 +2965,11 @@ func _retry_chat_request() -> void:
 
 
 func _on_chat_http_completed(result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
+    # The buddy went home while the model was thinking: the answer is not ours
+    # to say, and the buddy it would change is the host's now.
+    if _is_away():
+        _chat_pending = {}
+        return
     var pending := _chat_pending
     _chat_pending = {}
     var kind := str(pending.get("kind", ""))
@@ -6846,7 +6831,17 @@ func _on_visit_arrived(reason: String) -> void:
     queue_redraw()
 
 
+# A visit that ends takes its model work with it: a reply, greeting, name or
+# memory request still out is cancelled, so its answer is not said on a
+# desktop the buddy has left, or written into a buddy this app no longer holds.
+func _drop_model_work() -> void:
+    if _chat_http != null and not _chat_pending.is_empty():
+        _chat_http.cancel_request()
+    _chat_pending = {}
+
+
 func _on_visit_left(reason: String) -> void:
+    _drop_model_work()
     var lines := {
         "bedtime": "I'm getting sleepy. I'm going home to bed. Goodnight!",
         "quiet": "It's gone quiet, so I'll go home and see to my things. Call me over if you want me.",

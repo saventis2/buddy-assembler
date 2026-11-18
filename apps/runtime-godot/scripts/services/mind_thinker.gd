@@ -748,6 +748,27 @@ static func _word_in(set: Dictionary, word: String) -> bool:
 	return word.length() > 3 and word.ends_with("s") and not word.ends_with("ss") and set.has(word.substr(0, word.length() - 1))
 
 
+# Whose a known word is: "own" for its own world, "theirs" for what it knows
+# only of your life (memory_service.known_words), "" for neither. A plain true
+# (older callers and tests) counts as its own. Plural "s" as in _word_in.
+static func _known_kind(known: Dictionary, word: String) -> String:
+	var key := word
+	if not known.has(key):
+		if word.length() > 3 and word.ends_with("s") and not word.ends_with("ss") and known.has(word.substr(0, word.length() - 1)):
+			key = word.substr(0, word.length() - 1)
+		else:
+			return ""
+	return "theirs" if str(known[key]) == "theirs" else "own"
+
+
+# "your" or "yours" one or two words before words[i].
+static func _after_your(words: Array, i: int) -> bool:
+	for back in [1, 2]:
+		if i - back >= 0 and (str(words[i - back]) == "your" or str(words[i - back]) == "yours"):
+			return true
+	return false
+
+
 # The entry of `list` that `word` is (or the plural of), else "".
 static func _list_match(word: String, list: Array) -> String:
 	if list.has(word):
@@ -873,7 +894,16 @@ static func _asks_about_its_world(user_sentences: Array, known: Dictionary) -> b
 				return true
 			var core_word: String = word.trim_suffix("'s")
 			var base := _world_base(core_word)
-			if base == "" or known.has(base) or _word_in(known, core_word) or own.has(base) or _word_in(own, core_word):
+			if base == "":
+				continue
+			var kind := _known_kind(known, core_word)
+			if kind == "":
+				kind = _known_kind(known, base)
+			if kind == "own" or own.has(base) or _word_in(own, core_word):
+				continue
+			# Knowing your sister is no answer to "is your sister nice?": that asks
+			# about a sister of its own.
+			if kind == "theirs" and not _after_your(words, i):
 				continue
 			if to_buddy or (i > 0 and words[i - 1] == "the" and _list_match(core_word, WORLD_SETTLEMENTS) != ""):
 				return true
@@ -928,7 +958,11 @@ static func check_reply(reply: String, user_text: String, known: Dictionary) -> 
 			var base := _world_base(core_word)
 			if base == "" or unknown.has(base):
 				continue
-			var allowed: bool = echo or _word_in(known, core_word) or known.has(base)
+			# Whose it is: its own world's, or something it knows only of your life.
+			var kind := _known_kind(known, core_word)
+			if kind == "":
+				kind = _known_kind(known, base)
+			var allowed: bool = echo or kind == "own"
 			var claimed := false
 			for back in [1, 2]:
 				if i - back >= 0:
@@ -945,10 +979,11 @@ static func check_reply(reply: String, user_text: String, known: Dictionary) -> 
 			# often?") or what a thing is ("What are neighbours like?"). None of
 			# these excuses the buddy's own: "my sister hasn't visited" still
 			# says it has a sister. What they told of their own life is theirs
-			# to talk about, but not as the buddy's own either.
+			# to talk about, but not as the buddy's own either, and so is what it
+			# remembers of your life: "your sister", never "my sister".
 			if not allowed and not claimed:
 				var there: bool = _spoken_of_as_there(lowered, i)
-				allowed = (negated and (denies or not there)) or (question and (to_person or not there)) or _word_in(own, core_word) or own.has(base)
+				allowed = (negated and (denies or not there)) or (question and (to_person or not there)) or _word_in(own, core_word) or own.has(base) or kind == "theirs"
 			# The one friend it has is the person it is talking with.
 			if not allowed and core_word == "friend" and to_person:
 				allowed = true
@@ -1007,7 +1042,7 @@ static func fallback_line(user_text: String, unknown: Array, known: Dictionary) 
 			for entry in sentence:
 				var core_word: String = str(entry).to_lower().trim_suffix("'s")
 				var base := _world_base(core_word)
-				if base == "" or known.has(base) or _word_in(own, core_word) or _list_match(base, WORLD_PEOPLE) != "":
+				if base == "" or _known_kind(known, base) == "own" or _known_kind(known, core_word) == "own" or _word_in(own, core_word) or _list_match(base, WORLD_PEOPLE) != "":
 					continue
 				var asked: Dictionary = _phrase_for(base, sentences)
 				if not asked.is_empty():
@@ -1048,6 +1083,37 @@ static func _phrase_for(target: String, sentences: Array) -> Dictionary:
 			elif determiner == "a" or determiner == "an":
 				lead = determiner
 			return {"phrase": "%s %s" % [lead, " ".join(rest)], "rest": " ".join(rest), "theirs": determiner == "my" or determiner == "our"}
+	return {}
+
+
+# The decision about a suggestion (mind_service.consider): a fact with the
+# reason, and the one thing the reply must say. Both models turned a soft "yes,
+# next" into "maybe tomorrow", so the answer is spelled out where the model
+# reads it last. `visiting`: it is on your desktop, and its life on the land
+# waits until it is home again (the yes is kept as an intention for 12 hours),
+# so "in a few minutes" would not be true.
+static func decision_lines(target: Dictionary, considered: Dictionary, visiting: bool = false) -> Dictionary:
+	var target_name: String = str(target.get("name", ""))
+	var is_npc: bool = str(target.get("kind", "")) == "npc"
+	var asked: String = ("They suggested you go and see %s." if is_npc else "They suggested you go to %s.") % target_name
+	var going: String = ("going to see %s" if is_npc else "going to %s") % target_name
+	var reason: String = str(considered.get("reason", ""))
+	match str(considered.get("answer", "")):
+		"yes":
+			var say: String = "Tell them yes: you are %s in a few minutes, not later." % going
+			if visiting:
+				say = "Tell them yes: you are %s when you go back home, not while you are here with them." % going
+			return {"fact": "%s You said yes, because %s." % [asked, reason], "say": say}
+		"later":
+			return {
+				"fact": "%s You said not yet, because %s." % [asked, reason],
+				"say": "Tell them not yet, and why.",
+			}
+		"no":
+			return {
+				"fact": "%s You said no, because %s." % [asked, reason],
+				"say": "Tell them no, kindly, and why.",
+			}
 	return {}
 
 
