@@ -61,17 +61,26 @@ static func write_json(path: String, data: Dictionary) -> bool:
 
     # Remove any previous target then rename. DirAccess.rename does not
     # guarantee overwrite on Windows, so remove-then-rename.
-    if FileAccess.file_exists(path):
-        var rm := DirAccess.remove_absolute(path)
-        if rm != OK and rm != ERR_FILE_NOT_FOUND:
-            push_error("save_store: cannot remove old %s (err %d)" % [path, rm])
-            return false
-
-    var rename_err := DirAccess.rename_absolute(tmp_path, path)
-    if rename_err != OK:
+    # On Windows, AV/indexers can briefly lock the target; retry a few times.
+    var attempts := 20
+    for i in range(attempts):
+        if FileAccess.file_exists(path):
+            var rm := DirAccess.remove_absolute(path)
+            if rm != OK and rm != ERR_FILE_NOT_FOUND:
+                if i == attempts - 1:
+                    push_error("save_store: cannot remove old %s (err %d)" % [path, rm])
+                    return false
+                OS.delay_msec(50)
+                continue
+        var rename_err := DirAccess.rename_absolute(tmp_path, path)
+        if rename_err == OK:
+            return true
+        if i < attempts - 1:
+            OS.delay_msec(50)
+            continue
         push_error("save_store: cannot rename %s -> %s (err %d)" % [tmp_path, path, rename_err])
         return false
-    return true
+    return false
 
 
 static func load_versioned(

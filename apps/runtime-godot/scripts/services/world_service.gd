@@ -1,5 +1,59 @@
 extends RefCounted
 
+const DEFAULT_TOWN := {
+	"home_place": "home",
+	# Where each place sits on the town map (0..1 across and down), and the
+	# paths drawn between them. A pack's own town may leave these out.
+	"paths": [
+		["home", "square"], ["home", "garden"], ["garden", "cafe"], ["square", "cafe"], ["square", "market"],
+		["square", "library"], ["square", "pond"], ["library", "hill"], ["pond", "hill"],
+	],
+	"places": [
+		{"id": "home", "name": "home", "map": [0.12, 0.55], "kind": "home", "opens": 0, "closes": 24, "distance": 0, "residents": [],
+			"activities": [
+				{"id": "nap", "label": "had a nap", "satisfies": "energy"},
+				{"id": "tidy", "label": "tidied up", "satisfies": "comfort"},
+				{"id": "think", "label": "sat and thought", "satisfies": "reflection"},
+			]},
+		{"id": "square", "name": "the square", "map": [0.45, 0.48], "kind": "square", "opens": 7, "closes": 22, "distance": 1, "residents": ["pip"],
+			"activities": [
+				{"id": "chat", "label": "stopped to chat", "satisfies": "social"},
+				{"id": "people_watch", "label": "watched people go by", "satisfies": "curiosity"},
+			]},
+		{"id": "cafe", "name": "the cafe", "map": [0.47, 0.14], "kind": "cafe", "opens": 8, "closes": 20, "distance": 1, "residents": ["tala"],
+			"activities": [
+				{"id": "tea", "label": "had tea", "satisfies": "comfort"},
+				{"id": "catch_up", "label": "caught up over a drink", "satisfies": "social"},
+			]},
+		{"id": "market", "name": "the market lane", "map": [0.80, 0.24], "kind": "shop", "opens": 9, "closes": 18, "distance": 2, "residents": ["rook"],
+			"activities": [
+				{"id": "browse", "label": "browsed the stalls", "satisfies": "curiosity"},
+				{"id": "haggle", "label": "haggled a bit", "satisfies": "social"},
+			]},
+		{"id": "library", "name": "the old library", "map": [0.80, 0.62], "kind": "library", "opens": 10, "closes": 19, "distance": 2, "residents": ["quill"],
+			"activities": [
+				{"id": "read", "label": "read for a while", "satisfies": "curiosity"},
+				{"id": "quiet_corner", "label": "found a quiet corner", "satisfies": "comfort"},
+			]},
+		{"id": "pond", "name": "the pond", "map": [0.36, 0.86], "kind": "park", "opens": 0, "closes": 24, "distance": 2, "residents": ["mira"],
+			"activities": [
+				{"id": "skip_stones", "label": "skipped stones", "satisfies": "curiosity"},
+				{"id": "sit_by_water", "label": "sat by the water", "satisfies": "comfort"},
+				{"id": "walk_together", "label": "walked the bank", "satisfies": "social"},
+			]},
+		{"id": "garden", "name": "the garden", "map": [0.22, 0.18], "kind": "park", "opens": 6, "closes": 21, "distance": 1, "residents": [],
+			"activities": [
+				{"id": "potter", "label": "pottered among the beds", "satisfies": "comfort"},
+				{"id": "look_for_bugs", "label": "looked for beetles", "satisfies": "curiosity"},
+			]},
+		{"id": "hill", "name": "the hill path", "map": [0.84, 0.92], "kind": "park", "opens": 0, "closes": 24, "distance": 3, "residents": ["fenn"],
+			"activities": [
+				{"id": "climb", "label": "climbed to the top", "satisfies": "curiosity"},
+				{"id": "watch_sky", "label": "watched the sky", "satisfies": "comfort"},
+			]},
+	],
+}
+
 const DEFAULT_NPCS := [
 	{
 		"id": "mira",
@@ -114,6 +168,7 @@ const DEFAULT_ENCOUNTERS := [
 		"type": "optional",
 		"action": "visitor",
 		"npcId": "rook",
+		"dropTableId": "rook_challenge_drops",
 		"narrativeText": "Rook spots a wild challenge nearby.",
 		"rewardsEngage": {"crystals": 7, "itemId": "wz-stone-golem-rubble"},
 		"rewardsSkip": {"crystals": 1},
@@ -123,6 +178,7 @@ const DEFAULT_ENCOUNTERS := [
 		"type": "optional",
 		"action": "scout",
 		"npcId": "fenn",
+		"dropTableId": "fenn_cache_drops",
 		"narrativeText": "Fenn points out a hidden cache trail.",
 		"rewardsEngage": {"crystals": 5, "itemId": "wz-tri-colored-dango"},
 		"rewardsSkip": {"crystals": 2},
@@ -132,6 +188,7 @@ const DEFAULT_ENCOUNTERS := [
 		"type": "optional",
 		"action": "support",
 		"npcId": "quill",
+		"dropTableId": "quill_lantern_drops",
 		"narrativeText": "Quill offers a calm late-session challenge.",
 		"rewardsEngage": {"crystals": 6, "itemId": "wz-green-halloween-stick-candy"},
 		"rewardsSkip": {"crystals": 2},
@@ -197,6 +254,62 @@ func ensure_world_state(world_state: Dictionary) -> Dictionary:
 	return merged
 
 
+# Where each place sits on the town map (0..1 across and down) and which
+# places a path joins. Uses the town's own "map" and "paths" when it has them;
+# otherwise places are set in a ring round home by distance, each joined to
+# home, so a pack town without map data still gets a map.
+func town_map(town: Dictionary) -> Dictionary:
+	var places: Array = []
+	var places_variant = town.get("places", [])
+	if typeof(places_variant) == TYPE_ARRAY:
+		for place_variant in places_variant:
+			if typeof(place_variant) == TYPE_DICTIONARY and str((place_variant as Dictionary).get("id", "")) != "":
+				places.append(place_variant)
+	var positions := {}
+	var ring: Array = []
+	for place in places:
+		var place_id := str(place.get("id", ""))
+		var map_variant = place.get("map", null)
+		if typeof(map_variant) == TYPE_ARRAY and (map_variant as Array).size() == 2:
+			positions[place_id] = Vector2(clampf(float(map_variant[0]), 0.0, 1.0), clampf(float(map_variant[1]), 0.0, 1.0))
+		else:
+			ring.append(place)
+	var home_id := str(town.get("home_place", "home"))
+	for index in range(ring.size()):
+		var place: Dictionary = ring[index]
+		var place_id := str(place.get("id", ""))
+		if place_id == home_id:
+			positions[place_id] = Vector2(0.5, 0.5)
+			continue
+		var angle := TAU * float(index) / float(maxi(1, ring.size())) - PI / 2.0
+		var radius := 0.18 + 0.1 * clampf(float(place.get("distance", 1)), 0.0, 3.0)
+		positions[place_id] = Vector2(0.5 + cos(angle) * radius, 0.5 + sin(angle) * radius)
+	var paths: Array = []
+	var paths_variant = town.get("paths", null)
+	if typeof(paths_variant) == TYPE_ARRAY:
+		for path_variant in paths_variant:
+			if typeof(path_variant) == TYPE_ARRAY and (path_variant as Array).size() == 2:
+				var from_id := str(path_variant[0])
+				var to_id := str(path_variant[1])
+				if positions.has(from_id) and positions.has(to_id) and from_id != to_id:
+					paths.append([from_id, to_id])
+	if paths.is_empty() and positions.has(home_id):
+		for place_id in positions.keys():
+			if str(place_id) != home_id:
+				paths.append([home_id, str(place_id)])
+	return {"positions": positions, "paths": paths}
+
+
+func get_town(world_state: Dictionary) -> Dictionary:
+	var world: Dictionary = ensure_world_state(world_state)["world"]
+	var town = world.get("town", null)
+	if typeof(town) == TYPE_DICTIONARY:
+		var places = (town as Dictionary).get("places", null)
+		if typeof(places) == TYPE_ARRAY and not (places as Array).is_empty():
+			return town
+	return DEFAULT_TOWN.duplicate(true)
+
+
 func configure_from_manifest(world_state: Dictionary, manifest: Dictionary) -> Dictionary:
 	var merged := ensure_world_state(world_state)
 	var world: Dictionary = merged.get("world", {}).duplicate(true)
@@ -205,6 +318,12 @@ func configure_from_manifest(world_state: Dictionary, manifest: Dictionary) -> D
 	if npcs.is_empty():
 		npcs = DEFAULT_NPCS.duplicate(true)
 	world["npcs"] = npcs
+
+	var manifest_town = manifest.get("town", null)
+	if typeof(manifest_town) == TYPE_DICTIONARY and typeof((manifest_town as Dictionary).get("places", null)) == TYPE_ARRAY and not ((manifest_town as Dictionary)["places"] as Array).is_empty():
+		world["town"] = (manifest_town as Dictionary).duplicate(true)
+	else:
+		world["town"] = DEFAULT_TOWN.duplicate(true)
 
 	var quests := _normalize_quests(manifest.get("quests", []))
 	if quests.is_empty():
@@ -381,6 +500,7 @@ func resolve_pending_encounter(world_state: Dictionary, engage: bool) -> Diction
 		"encounter": encounter,
 		"engaged": engage,
 		"npcName": _npc_name(world, str(encounter.get("npcId", ""))),
+		"dropTableId": str(encounter.get("dropTableId", "")),
 		"rewards": encounter.get(reward_key, {}),
 		"world_state": merged,
 	}
@@ -480,6 +600,7 @@ func _normalize_encounters(value: Variant) -> Array:
 				"type": str(row.get("type", "optional")),
 				"action": str(row.get("action", "visitor")),
 				"npcId": str(row.get("npcId", "")),
+				"dropTableId": str(row.get("dropTableId", "")),
 				"narrativeText": str(row.get("narrativeText", "An encounter appears.")),
 				"rewardsEngage": row.get("rewardsEngage", {}),
 				"rewardsSkip": row.get("rewardsSkip", {}),

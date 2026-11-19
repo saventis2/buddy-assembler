@@ -5,7 +5,13 @@ unless the V1 exit criteria in `PR_PLAN.md` are signed off.
 
 ## Product scope fences
 
-- Free-form AI chat (no LLM integration in V1).
+- Free-form AI chat: **reopened 2026-11-16** by Plan 13 (scope-reopen,
+  updated together with `docs/product/V1_PRD.md`). Ordinary chat text gets an
+  in-character reply from an optional local Ollama model, and the buddy
+  chooses its own name. Commands never reach the model, and the model's
+  output is only ever shown as cleaned text. Still deferred: hosted or cloud
+  models, voice, and the model doing anything beyond words and the buddy's
+  existing choices. See `docs/product/PLAN13_TOWN_AND_CONVERSATION.md`.
 - Generalized plugin / runtime scripting surface.
 - Multi-character world simulation beyond the existing single-companion +
   optional visitor pattern.

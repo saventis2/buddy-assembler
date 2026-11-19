@@ -1,5 +1,6 @@
 {
   "schemaVersion": 1,
+  "schemaSemver": "1.0.0",
   "id": "broken-pack",
   "name": "Broken Pack",
   "version": "0.0.1",
