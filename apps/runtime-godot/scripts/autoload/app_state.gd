@@ -2,11 +2,15 @@ extends Node
 
 const SaveStore = preload("res://scripts/persistence/save_store.gd")
 const SchemaMigrations = preload("res://scripts/persistence/schema_migrations.gd")
+const MindServiceScript = preload("res://scripts/services/mind_service.gd")
 const UnlockTable = preload("res://scripts/progression/unlock_table.gd")
+const ContentLoader = preload("res://scripts/content/content_loader.gd")
 
 const SETTINGS_PATH := "user://settings.json"
 const PROFILE_PATH := "user://profile.json"
 const WORLD_STATE_PATH := "user://world_state.json"
+const CORE_ECONOMY_PACK_ID := "core_pack"
+const INVENTORY_BACKFILL_MIGRATION_VERSION := 2
 
 const SERVICE_PATHS := {
     "identity": "res://scripts/services/identity_service.gd",
@@ -16,12 +20,28 @@ const SERVICE_PATHS := {
     "economy": "res://scripts/services/economy_service.gd",
     "world": "res://scripts/services/world_service.gd",
     "report": "res://scripts/services/report_service.gd",
+    "mind": "res://scripts/services/mind_service.gd",
+    "memory": "res://scripts/services/memory_service.gd",
 }
 
 var settings := {}
 var profile := {}
 var world_state := {}
 var _services: Dictionary = {}
+# Content hash of what was last written per save file, so an unchanged file
+# is not rewritten, and a debounce for saves requested every frame.
+var _saved_digest: Dictionary = {}
+var _deferred_save_pending := false
+var _deferred_save_seconds := 0.0
+
+const DEFERRED_SAVE_DELAY_SECONDS := 1.5
+# Things the buddy can notice in a shop and want (Plan 13 C1+C2): wearable
+# catalogue items, priced by rarity where the catalogue has no price.
+const WANT_SLOTS := ["hat", "top", "bottom", "overall", "shoes", "gloves", "cape", "face_accessory", "eye_accessory"]
+const WANT_PRICE_BY_RARITY := {"common": 40, "uncommon": 80, "rare": 150, "epic": 300, "legendary": 500}
+const WANT_SHOP_SIZE := 40
+var _want_shop_cache: Array = []
+var _want_shop_catalog_size := -1
 
 
 func _ready() -> void:
@@ -66,32 +86,80 @@ func load_state() -> void:
 
     profile = _ensure_profile_modules(profile)
     world_state = _ensure_world_modules(world_state)
+    _reconcile_progression_from_xp()
+    var inventory_backfill_changed := _run_inventory_backfill_migration_once()
+    _sync_growth_mode_flags()
     _refresh_unlocks()
     _prune_event_buckets()
     _refresh_while_away_report()
+    if inventory_backfill_changed:
+        flush()
 
 
 func flush() -> void:
-    SaveStore.write_json(SETTINGS_PATH, settings)
-    SaveStore.write_json(PROFILE_PATH, profile)
-    SaveStore.write_json(WORLD_STATE_PATH, world_state)
+    _deferred_save_pending = false
+    _write_if_changed(SETTINGS_PATH, settings)
+    _write_if_changed(PROFILE_PATH, profile)
+    _write_if_changed(WORLD_STATE_PATH, _persistable_world_state())
+
+
+# Saves soon rather than now. For callers that fire every frame (the window
+# position while the buddy walks or is dragged), where writing each time
+# stalls rendering.
+func flush_soon() -> void:
+    if not _deferred_save_pending:
+        _deferred_save_seconds = 0.0
+    _deferred_save_pending = true
+
+
+func _process(delta: float) -> void:
+    if not _deferred_save_pending:
+        return
+    _deferred_save_seconds += delta
+    if _deferred_save_seconds >= DEFERRED_SAVE_DELAY_SECONDS:
+        flush()
+
+
+func _notification(what: int) -> void:
+    if what == NOTIFICATION_WM_CLOSE_REQUEST or what == NOTIFICATION_PREDELETE:
+        if _deferred_save_pending:
+            flush()
+
+
+# The item catalogue is a copy of the content pack's item list (thousands of
+# rows, several megabytes). It is rebuilt from the pack on every launch by
+# apply_loaded_pack, so it is left out of the save file.
+func _persistable_world_state() -> Dictionary:
+    var slim := world_state.duplicate(false)
+    slim.erase("item_catalog")
+    return slim
+
+
+func _write_if_changed(path: String, data: Dictionary) -> void:
+    var digest := JSON.stringify(data).md5_text()
+    if str(_saved_digest.get(path, "")) == digest and FileAccess.file_exists(path):
+        return
+    if SaveStore.write_json(path, data):
+        _saved_digest[path] = digest
 
 
 func record_interaction(kind: String) -> void:
     profile["total_interactions"] = int(profile.get("total_interactions", 0)) + 1
     profile = _call_profile_service("identity", "record_interaction", [profile, kind])
+    var xp_curve := UnlockTable.xp_curve()
     profile = _call_profile_service(
         "bond",
         "apply_interaction",
-        [profile, kind, UnlockTable.xp_per_level(), UnlockTable.max_level()]
+        [profile, kind, UnlockTable.xp_per_level(), UnlockTable.max_level(), xp_curve]
     )
     profile = _call_profile_service(
         "mood",
         "apply_interaction",
         [profile, kind, is_quiet_hours_now()]
     )
+    _sync_growth_mode_flags()
     profile = _call_profile_service("growth", "apply_interaction", [profile, kind])
-    world_state = _call_world_service("economy", "grant_crystals", [world_state, "interaction:%s" % kind, 1])
+    world_state = _call_world_service("economy", "grant_meso", [world_state, "interaction:%s" % kind, 1])
     _refresh_unlocks()
     flush()
 
@@ -102,18 +170,20 @@ func apply_behavior(action_id: String) -> void:
 
     if action_id == "gift":
         profile["gifts_seen"] = int(profile.get("gifts_seen", 0)) + 1
-        world_state = _call_world_service("economy", "grant_crystals", [world_state, "behavior:gift", 3])
+        world_state = _call_world_service("economy", "grant_meso", [world_state, "behavior:gift", 3])
     elif action_id == "visitor":
-        world_state = _call_world_service("economy", "grant_crystals", [world_state, "behavior:visitor", 2])
+        world_state = _call_world_service("economy", "grant_meso", [world_state, "behavior:visitor", 2])
     elif action_id == "sleep":
-        world_state = _call_world_service("economy", "grant_crystals", [world_state, "behavior:sleep", 1])
+        world_state = _call_world_service("economy", "grant_meso", [world_state, "behavior:sleep", 1])
 
+    var xp_curve := UnlockTable.xp_curve()
     profile = _call_profile_service(
         "bond",
         "apply_behavior",
-        [profile, action_id, UnlockTable.xp_per_level(), UnlockTable.max_level()]
+        [profile, action_id, UnlockTable.xp_per_level(), UnlockTable.max_level(), xp_curve]
     )
     profile = _call_profile_service("mood", "apply_behavior", [profile, action_id])
+    _sync_growth_mode_flags()
     profile = _call_profile_service("growth", "apply_behavior", [profile, action_id])
     profile = _call_profile_service("identity", "record_behavior", [profile, action_id])
     _refresh_unlocks()
@@ -123,9 +193,14 @@ func apply_behavior(action_id: String) -> void:
 func apply_loaded_pack(pack_id: String, manifest: Dictionary) -> void:
     settings["selectedPackId"] = pack_id
     world_state["activePackId"] = pack_id
+    world_state["activeVisualPackId"] = pack_id
     world_state["activePackManifestVersion"] = str(manifest.get("version", ""))
+    profile = _call_profile_service("identity", "configure_from_manifest", [profile, manifest], false)
     world_state = _call_world_service("world", "configure_from_manifest", [world_state, manifest], false)
-    world_state = _call_world_service("economy", "configure_from_manifest", [world_state, manifest], false)
+    var economy_manifest := _resolve_economy_manifest(manifest)
+    world_state = _call_world_service("economy", "configure_from_manifest", [world_state, economy_manifest], false)
+    world_state["activeEconomyPackId"] = str(economy_manifest.get("id", CORE_ECONOMY_PACK_ID))
+    _backfill_inventory_from_catalog()
     flush()
 
 
@@ -178,7 +253,7 @@ func try_consume_event_budget(event_id: String, per_hour: int, per_day: int) -> 
 func set_window_state(screen_index: int, window_pos: Vector2i) -> void:
     settings["preferredScreen"] = screen_index
     settings["lastWindowPosition"] = [window_pos.x, window_pos.y]
-    flush()
+    flush_soon()
 
 
 func get_window_state() -> Dictionary:
@@ -289,6 +364,7 @@ func open_reward_box(box_id: String) -> Dictionary:
             "item_name": str(result.get("item", {}).get("name", "")),
             "item_rarity": str(result.get("item", {}).get("rarity", "")),
             "duplicate": bool(result.get("duplicate", false)),
+            "recycle_meso": int(result.get("recycleMeso", result.get("recycleCrystals", 0))),
             "recycle_crystals": int(result.get("recycleCrystals", 0)),
         }
     return {"ok": false, "reason": str(result.get("reason", "unknown"))}
@@ -310,6 +386,317 @@ func tick_world_events(now_unix: int) -> Dictionary:
         flush()
     var prompt = result.get("prompt", {})
     return prompt if typeof(prompt) == TYPE_DICTIONARY else {}
+
+
+# Lets the buddy make any self-directed decisions that have come due
+# (including ones from while the app was closed). Returns the resulting
+# journal events, oldest first; empty when nothing was due or autonomy is off.
+func get_town() -> Dictionary:
+    var town = _call_service_with_fallback("world", "get_town", [world_state], {})
+    return town if typeof(town) == TYPE_DICTIONARY else {}
+
+
+func tick_mind(now_unix: int) -> Array:
+    if not bool(settings.get("autonomyEnabled", true)):
+        return []
+    var npcs: Array = []
+    var world_variant = world_state.get("world", null)
+    if typeof(world_variant) == TYPE_DICTIONARY:
+        var npcs_variant = (world_variant as Dictionary).get("npcs", [])
+        if typeof(npcs_variant) == TYPE_ARRAY:
+            npcs = npcs_variant
+    var context := {
+        "is_night": _is_night(),
+        "top_trait": "",
+        "hour": int(Time.get_datetime_dict_from_system().get("hour", 12)),
+        "meso": int(get_inventory_snapshot().get("meso", 0)),
+        "shop_items": _want_shop_items(),
+        "plans": true,
+    }
+    var identity_ctx = _call_service_with_fallback("identity", "get_context", [profile], {})
+    if typeof(identity_ctx) == TYPE_DICTIONARY:
+        context["top_trait"] = str(identity_ctx.get("top_trait", ""))
+    var result = _call_service_with_fallback("mind", "tick", [profile, npcs, now_unix, context, get_town()], {})
+    if typeof(result) != TYPE_DICTIONARY:
+        return []
+    var events = result.get("events", [])
+    if typeof(events) != TYPE_ARRAY or (events as Array).is_empty():
+        return []
+    var next_profile = result.get("profile", null)
+    if typeof(next_profile) == TYPE_DICTIONARY:
+        profile = next_profile
+        # Where it went and who it saw are facts, so the memory graph links
+        # them with what the person says about the same places and people.
+        _call_profile_service("memory", "record_town_events", [profile, events])
+        for event_variant in events:
+            if typeof(event_variant) == TYPE_DICTIONARY and str((event_variant as Dictionary).get("buy_want", "")) != "":
+                _buy_want(str((event_variant as Dictionary)["buy_want"]), int((event_variant as Dictionary).get("t", 0)))
+        flush()
+    return events
+
+
+# An even spread of wearable catalogue items for the town's shop, built once
+# per catalogue.
+func _want_shop_items() -> Array:
+    var catalog_variant = world_state.get("item_catalog", {})
+    if typeof(catalog_variant) != TYPE_DICTIONARY:
+        return []
+    var catalog: Dictionary = catalog_variant
+    if catalog.size() == _want_shop_catalog_size:
+        return _want_shop_cache
+    var rows: Array = []
+    var ids: Array = catalog.keys()
+    ids.sort()
+    for id_variant in ids:
+        var item_variant = catalog[id_variant]
+        if typeof(item_variant) != TYPE_DICTIONARY:
+            continue
+        var item: Dictionary = item_variant
+        var slot := str(item.get("equipSlot", "")).strip_edges()
+        var item_name := str(item.get("name", "")).strip_edges()
+        if not WANT_SLOTS.has(slot) or item_name == "" or item_name.length() > 32 or str(item.get("wzId", "")) == "":
+            continue
+        var price := int(item.get("price", 0))
+        if price <= 0:
+            price = int(WANT_PRICE_BY_RARITY.get(str(item.get("rarity", "")).to_lower(), 80))
+        rows.append({"id": str(id_variant), "name": item_name, "slot": slot, "price": price})
+    var shop: Array = []
+    if not rows.is_empty():
+        var step := maxi(1, int(rows.size() / WANT_SHOP_SIZE))
+        for index in range(0, rows.size(), step):
+            shop.append(rows[index])
+            if shop.size() >= WANT_SHOP_SIZE:
+                break
+    _want_shop_cache = shop
+    _want_shop_catalog_size = catalog.size()
+    return shop
+
+
+# The buddy buys something it saved up for. It puts it on only if nothing is
+# worn in that slot, so it never undoes an outfit chosen in the Wardrobe.
+func _buy_want(want_id: String, decision_unix: int) -> void:
+    var want: Dictionary = {}
+    for row in mind_wants():
+        if typeof(row) == TYPE_DICTIONARY and str((row as Dictionary).get("id", "")) == want_id:
+            want = row
+    if want.is_empty():
+        return
+    # The wallet may have changed since the trip was planned: keep the reserve.
+    if int(get_inventory_snapshot().get("meso", 0)) < int(want.get("price", 0)) + MindServiceScript.WANT_RESERVE_MESO:
+        _call_profile_service("mind", "cannot_buy", [profile, want_id, decision_unix])
+        return
+    var spent = _call_service_with_fallback(
+        "economy", "spend_meso", [world_state, "purchase:%s" % want_id, int(want.get("price", 0))], {}
+    )
+    if typeof(spent) != TYPE_DICTIONARY or not bool(spent.get("ok", false)):
+        _call_profile_service("mind", "cannot_buy", [profile, want_id, decision_unix])
+        return
+    world_state = spent["world_state"]
+    var item_id := str(want.get("item_id", ""))
+    var row: Dictionary = {"id": item_id, "name": str(want.get("name", "")), "equipSlot": str(want.get("slot", ""))}
+    var catalog_variant = world_state.get("item_catalog", {})
+    if typeof(catalog_variant) == TYPE_DICTIONARY and typeof((catalog_variant as Dictionary).get(item_id, null)) == TYPE_DICTIONARY:
+        row = ((catalog_variant as Dictionary)[item_id] as Dictionary).duplicate(true)
+        row["id"] = item_id
+    world_state = _call_world_service("economy", "grant_item", [world_state, "purchase:%s" % want_id, row], false)
+    var instance_id := int(world_state.get("next_item_instance_id", 1)) - 1
+    var slots_variant = get_inventory_snapshot().get("equipped_slots", {})
+    var slot_free := true
+    if typeof(slots_variant) == TYPE_DICTIONARY:
+        slot_free = int((slots_variant as Dictionary).get(str(want.get("slot", "")), -1)) <= 0
+    var equipped := false
+    if slot_free:
+        equipped = bool(equip_inventory_item(instance_id).get("ok", false))
+    _call_profile_service("mind", "complete_want", [profile, want_id, decision_unix, equipped])
+
+
+func mind_wants() -> Array:
+    var wants = _call_service_with_fallback("mind", "get_wants", [profile], [])
+    return wants if typeof(wants) == TYPE_ARRAY else []
+
+
+# Stores the thinking model's wording for a decision already in the journal.
+func apply_mind_thought(decision_unix: int, thought: String, want: String) -> void:
+    var result = _call_service_with_fallback(
+        "mind", "apply_thought", [profile, decision_unix, thought, want], null
+    )
+    if typeof(result) == TYPE_DICTIONARY:
+        profile = result
+        flush()
+
+
+# --- Memory (Plan 13 B2) -------------------------------------------------
+# What the buddy remembers about the person lives in profile["memory"]. The
+# memoryEnabled setting stops anything new being kept or used; what is
+# already kept can still be listed and forgotten.
+func memory_enabled() -> bool:
+    return bool(settings.get("memoryEnabled", true))
+
+
+func _memory_roster() -> Dictionary:
+    var npcs: Array = []
+    var world_variant = world_state.get("world", null)
+    if typeof(world_variant) == TYPE_DICTIONARY:
+        var npcs_variant = (world_variant as Dictionary).get("npcs", [])
+        if typeof(npcs_variant) == TYPE_ARRAY:
+            npcs = npcs_variant
+    var places_variant = get_town().get("places", [])
+    return {"places": places_variant if typeof(places_variant) == TYPE_ARRAY else [], "npcs": npcs}
+
+
+func _now_unix() -> int:
+    return int(Time.get_unix_time_from_system())
+
+
+func memory_note_turn(who: String, text: String) -> void:
+    if not memory_enabled():
+        return
+    _call_profile_service("memory", "append_turn", [profile, who, text, _now_unix()])
+    flush()
+
+
+func memory_live_turns() -> Array:
+    if not memory_enabled():
+        return []
+    var turns = _call_service_with_fallback("memory", "live_turns", [profile, _now_unix()], [])
+    return turns if typeof(turns) == TYPE_ARRAY else []
+
+
+func memory_should_consolidate(chat_open: bool) -> bool:
+    if not memory_enabled():
+        return false
+    return bool(_call_service_with_fallback("memory", "should_consolidate", [profile, _now_unix(), chat_open], false))
+
+
+func memory_pending_turns() -> Dictionary:
+    var pending = _call_service_with_fallback("memory", "pending_turns", [profile], {})
+    return pending if typeof(pending) == TYPE_DICTIONARY else {}
+
+
+func memory_apply_consolidation(facts: Array, summary: String, upto: int) -> void:
+    if not memory_enabled():
+        return
+    _call_profile_service("memory", "apply_consolidation", [profile, facts, summary, upto, _now_unix(), _memory_roster()])
+    flush()
+
+
+func memory_discard_turns(upto: int) -> void:
+    _call_profile_service("memory", "discard_turns", [profile, upto])
+    flush()
+
+
+func memory_recall(text: String) -> Dictionary:
+    if not memory_enabled():
+        return {}
+    var recalled = _call_service_with_fallback("memory", "recall", [profile, text, _now_unix()], {})
+    return recalled if typeof(recalled) == TYPE_DICTIONARY else {}
+
+
+# Returns {"ok": bool, "id": int, "reason": String}.
+func memory_add_note(text: String) -> Dictionary:
+    if not memory_enabled():
+        return {"ok": false, "id": 0, "reason": "memory_off"}
+    var result = _call_service_with_fallback("memory", "add_note", [profile, text, _now_unix()], {})
+    if typeof(result) != TYPE_DICTIONARY:
+        return {"ok": false, "id": 0, "reason": "service_failure"}
+    if bool(result.get("ok", false)) and typeof(result.get("profile", null)) == TYPE_DICTIONARY:
+        profile = result["profile"]
+        flush()
+    return {"ok": bool(result.get("ok", false)), "id": int(result.get("id", 0)), "reason": str(result.get("reason", ""))}
+
+
+func memory_forget(memory_id: int) -> bool:
+    var result = _call_service_with_fallback("memory", "forget", [profile, memory_id], {})
+    if typeof(result) != TYPE_DICTIONARY or not bool(result.get("ok", false)):
+        return false
+    if typeof(result.get("profile", null)) == TYPE_DICTIONARY:
+        profile = result["profile"]
+        flush()
+    return true
+
+
+func memory_forget_all() -> void:
+    _call_profile_service("memory", "forget_all", [profile])
+    flush()
+
+
+func memory_list() -> Array:
+    var rows = _call_service_with_fallback("memory", "list_about_user", [profile, _now_unix()], [])
+    return rows if typeof(rows) == TYPE_ARRAY else []
+
+
+# --- Talk changes the buddy (Plan 13 B3) --------------------------------
+func _world_npcs() -> Array:
+    var world_variant = world_state.get("world", null)
+    if typeof(world_variant) == TYPE_DICTIONARY:
+        var npcs_variant = (world_variant as Dictionary).get("npcs", [])
+        if typeof(npcs_variant) == TYPE_ARRAY:
+            return npcs_variant
+    return []
+
+
+func _local_hour_now() -> int:
+    return int(Time.get_datetime_dict_from_system().get("hour", 12))
+
+
+# The town place or character the person is suggesting it go to, if any.
+# Only while it acts on its own: otherwise nothing would ever carry it out.
+func mind_find_suggestion(text: String) -> Dictionary:
+    if not bool(settings.get("autonomyEnabled", true)):
+        return {}
+    if not bool(_call_service_with_fallback("mind", "is_suggestion", [text], false)):
+        return {}
+    var target = _call_service_with_fallback("mind", "find_target", [text, get_town(), _world_npcs()], {})
+    return target if typeof(target) == TYPE_DICTIONARY else {}
+
+
+# The buddy decides (yes, later or no); returns {"answer", "reason"}.
+func mind_consider(target: Dictionary) -> Dictionary:
+    var result = _call_service_with_fallback(
+        "mind", "consider", [profile, target, _now_unix(), _local_hour_now(), get_town(), _world_npcs()], {}
+    )
+    if typeof(result) != TYPE_DICTIONARY:
+        return {"answer": "", "reason": ""}
+    if typeof(result.get("profile", null)) == TYPE_DICTIONARY:
+        profile = result["profile"]
+        flush()
+    return {"answer": str(result.get("answer", "")), "reason": str(result.get("reason", ""))}
+
+
+# A finished talk is an event in its day (social need, journal, maybe a wish).
+func mind_note_talk(summary: String, lines: Array) -> void:
+    _call_profile_service("mind", "note_talk", [profile, summary, lines, _now_unix(), get_town(), _world_npcs()])
+    flush()
+
+
+func mind_pick_news() -> Dictionary:
+    var news = _call_service_with_fallback("mind", "pick_news", [profile], {})
+    return news if typeof(news) == TYPE_DICTIONARY else {}
+
+
+func mind_mark_shared(entry_t: int) -> void:
+    _call_profile_service("mind", "mark_shared", [profile, entry_t])
+    flush()
+
+
+func get_town_map() -> Dictionary:
+    var layout = _call_service_with_fallback("world", "town_map", [get_town()], {})
+    return layout if typeof(layout) == TYPE_DICTIONARY else {}
+
+
+func mind_day_plan() -> Dictionary:
+    var plan = _call_service_with_fallback("mind", "get_day_plan", [profile], {})
+    return plan if typeof(plan) == TYPE_DICTIONARY else {}
+
+
+func get_mind_preferences() -> Dictionary:
+    var preferences = _call_service_with_fallback("mind", "get_preferences", [profile], {})
+    return preferences if typeof(preferences) == TYPE_DICTIONARY else {}
+
+
+func get_mind_journal(limit: int = 5) -> Array:
+    var journal = _call_service_with_fallback("mind", "get_journal", [profile, limit], [])
+    return journal if typeof(journal) == TYPE_ARRAY else []
 
 
 func get_world_snapshot() -> Dictionary:
@@ -339,6 +726,7 @@ func complete_pending_quest() -> Dictionary:
         "ok": true,
         "quest_id": str(result.get("quest", {}).get("id", "")),
         "npc_name": str(result.get("npcName", "Villager")),
+        "meso": int(result.get("rewards", {}).get("meso", result.get("rewards", {}).get("crystals", 0))),
         "crystals": int(result.get("rewards", {}).get("crystals", 0)),
         "item_name": str(_resolve_reward_item_name(result.get("rewards", {}).get("itemId", ""))),
     }
@@ -358,14 +746,37 @@ func resolve_pending_encounter(engage: bool) -> Dictionary:
     var encounter_id := str(result.get("encounter", {}).get("id", ""))
     var source := "encounter:%s:%s" % [encounter_id, "engage" if engage else "skip"]
     _apply_reward_payload(source, result.get("rewards", {}))
+    var drop_item_name := ""
+    if engage:
+        var table_id := str(result.get("dropTableId", ""))
+        if table_id != "":
+            var drop_ctx := {
+                "level": int(profile.get("bond_level", 1)),
+                "job_id": str(profile.get("job_id", "explorer_buddy")),
+                "job_primary_stat": str(profile.get("job_primary_stat", "charisma")),
+                "job_drop_bias": profile.get("job_drop_bias", []),
+            }
+            var drop_seed := int(profile.get("personality_seed", 0)) + int(Time.get_unix_time_from_system())
+            var drop_result = _call_service_with_fallback(
+                "economy",
+                "roll_drop_table",
+                [world_state, table_id, drop_ctx, drop_seed],
+                {}
+            )
+            if typeof(drop_result) == TYPE_DICTIONARY and bool(drop_result.get("ok", false)):
+                if typeof(drop_result.get("world_state", null)) == TYPE_DICTIONARY:
+                    world_state = drop_result.get("world_state", {})
+                drop_item_name = str(drop_result.get("item", {}).get("name", ""))
     flush()
     return {
         "ok": true,
         "encounter_id": encounter_id,
         "engaged": engage,
         "npc_name": str(result.get("npcName", "Villager")),
+        "meso": int(result.get("rewards", {}).get("meso", result.get("rewards", {}).get("crystals", 0))),
         "crystals": int(result.get("rewards", {}).get("crystals", 0)),
         "item_name": str(_resolve_reward_item_name(result.get("rewards", {}).get("itemId", ""))),
+        "drop_item_name": drop_item_name,
     }
 
 
@@ -376,20 +787,42 @@ func get_telemetry_snapshot() -> Dictionary:
         unlock_count = (unlocks as Array).size()
     var econ_snapshot: Dictionary = _call_service_with_fallback("economy", "get_snapshot", [world_state], {})
     var world_snapshot: Dictionary = _call_service_with_fallback("world", "get_snapshot", [world_state], {})
+    var catalog_size := 0
+    var catalog_variant = world_state.get("item_catalog", {})
+    if typeof(catalog_variant) == TYPE_DICTIONARY:
+        catalog_size = (catalog_variant as Dictionary).size()
+    var xp_progress := _xp_progress_snapshot(
+        int(profile.get("bond_xp", 0)),
+        int(profile.get("bond_level", 1))
+    )
     return {
         "bond_level": int(profile.get("bond_level", 1)),
         "bond_xp": int(profile.get("bond_xp", 0)),
         "trust_value": float(profile.get("trust_value", 0.2)),
         "mood": str(profile.get("dominant_mood", "calm")),
         "growth_stage": int(profile.get("growth_stage", 1)),
+        "job_id": str(profile.get("job_id", "explorer_buddy")),
+        "job_name": str(profile.get("job_name", "Explorer Buddy")),
+        "job_primary_stat": str(profile.get("job_primary_stat", "charisma")),
+        "job_drop_bias": profile.get("job_drop_bias", []),
+        "stat_points_unspent": int(profile.get("stat_points_unspent", 0)),
+        "stat_points_spent": int(profile.get("stat_points_spent", 0)),
         "total_interactions": int(profile.get("total_interactions", 0)),
         "gifts_seen": int(profile.get("gifts_seen", 0)),
         "active_pack": str(world_state.get("activePackId", settings.get("selectedPackId", "core_pack"))),
+        "visual_pack_id": str(world_state.get("activeVisualPackId", world_state.get("activePackId", settings.get("selectedPackId", "core_pack")))),
+        "economy_pack_id": str(world_state.get("activeEconomyPackId", CORE_ECONOMY_PACK_ID)),
+        "catalog_size": catalog_size,
+        "xp_into_level": int(xp_progress.get("into", 0)),
+        "xp_to_next": int(xp_progress.get("need", UnlockTable.xp_per_level())),
+        "xp_is_max": bool(xp_progress.get("is_max", false)),
         "last_action": str(world_state.get("last_action", "idle")),
         "last_event_id": str(world_state.get("last_event_id", "")),
         "unlock_count": unlock_count,
-        "crystals": int(econ_snapshot.get("crystals", 0)),
+        "meso": int(econ_snapshot.get("meso", econ_snapshot.get("crystals", 0))),
+        "crystals": int(econ_snapshot.get("meso", econ_snapshot.get("crystals", 0))),
         "inventory_count": int(econ_snapshot.get("inventory_count", 0)),
+        "inventory_quarantine_count": int(econ_snapshot.get("quarantine_count", 0)),
         "duplicate_recycle_total": int(econ_snapshot.get("duplicate_recycle_total", 0)),
         "box_open_stats": econ_snapshot.get("box_open_stats", {}),
         "home_scene_id": str(world_snapshot.get("home_scene_id", "cozy_starter_room")),
@@ -402,6 +835,305 @@ func get_telemetry_snapshot() -> Dictionary:
         "quiet_strictness": str(settings.get("quietModeStrictness", "balanced")),
         "continuity_digest_count": get_continuity_digest().size(),
     }
+
+
+func get_stats_snapshot() -> Dictionary:
+    var growth_ctx: Dictionary = _call_service_with_fallback("growth", "get_context", [profile], {})
+    var stats_variant = growth_ctx.get("stats", {})
+    var stats: Dictionary = stats_variant if typeof(stats_variant) == TYPE_DICTIONARY else {}
+    var xp_progress := _xp_progress_snapshot(
+        int(profile.get("bond_xp", 0)),
+        int(profile.get("bond_level", 1))
+    )
+    return {
+        "stats": stats.duplicate(true),
+        "growth_stage": int(profile.get("growth_stage", 1)),
+        "bond_level": int(profile.get("bond_level", 1)),
+        "bond_xp": int(profile.get("bond_xp", 0)),
+        "xp_into_level": int(xp_progress.get("into", 0)),
+        "xp_to_next": int(xp_progress.get("need", UnlockTable.xp_per_level())),
+        "xp_is_max": bool(xp_progress.get("is_max", false)),
+        "job_id": str(profile.get("job_id", "explorer_buddy")),
+        "job_name": str(profile.get("job_name", "Explorer Buddy")),
+        "job_primary_stat": str(profile.get("job_primary_stat", "charisma")),
+        "job_drop_bias": profile.get("job_drop_bias", []),
+        "auto_assign_stats": bool(profile.get("auto_assign_stats", false)),
+        "stat_points_unspent": int(profile.get("stat_points_unspent", 0)),
+        "stat_points_spent": int(profile.get("stat_points_spent", 0)),
+    }
+
+
+func allocate_stat_point(stat_id: String, count: int = 1) -> Dictionary:
+    var result = _call_service_with_fallback("growth", "allocate_stat_point", [profile, stat_id, count], {})
+    if typeof(result) != TYPE_DICTIONARY:
+        return {"ok": false, "reason": "service_failure"}
+    if bool(result.get("ok", false)):
+        var next_profile = result.get("profile", {})
+        if typeof(next_profile) == TYPE_DICTIONARY:
+            profile = next_profile
+            _refresh_unlocks()
+            flush()
+        return {
+            "ok": true,
+            "reason": "",
+            "stat_id": str(result.get("stat_id", stat_id)),
+            "spent": int(result.get("spent", 0)),
+            "new_value": int(result.get("new_value", 0)),
+        }
+    return {"ok": false, "reason": str(result.get("reason", "unknown"))}
+
+
+func get_inventory_snapshot() -> Dictionary:
+    var snap = _call_service_with_fallback("economy", "get_inventory_snapshot", [world_state], {})
+    if typeof(snap) != TYPE_DICTIONARY:
+        return {
+            "meso": 0,
+            "crystals": 0,
+            "inventory": [],
+            "equipped_slots": {},
+            "inventory_count": 0,
+            "quarantine_count": 0,
+        }
+    return snap
+
+
+func repair_inventory_catalog() -> Dictionary:
+    var result = _call_service_with_fallback("economy", "repair_inventory_from_catalog", [world_state], {})
+    if typeof(result) != TYPE_DICTIONARY:
+        return {"ok": false, "reason": "service_failure"}
+    if typeof(result.get("world_state", null)) == TYPE_DICTIONARY:
+        world_state = result.get("world_state", {})
+        flush()
+    return {
+        "ok": bool(result.get("ok", false)),
+        "changed": bool(result.get("changed", false)),
+        "recovered_count": int(result.get("recovered_count", 0)),
+        "remaining_quarantine_count": int(result.get("remaining_quarantine_count", 0)),
+    }
+
+
+func clear_inventory_debug() -> Dictionary:
+    var result = _call_service_with_fallback("economy", "clear_inventory", [world_state, true], {})
+    if typeof(result) != TYPE_DICTIONARY:
+        return {"ok": false, "reason": "service_failure"}
+    if typeof(result.get("world_state", null)) == TYPE_DICTIONARY:
+        world_state = result.get("world_state", {})
+        flush()
+    return {
+        "ok": bool(result.get("ok", false)),
+        "reason": str(result.get("reason", "")),
+        "removed_count": int(result.get("removed_count", 0)),
+        "unequipped_count": int(result.get("unequipped_count", 0)),
+        "cleared_quarantine": bool(result.get("cleared_quarantine", false)),
+    }
+
+
+func use_inventory_item(instance_id: int) -> Dictionary:
+    var item_lookup = _call_service_with_fallback("economy", "get_item_instance", [world_state, instance_id], {})
+    if typeof(item_lookup) != TYPE_DICTIONARY or not bool(item_lookup.get("ok", false)):
+        return {"ok": false, "reason": str(item_lookup.get("reason", "missing_item"))}
+    var item_variant = item_lookup.get("item", {})
+    if typeof(item_variant) != TYPE_DICTIONARY:
+        return {"ok": false, "reason": "invalid_item"}
+    var item: Dictionary = item_variant
+    var category := str(item.get("category", "")).to_lower()
+    if category == "gear":
+        return {"ok": false, "reason": "equip_only"}
+    if not _is_usable_item_category(category):
+        return {"ok": false, "reason": "not_usable_category"}
+
+    var before := {
+        "bond_level": int(profile.get("bond_level", 1)),
+        "bond_xp": int(profile.get("bond_xp", 0)),
+        "mood": str(profile.get("dominant_mood", "calm")),
+        "trust_value": float(profile.get("trust_value", 0.2)),
+        "stat_points_unspent": int(profile.get("stat_points_unspent", 0)),
+        "meso": int(get_inventory_snapshot().get("meso", get_inventory_snapshot().get("crystals", 0))),
+        "crystals": int(get_inventory_snapshot().get("meso", get_inventory_snapshot().get("crystals", 0))),
+    }
+
+    var consume_result = _call_service_with_fallback("economy", "consume_item_instance", [world_state, instance_id], {})
+    if typeof(consume_result) != TYPE_DICTIONARY or not bool(consume_result.get("ok", false)):
+        return {"ok": false, "reason": str(consume_result.get("reason", "consume_failed"))}
+    var next_world = consume_result.get("world_state", {})
+    if typeof(next_world) == TYPE_DICTIONARY:
+        world_state = next_world
+
+    _apply_item_use_effect(item)
+    _refresh_unlocks()
+    flush()
+    var after := {
+        "bond_level": int(profile.get("bond_level", 1)),
+        "bond_xp": int(profile.get("bond_xp", 0)),
+        "mood": str(profile.get("dominant_mood", "calm")),
+        "trust_value": float(profile.get("trust_value", 0.2)),
+        "stat_points_unspent": int(profile.get("stat_points_unspent", 0)),
+        "meso": int(get_inventory_snapshot().get("meso", get_inventory_snapshot().get("crystals", 0))),
+        "crystals": int(get_inventory_snapshot().get("meso", get_inventory_snapshot().get("crystals", 0))),
+    }
+    return {
+        "ok": true,
+        "reason": "",
+        "item": item,
+        "effect_summary": _build_item_use_effect_summary(item, before, after),
+        "before": before,
+        "after": after,
+    }
+
+
+func equip_inventory_item(instance_id: int) -> Dictionary:
+    var result = _call_service_with_fallback("economy", "equip_item_instance", [world_state, instance_id], {})
+    if typeof(result) != TYPE_DICTIONARY:
+        return {"ok": false, "reason": "service_failure"}
+    if not bool(result.get("ok", false)):
+        return {"ok": false, "reason": str(result.get("reason", "equip_failed"))}
+    var next_world = result.get("world_state", {})
+    if typeof(next_world) == TYPE_DICTIONARY:
+        world_state = next_world
+    flush()
+    return {
+        "ok": true,
+        "reason": "",
+        "slot": str(result.get("slot", "")),
+        "item": result.get("item", {}),
+    }
+
+
+func unequip_inventory_slot(slot_id: String) -> Dictionary:
+    var result = _call_service_with_fallback("economy", "unequip_slot", [world_state, slot_id], {})
+    if typeof(result) != TYPE_DICTIONARY:
+        return {"ok": false, "reason": "service_failure"}
+    if not bool(result.get("ok", false)):
+        return {"ok": false, "reason": str(result.get("reason", "unequip_failed"))}
+    var next_world = result.get("world_state", {})
+    if typeof(next_world) == TYPE_DICTIONARY:
+        world_state = next_world
+    flush()
+    return {
+        "ok": true,
+        "reason": "",
+        "slot": str(result.get("slot", "")),
+    }
+
+
+func seed_test_inventory() -> Dictionary:
+    var catalog_variant = world_state.get("item_catalog", {})
+    if typeof(catalog_variant) != TYPE_DICTIONARY:
+        return {"ok": false, "reason": "missing_catalog", "added": 0, "categories": []}
+    var catalog: Dictionary = catalog_variant
+    if catalog.is_empty():
+        return {"ok": false, "reason": "empty_catalog", "added": 0, "categories": []}
+
+    # Prefer known WZ-linked items first so icon QA has distinct, visible icons.
+    var target_item_ids := [
+        "wz-tri-colored-dango",
+        "wz-fruity-candy",
+        "wz-green-halloween-stick-candy",
+        "wz-stone-golem-rubble",
+        "wz-ridleys-stone",
+        "wz-rocky-mask-doll",
+    ]
+    var used_ids := {}
+    var added := 0
+    var added_categories: Array = []
+
+    for id_variant in target_item_ids:
+        var item_id := str(id_variant)
+        if item_id == "" or not catalog.has(item_id):
+            continue
+        var row_variant = catalog.get(item_id, {})
+        if typeof(row_variant) != TYPE_DICTIONARY:
+            continue
+        var selected_item: Dictionary = (row_variant as Dictionary).duplicate(true)
+        var category := str(selected_item.get("category", "")).to_lower()
+        world_state = _call_world_service(
+            "economy",
+            "grant_item",
+            [world_state, "debug:seed_inventory:%s" % category, selected_item],
+            false
+        )
+        used_ids[item_id] = true
+        added += 1
+        if category != "" and not added_categories.has(category):
+            added_categories.append(category)
+
+    # Ensure tab coverage if a category has no seeded item from the preferred set.
+    var target_categories := ["food", "gifts", "gear", "decor", "materials", "training_items"]
+    for cat_variant in target_categories:
+        var category := str(cat_variant)
+        if added_categories.has(category):
+            continue
+        var selected_item: Dictionary = {}
+        for row_variant in catalog.values():
+            if typeof(row_variant) != TYPE_DICTIONARY:
+                continue
+            var row: Dictionary = row_variant
+            var row_id := str(row.get("id", ""))
+            if used_ids.has(row_id):
+                continue
+            if str(row.get("category", "")).to_lower() != category:
+                continue
+            selected_item = row.duplicate(true)
+            break
+        if selected_item.is_empty():
+            continue
+        world_state = _call_world_service(
+            "economy",
+            "grant_item",
+            [world_state, "debug:seed_inventory:%s" % category, selected_item],
+            false
+        )
+        var selected_id := str(selected_item.get("id", ""))
+        if selected_id != "":
+            used_ids[selected_id] = true
+        added += 1
+        added_categories.append(category)
+
+    # Add multiple gear-slot examples so model swap testing has visible alternatives.
+    var target_gear_slots := [
+        "weapon",
+        "hat",
+        "shield",
+        "cape",
+        "overall",
+        "top",
+        "bottom",
+        "shoes",
+        "gloves",
+        "face_accessory",
+        "eye_accessory",
+        "earrings",
+        "ring1",
+        "pendant1",
+        "belt",
+        "shoulder",
+    ]
+    var added_gear_slots := {}
+    for row_variant in catalog.values():
+        if typeof(row_variant) != TYPE_DICTIONARY:
+            continue
+        var row: Dictionary = row_variant
+        if str(row.get("category", "")).to_lower() != "gear":
+            continue
+        var row_id := str(row.get("id", ""))
+        if row_id == "" or used_ids.has(row_id):
+            continue
+        var slot := str(row.get("equipSlot", "")).to_lower().strip_edges()
+        if slot == "" or not target_gear_slots.has(slot) or added_gear_slots.has(slot):
+            continue
+        var selected_item: Dictionary = row.duplicate(true)
+        world_state = _call_world_service(
+            "economy",
+            "grant_item",
+            [world_state, "debug:seed_inventory:gear:%s" % slot, selected_item],
+            false
+        )
+        used_ids[row_id] = true
+        added_gear_slots[slot] = true
+        added += 1
+
+    flush()
+    return {"ok": added > 0, "reason": "", "added": added, "categories": added_categories}
 
 
 func is_quiet_hours_now() -> bool:
@@ -445,7 +1177,20 @@ func _ensure_profile_modules(input_profile: Dictionary) -> Dictionary:
     merged = _call_profile_service("mood", "ensure_profile", [merged], false)
     merged = _call_profile_service("bond", "ensure_profile", [merged], false)
     merged = _call_profile_service("growth", "ensure_profile", [merged], false)
+    merged = _call_profile_service("mind", "ensure_profile", [merged], false)
+    merged = _call_profile_service("memory", "ensure_profile", [merged], false)
     return merged
+
+
+func _reconcile_progression_from_xp() -> void:
+    var xp_curve := UnlockTable.xp_curve()
+    profile = _call_profile_service(
+        "bond",
+        "reconcile_profile",
+        [profile, UnlockTable.xp_per_level(), UnlockTable.max_level(), xp_curve],
+        false
+    )
+    profile = _call_profile_service("growth", "reconcile_stat_points", [profile], false)
 
 
 func _ensure_world_modules(input_world: Dictionary) -> Dictionary:
@@ -455,19 +1200,129 @@ func _ensure_world_modules(input_world: Dictionary) -> Dictionary:
     return merged
 
 
+func _resolve_economy_manifest(visual_manifest: Dictionary) -> Dictionary:
+    var loaded_core := ContentLoader.load_pack(CORE_ECONOMY_PACK_ID)
+    if bool(loaded_core.get("ok", false)):
+        var core_manifest_variant = loaded_core.get("manifest", null)
+        if typeof(core_manifest_variant) == TYPE_DICTIONARY:
+            return (core_manifest_variant as Dictionary).duplicate(true)
+    return visual_manifest.duplicate(true)
+
+
+func _backfill_inventory_from_catalog() -> bool:
+    var result = _call_service_with_fallback("economy", "backfill_inventory_from_catalog", [world_state], {})
+    if typeof(result) != TYPE_DICTIONARY:
+        return false
+    if typeof(result.get("world_state", null)) == TYPE_DICTIONARY:
+        world_state = result.get("world_state", {})
+    return bool(result.get("changed", false))
+
+
+func _run_inventory_backfill_migration_once() -> bool:
+    var applied_version := int(settings.get("inventoryBackfillMigrationVersion", 0))
+    var changed := _backfill_inventory_from_catalog()
+    if applied_version < INVENTORY_BACKFILL_MIGRATION_VERSION:
+        settings["inventoryBackfillMigrationVersion"] = INVENTORY_BACKFILL_MIGRATION_VERSION
+        return true
+    return changed
+
+
 func _apply_reward_payload(source_type: String, rewards_variant: Variant) -> void:
     if typeof(rewards_variant) != TYPE_DICTIONARY:
         return
     var rewards: Dictionary = rewards_variant
-    var crystals := int(rewards.get("crystals", 0))
-    if crystals > 0:
-        world_state = _call_world_service("economy", "grant_crystals", [world_state, source_type, crystals], false)
+    var meso := int(rewards.get("meso", rewards.get("crystals", 0)))
+    if meso > 0:
+        world_state = _call_world_service("economy", "grant_meso", [world_state, source_type, meso], false)
 
     var item_id := str(rewards.get("itemId", ""))
     if item_id == "":
         return
     var item := _resolve_reward_item(item_id)
     world_state = _call_world_service("economy", "grant_item", [world_state, source_type, item], false)
+
+
+func _apply_item_use_effect(item: Dictionary) -> void:
+    var category := str(item.get("category", "")).to_lower()
+    var effect_variant = item.get("effectProfile", {})
+    var effect: Dictionary = effect_variant if typeof(effect_variant) == TYPE_DICTIONARY else {}
+
+    if category == "food":
+        var mood := str(effect.get("mood", "happy"))
+        if mood == "":
+            mood = "happy"
+        profile["dominant_mood"] = mood
+        profile["trust_value"] = clampf(float(profile.get("trust_value", 0.2)) + 0.01, 0.0, 1.0)
+        world_state = _call_world_service("economy", "grant_meso", [world_state, "item_use:food", 1], false)
+        return
+
+    if category == "gifts":
+        var xp_curve := UnlockTable.xp_curve()
+        profile = _call_profile_service(
+            "bond",
+            "apply_interaction",
+            [profile, "gift", UnlockTable.xp_per_level(), UnlockTable.max_level(), xp_curve],
+            false
+        )
+        profile = _call_profile_service(
+            "mood",
+            "apply_interaction",
+            [profile, "gift", is_quiet_hours_now()],
+            false
+        )
+        return
+
+    if category == "training_items":
+        profile["stat_points_unspent"] = int(profile.get("stat_points_unspent", 0)) + 1
+        return
+
+    if category == "materials":
+        world_state = _call_world_service("economy", "grant_meso", [world_state, "item_use:materials", 1], false)
+        return
+
+
+func _is_usable_item_category(category: String) -> bool:
+    return category in ["food", "gifts", "training_items", "materials"]
+
+
+func _build_item_use_effect_summary(item: Dictionary, before: Dictionary, after: Dictionary) -> Array:
+    var lines: Array = []
+    var category := str(item.get("category", "")).to_lower()
+    lines.append("category=%s" % category)
+
+    var before_mood := str(before.get("mood", ""))
+    var after_mood := str(after.get("mood", ""))
+    if before_mood != after_mood and after_mood != "":
+        lines.append("mood %s -> %s" % [before_mood, after_mood])
+
+    var before_meso := int(before.get("meso", before.get("crystals", 0)))
+    var after_meso := int(after.get("meso", after.get("crystals", 0)))
+    var meso_delta := after_meso - before_meso
+    if meso_delta != 0:
+        lines.append("meso %+d" % meso_delta)
+
+    var before_xp := int(before.get("bond_xp", 0))
+    var after_xp := int(after.get("bond_xp", 0))
+    var before_level := int(before.get("bond_level", 1))
+    var after_level := int(after.get("bond_level", 1))
+    if before_level != after_level:
+        lines.append("bond level %d -> %d" % [before_level, after_level])
+    if after_xp != before_xp:
+        lines.append("bond xp %+d" % (after_xp - before_xp))
+
+    var before_trust := float(before.get("trust_value", 0.0))
+    var after_trust := float(after.get("trust_value", 0.0))
+    if absf(after_trust - before_trust) >= 0.001:
+        lines.append("trust %+0.02f" % (after_trust - before_trust))
+
+    var before_sp := int(before.get("stat_points_unspent", 0))
+    var after_sp := int(after.get("stat_points_unspent", 0))
+    if after_sp != before_sp:
+        lines.append("stat points %+d" % (after_sp - before_sp))
+
+    if lines.size() <= 1:
+        lines.append("effect applied")
+    return lines
 
 
 func _resolve_reward_item(item_id: String) -> Dictionary:
@@ -580,6 +1435,15 @@ func _default_settings() -> Dictionary:
         "quietModeStrictness": "balanced",
         "chatTextSize": "m",
         "continuityDigestEnabled": true,
+        "autonomyEnabled": true,
+        "inventoryCompact": false,
+        "mindModelEnabled": true,
+        "mindModelUrl": "http://127.0.0.1:11434",
+        "mindModelName": "gemma3:4b",
+        "chatModelEnabled": true,
+        "chatBackend": "ollama",
+        "chatModelName": "gemma3:4b",
+        "memoryEnabled": true,
         "supportHintsEnabled": true,
         "productivityOptIn": false,
         "focusCelebrateMinutes": 20,
@@ -591,6 +1455,7 @@ func _default_settings() -> Dictionary:
         "preferredScreen": 0,
         "lastWindowPosition": [120, 120],
         "firstRunSeen": false,
+        "inventoryBackfillMigrationVersion": 0,
     }
 
 
@@ -643,12 +1508,23 @@ func _default_profile() -> Dictionary:
         "milestone_flags": [],
         "trait_shifts": [],
         "unlocked_behaviors": [],
+        "stat_points_unspent": 0,
+        "stat_points_spent": 0,
         "gifts_seen": 0,
         "total_interactions": 0,
         "last_active_summary": "",
         "continuity_digest": [],
         "unlocks": [],
+        "job_id": "explorer_buddy",
+        "job_name": "Explorer Buddy",
+        "job_primary_stat": "charisma",
+        "job_drop_bias": [],
+        "auto_assign_stats": false,
     }
+
+
+func _sync_growth_mode_flags() -> void:
+    profile["auto_assign_stats"] = str(settings.get("interactionIntensity", "balanced")).to_lower() == "idle"
 
 
 func _default_world_state() -> Dictionary:
@@ -660,10 +1536,12 @@ func _default_world_state() -> Dictionary:
         "last_event_action": "",
         "last_event_unix": 0,
         "activePackId": "core_pack",
+        "activeVisualPackId": "core_pack",
+        "activeEconomyPackId": "core_pack",
         "activePackManifestVersion": "",
         "event_hour_buckets": {},
         "event_day_buckets": {},
-        "wallet": {"crystals": 0},
+        "wallet": {"meso": 0, "crystals": 0},
         "inventory": [],
         "reward_transactions": [],
         "reward_boxes": {},
@@ -719,3 +1597,25 @@ func _is_night() -> bool:
     var now := Time.get_datetime_dict_from_system()
     var hour := int(now.get("hour", 12))
     return hour < 7 or hour >= 22
+
+
+func _xp_progress_snapshot(total_xp: int, level: int) -> Dictionary:
+    var max_level := UnlockTable.max_level()
+    var safe_level := clampi(level, 1, max_level)
+    if safe_level >= max_level:
+        return {"into": total_xp, "need": 0, "is_max": true}
+    var curve := UnlockTable.xp_curve()
+    if curve.size() >= 2 and safe_level >= 1 and safe_level < curve.size():
+        var current_floor := int(curve[safe_level - 1])
+        var next_floor := int(curve[safe_level])
+        return {
+            "into": maxi(0, total_xp - current_floor),
+            "need": maxi(1, next_floor - current_floor),
+            "is_max": false,
+        }
+    var xp_per_level := UnlockTable.xp_per_level()
+    return {
+        "into": total_xp % xp_per_level,
+        "need": xp_per_level,
+        "is_max": false,
+    }

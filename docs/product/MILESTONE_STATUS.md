@@ -1,6 +1,6 @@
 # Milestone Status
 
-Updated: 2026-04-20 (world variety + prompt cadence guard)
+Updated: 2026-04-23 (Plan 9 inventory/progression/drop coupling)
 
 > Update (2026-04-20): buddy-system milestone tracking is now coordinated with
 > `BUDDY_V1_BUILD_PLAN_MILESTONE_EXECUTION_2026-04-20.md` for identity/economy/world
@@ -8,6 +8,41 @@ Updated: 2026-04-20 (world variety + prompt cadence guard)
 >
 > Execution todo queue now tracked in:
 > `BUDDY_TODO_EXECUTION_QUEUE.md`
+
+## Plan 12A (Autonomous Mind, offline) - 2026-11-15
+
+- [done] `mind_service.gd`: unprompted decisions every 10 min (rest / visit / explore / tend home / reflect)
+- [done] Drives reuse mood modifiers; per-subject feelings learned from each experience
+- [done] Catch-up of decisions missed while closed (capped at 8)
+- [done] First-person journal (`/journal`), spoken thought + acted-out animation, silent in quiet hours
+- [done] `autonomyEnabled` setting (default on); `MindServiceTest` (8 cases) in required headless suite
+- [open] Notes left for the buddy, visible places: see `PLAN12_AUTONOMOUS_MIND.md`
+
+## Plan 13 (Town and conversation) - 2026-11-16
+
+- [done] A1 town as data: eight places with hours, activities and residents; the mind picks real places and companions
+- [done] B1 conversation: free chat through the local model, the buddy chooses its own name, "Talks back" setting
+- [done] B2 graph memory: facts and talk summaries in the save, recalled into chat, Menu > Memory to see and forget them, "Remembers you" setting
+- [done] B3 talk changes the buddy: suggestions it decides on and carries out, talks as events, a hello with news when the chat opens
+- [done] C1+C2 part 1: wants it notices in town, saves for, buys and wears; a day plan it follows; `/wants`
+- [done] A2 town window: a map drawn in code with where it is, who is about, and what it thinks of each place
+- [open] A3 changing town, C1+C2 part 2 (asking you, a Wants window, projects), C4 reflection, C5 making things
+
+## Plan 12B (Thinking model via local Ollama) - 2026-11-15
+
+- [done] `mind_thinker.gd`: request builder, strict reply parser and sanitiser
+- [done] Overlay sends each live decision to Ollama; reply rewrites the journal entry and is spoken
+- [done] Model's `want` gives a one-off bonus to the next decision
+- [done] Silent fallback to built-in wording when Ollama is absent or misbehaves
+- [done] Settings `mindModelEnabled` / `mindModelUrl` / `mindModelName` (default `gemma3:4b`)
+- [done] `MindThinkerTest` (9 cases) in required headless suite; end-to-end run against a stand-in server
+- [open] Run against a real Ollama server and judge wording and latency
+
+## Integration (2026-11-15)
+
+- [done] `feature-to-next-pass` (Stats/Inventory/Wardrobe, economy tuning, WZ item bindings) merged with `main` (Gate 0, gate authority, tooling split)
+- [done] Required headless suite green on pinned Godot 4.2.2 (14 tests); Python lint/type/test and content/shipping validators green
+- [open] Windows export + RC scenario suite on the merged build not yet re-run
 
 ## Buddy Milestone 3 (World Layer Stub — 2026-04-20)
 
@@ -74,6 +109,69 @@ Updated: 2026-04-20 (world variety + prompt cadence guard)
 - [done] Added optional encounter variants with distinct reward profiles
 - [done] Upgraded anti-repeat picker to avoid recent category-group reuse (not only ID reuse)
 - [done] Added `WorldVarietyTest` and wired it into `run_headless_checks.ps1`
+
+## Plan 9A (WZ Equipment Data Spine — 2026-04-23)
+
+- [done] Extended canonical WZ map builder to ingest Character equipment rows
+- [done] Added equip-slot mapping in canonical bindings output
+- [done] Rebuilt `item_bindings_full.csv/json` with gear category rows included
+- [done] Synced manifest via full bindings add-missing path (+gear rows)
+- [done] Imported icons for full manifest rows with `missing=0`
+
+## Plan 9C (Progression Consistency — 2026-04-23)
+
+- [done] Added load-time XP->level reconciliation via bond service
+- [done] Added stat-point reconciliation floor (earned minus spent)
+- [done] Exposed XP progress fields to telemetry/stats snapshots
+- [done] Updated `/status` and stats window with XP progress + next unlock hint
+- [done] Added targeted progression regression checks (`ProgressionConsistencyTest`)
+
+## Plan 9B (Inventory/Paper-Doll Expansion — 2026-04-23)
+
+- [done] Expanded inventory paper-doll panel into grouped Maple-style slot families
+- [done] Added group-level unequip controls for combat/style/accessory slot groups
+- [done] Kept item-level use/equip/unequip actions while broadening equipped-state visibility
+
+## Plan 9D (Job/Drop Coupling Upgrade — 2026-04-23)
+
+- [done] Added `job_drop_bias` propagation from manifest jobs into profile state
+- [done] Included `job_primary_stat` + `job_drop_bias` in encounter drop-roll context
+- [done] Upgraded drop weighting using job affinity, category bias, primary-stat, and slot hints
+- [done] Added economy regression case validating context-sensitive drop bias
+
+## Plan 10A (Controlled WZ Ingest Pipeline — 2026-04-23)
+
+- [done] Added category-scoped manifest sync via `--categories`
+- [done] Added batch ingest JSON reporting (`WZ_INGEST_LAST_RUN.json`)
+- [done] Documented repeatable ingest flow in `PLAN10_WZ_INGEST_PIPELINE.md`
+
+## Plan 10B (Content Expansion Batches — 2026-04-23)
+
+- [in_progress] Execute first category-bounded ingest batch and validate runtime behavior
+- [done] First bounded ingest dry-run executed (`gear`, delta=0, report emitted)
+- [done] First non-dry-run bounded ingest executed (`food,materials`, delta=0)
+- [done] Headless verification gate passed post-ingest (no regressions)
+
+## Plan 10C (Next Expansion Source Pass — 2026-04-23)
+
+- [in_progress] Regenerate/expand canonical source bindings to discover net-new ingest rows
+- [done] Rebuilt canonical bindings from current source set (`rows=11122`)
+- [done] Verified saturation on sync dry-run (`added_items=0`)
+- [done] Added multi-root canonical ingest support in tooling
+- [done] Confirmed current extracted `Base.wz` is super-root (contains Character/Item/String/etc)
+- [done] Closed duplicate-extraction branch for active planning
+
+## Plan 11A (Runtime Depth from Existing Dataset — 2026-04-23)
+
+- [in_progress] Shift execution focus from ingest expansion to runtime depth/clarity improvements
+- [done] Improved cadence visibility in TO/settings and setting-change speech feedback
+- [done] Added progression readability in stats window (session deltas + upcoming unlock preview)
+- [done] Added inventory quick iteration controls (sort cycling + quick activate/use/unequip)
+- [done] Headless verification gate passed after runtime UI updates
+
+## Plan 11B (TO Manual UX Verification Sweep — 2026-04-23)
+
+- [in_progress] Run manual TO UX sweep focused on cadence/progression/inventory quick controls
 
 ## Phase 5 (Visual polish & WZ asset expansion — 2026-04-19)
 

@@ -55,6 +55,18 @@ click-only path: open it once and Pause/Resume, Quiet strictness, content
 pack, Restart, and Quit are all buttons, no hotkeys required.
 
 - Left click + drag: move companion
+- Double click: open the Game Menu (chat, stats, inventory, wardrobe, pause)
+- Chat: anything that is not a `/command` gets an in-character answer when
+  Ollama is running (Settings: "Talks back"); `/help` lists the commands
+- Suggestions: "why don't you go and see Mira?" It decides for itself (yes,
+  later or no), says so, and the journal says why it went or did not
+- Town: Menu > Town shows a map of its town, where it is now and who is
+  about; click a place to see what it thinks of it
+- Wants: it notices things to wear at the market lane, saves its meso and
+  buys them (`/wants` lists what it is saving for), and plans its day
+- Memory: it remembers what you tell it from one day to the next. Menu >
+  Memory shows everything it remembers and forgets any of it (Settings:
+  "Remembers you")
 - Right click: sleep/pause toggle (also a "Pause Buddy" / "Resume Buddy"
   button in the `F10` settings popout)
 - `F6`: toggle telemetry overlay
