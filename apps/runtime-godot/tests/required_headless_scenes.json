@@ -18,6 +18,8 @@
     {"id": "mind-thinker", "scene": "res://tests/MindThinkerTest.tscn", "pass_marker": "mind_thinker_test: PASS (10 cases)"},
     {"id": "mind-chat", "scene": "res://tests/MindChatTest.tscn", "pass_marker": "mind_chat_test: PASS (14 cases)"},
     {"id": "memory-service", "scene": "res://tests/MemoryServiceTest.tscn", "pass_marker": "memory_service_test: PASS (13 cases)"},
+    {"id": "life-sim", "scene": "res://tests/LifeSimTest.tscn", "pass_marker": "life_sim_test: PASS (8 cases)"},
+    {"id": "land-life", "scene": "res://tests/LandLifeTest.tscn", "pass_marker": "land_life_test: PASS (15 cases)"},
     {"id": "manual-verification-report", "scene": "res://tests/ManualVerificationReportTest.tscn", "pass_marker": "manual_verification_report_test: PASS (2 cases)"}
   ]
 }
