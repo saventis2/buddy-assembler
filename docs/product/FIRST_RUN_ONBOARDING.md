@@ -33,6 +33,11 @@ safe-mode fallback.
 | Control             | How to use                                         |
 |---------------------|----------------------------------------------------|
 | Move buddy          | Left-click and drag                                |
+| Open the menu       | Double-click the buddy (or `F10`)                  |
+| Talk to it          | Menu → Chat, then type anything (needs Ollama for real answers) |
+| See what it remembers | Menu → Memory; Forget removes anything for good |
+| See where it is     | Menu → Town (click a place for more) |
+| Suggest something   | In chat: "why don't you go to the pond?" (it may say yes, later or no) |
 | Sleep / wake        | Right-click the buddy                              |
 | Quiet hours         | Edit `settings.json` → `quietHoursStart` / `End`; or toggle `quietHoursEnabled` |
 | Event frequency     | Press **F7** in-app to cycle low → normal → high   |

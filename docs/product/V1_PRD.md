@@ -24,7 +24,9 @@ companionship.
 
 ## V1 Explicit Non-Goals
 
-- free-form AI chat
+- free-form AI chat with hosted or cloud models (reopened 2026-11-16 for an
+  optional local Ollama model only; see `DEFERRED.md` and
+  `PLAN13_TOWN_AND_CONVERSATION.md`)
 - cross-platform parity
 - marketplace/plugin scripting runtime
 - large multi-character world simulation

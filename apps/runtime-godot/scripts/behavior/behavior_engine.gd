@@ -116,6 +116,9 @@ func tick(now_unix: int, context: Dictionary) -> Dictionary:
 		if interaction_intensity == "cozy":
 			if action_id in ["visitor", "gift"]:
 				weight *= 0.75
+		elif interaction_intensity == "idle":
+			if action_id in ["visitor", "gift", "happy", "wander"]:
+				weight *= 0.55
 		elif interaction_intensity == "deep":
 			if action_id in ["visitor", "gift", "happy"]:
 				weight *= 1.2

@@ -21,6 +21,7 @@ silently rotting.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -45,6 +46,32 @@ JSON_SCHEMA_PRIMITIVE_TYPES = {
     "string",
     "integer",
 }
+
+# Content-pack schema semver contract (docs/product/CONTENT_SCHEMA.md,
+# "Schema versioning"). SUPPORTED_SCHEMA_MAJOR must equal the runtime's
+# ContentLoader.CONTENT_SCHEMA_VERSION (drift-guarded by
+# test_validate_pack.py). CURRENT_SCHEMA_SEMVER is the newest schema
+# revision this validator knows; every bump of it requires a matching
+# entry in docs/product/CONTENT_SCHEMA_MIGRATIONS.md (also test-enforced).
+SUPPORTED_SCHEMA_MAJOR = 1
+CURRENT_SCHEMA_SEMVER: tuple[int, int, int] = (1, 0, 0)
+SCHEMA_SEMVER_PATTERN = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
+
+
+def format_semver(version: tuple[int, int, int]) -> str:
+    return ".".join(str(part) for part in version)
+
+
+def parse_schema_semver(value: Any) -> tuple[int, int, int] | None:
+    """Parse a strict MAJOR.MINOR.PATCH string (no prefix, no pre-release/build suffix)."""
+    if not isinstance(value, str):
+        return None
+    match = SCHEMA_SEMVER_PATTERN.match(value)
+    if match is None:
+        return None
+    major, minor, patch = (int(part) for part in match.groups())
+    return (major, minor, patch)
+
 
 DEFAULT_SCHEMA_PATH = (
     Path(__file__).resolve().parents[1] / "content-schema" / "buddy-pack.schema.json"
@@ -157,6 +184,7 @@ def validate_manifest(manifest: dict[str, Any]) -> list[ValidationError]:
 
     required_root = [
         "schemaVersion",
+        "schemaSemver",
         "id",
         "name",
         "version",
@@ -188,6 +216,18 @@ def validate_manifest(manifest: dict[str, Any]) -> list[ValidationError]:
             'Set "schemaVersion" to 1 (the current CONTENT_SCHEMA_VERSION) '
             "unless this pack intentionally targets a newer runtime.",
         )
+    elif schema_version != SUPPORTED_SCHEMA_MAJOR:
+        add_error(
+            errors,
+            f"{root}.schemaVersion",
+            f"declares unsupported schema major version {schema_version}; "
+            f"this validator and the runtime support major {SUPPORTED_SCHEMA_MAJOR} only",
+            f'Set "schemaVersion" to {SUPPORTED_SCHEMA_MAJOR}, or update the runtime '
+            "(ContentLoader.CONTENT_SCHEMA_VERSION) and this validator together per the "
+            "major-bump procedure in docs/product/CONTENT_SCHEMA.md.",
+        )
+
+    errors.extend(_check_schema_semver(manifest))
 
     expect_non_empty_string(
         manifest["id"],
@@ -486,6 +526,71 @@ def validate_manifest(manifest: dict[str, Any]) -> list[ValidationError]:
                 )
 
     return errors
+
+
+def _check_schema_semver(manifest: dict[str, Any]) -> list[ValidationError]:
+    """Hard failures for the schema semver contract (unsupported major, malformed, mismatch)."""
+    errors: list[ValidationError] = []
+    path = f"{MANIFEST_ROOT}.schemaSemver"
+    current = format_semver(CURRENT_SCHEMA_SEMVER)
+    raw = manifest.get("schemaSemver")
+    parsed = parse_schema_semver(raw)
+    if parsed is None:
+        add_error(
+            errors,
+            path,
+            f"must be a MAJOR.MINOR.PATCH string, found {describe(raw)}",
+            f'Set "schemaSemver" to the schema revision this pack was authored against, e.g. "{current}" '
+            "(digits only; no \"v\" prefix, leading zeros, or pre-release suffix).",
+        )
+        return errors
+
+    major = parsed[0]
+    if major != SUPPORTED_SCHEMA_MAJOR:
+        add_error(
+            errors,
+            path,
+            f"declares unsupported schema major version {major} ({raw!r}); "
+            f"this validator and the runtime support major {SUPPORTED_SCHEMA_MAJOR} only",
+            "A major bump is a breaking schema change; the pack cannot be loaded by this runtime. "
+            f'Re-author the pack against schema {current}, or land the major bump in the runtime and '
+            "validator first (see docs/product/CONTENT_SCHEMA_MIGRATIONS.md).",
+        )
+        return errors
+
+    schema_version = manifest.get("schemaVersion")
+    if is_int(schema_version) and schema_version != major:
+        add_error(
+            errors,
+            path,
+            f"major version {major} does not match schemaVersion {schema_version}",
+            '"schemaVersion" is the integer major of "schemaSemver"; set both to the same major.',
+        )
+    return errors
+
+
+def collect_manifest_warnings(manifest: dict[str, Any]) -> list[ValidationError]:
+    """Non-fatal findings: currently only a schema minor newer than this validator knows.
+
+    Per the semver contract a newer minor within the supported major only adds
+    optional fields, which this validator does not check and the runtime
+    ignores, so the pack is accepted with a warning rather than rejected.
+    """
+    warnings: list[ValidationError] = []
+    parsed = parse_schema_semver(manifest.get("schemaSemver"))
+    if parsed is None or parsed[0] != SUPPORTED_SCHEMA_MAJOR:
+        return warnings
+    if parsed[1] > CURRENT_SCHEMA_SEMVER[1]:
+        current = format_semver(CURRENT_SCHEMA_SEMVER)
+        add_error(
+            warnings,
+            f"{MANIFEST_ROOT}.schemaSemver",
+            f"declares schema {format_semver(parsed)}, newer than this validator's {current}; "
+            "fields added after the known minor are not checked",
+            "Accepted per the minor-version policy. Update validate_pack.py (CURRENT_SCHEMA_SEMVER) "
+            "to the newer minor to have those fields validated.",
+        )
+    return warnings
 
 
 def _tracked_repo_paths(repo_root: Path) -> set[str]:
@@ -833,6 +938,8 @@ def main() -> int:
             print(f"- {err.format()}")
         return 1
 
+    for warning in collect_manifest_warnings(raw):
+        print(f"WARNING: {warning.format()}")
     print(f"OK: manifest valid -> {path}")
     return 0
 

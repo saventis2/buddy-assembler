@@ -20,6 +20,7 @@ func _ready() -> void:
 func _run_all() -> void:
 	_case("anti_repeat_prefers_group_variety", func(): return _test_anti_repeat_prefers_group_variety())
 	_case("encounter_skip_remains_non_punitive", func(): return _test_encounter_skip_remains_non_punitive())
+	_case("town_map_places_everything", func(): return _test_town_map_places_everything())
 
 
 func _case(name: String, body: Callable) -> void:
@@ -200,4 +201,31 @@ func _test_encounter_skip_remains_non_punitive() -> Variant:
 	var snapshot := world_service.get_snapshot(world)
 	if str(snapshot.get("pending_encounter_id", "")) != "":
 		return "skip path should clear pending encounter"
+	return null
+
+
+func _test_town_map_places_everything() -> Variant:
+	var svc := WorldService.new()
+	var town: Dictionary = svc.get_town({})
+	var layout: Dictionary = svc.town_map(town)
+	var positions: Dictionary = layout["positions"]
+	for place in town["places"]:
+		var place_id := str(place["id"])
+		if not positions.has(place_id):
+			return "no map position for %s" % place_id
+		var pos: Vector2 = positions[place_id]
+		if pos.x < 0.0 or pos.x > 1.0 or pos.y < 0.0 or pos.y > 1.0:
+			return "position off the map for %s: %s" % [place_id, pos]
+	if (layout["paths"] as Array).is_empty():
+		return "the default town has no paths"
+	for path in layout["paths"]:
+		if not positions.has(str(path[0])) or not positions.has(str(path[1])):
+			return "a path leads nowhere: %s" % [path]
+	# A pack town without map data still gets a layout, joined to home.
+	var bare := {"home_place": "home", "places": [{"id": "home", "name": "home"}, {"id": "a", "name": "A", "distance": 1}, {"id": "b", "name": "B", "distance": 3}]}
+	var bare_layout: Dictionary = svc.town_map(bare)
+	if (bare_layout["positions"] as Dictionary).size() != 3 or (bare_layout["paths"] as Array).size() != 2:
+		return "a town without map data needs a fallback layout: %s" % [bare_layout]
+	if (bare_layout["positions"]["a"] as Vector2).distance_to(bare_layout["positions"]["b"]) < 0.05:
+		return "fallback places overlap"
 	return null
