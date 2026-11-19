@@ -11,6 +11,9 @@ const PROFILE_PATH := "user://profile.json"
 const WORLD_STATE_PATH := "user://world_state.json"
 const CORE_ECONOMY_PACK_ID := "core_pack"
 const INVENTORY_BACKFILL_MIGRATION_VERSION := 2
+# A process started with this user argument (after "--") never reads or writes
+# the save files. The fast-forward tool always passes it.
+const NO_SAVE_ARG := "--no-save"
 
 const SERVICE_PATHS := {
     "identity": "res://scripts/services/identity_service.gd",
@@ -51,7 +54,36 @@ var _want_shop_catalog_size := -1
 
 func _ready() -> void:
     _load_services()
+    if _starts_without_saves():
+        _start_without_saves()
+        return
     load_state()
+
+
+func _starts_without_saves() -> bool:
+    if OS.get_cmdline_user_args().has(NO_SAVE_ARG):
+        return true
+    # Opening either simulation scene directly must protect saves just as early.
+    for arg in OS.get_cmdline_args():
+        if arg.replace("\\", "/").get_file() in ["SimulateDays.tscn", "LifeSimTest.tscn"]:
+            return true
+    return false
+
+
+# For a process started with NO_SAVE_ARG: default state, saving off, and the
+# save files never opened. Loading normally can already write them (a pending
+# migration) or rename them (a damaged file), which a tool that promises not
+# to touch the save must not do, even while the app is starting up.
+func _start_without_saves() -> void:
+    _persistence_enabled = false
+    _deferred_save_pending = false
+    settings = _default_settings()
+    profile = _ensure_profile_modules(_default_profile())
+    world_state = _ensure_world_modules(_default_world_state())
+    _reconcile_progression_from_xp()
+    _sync_growth_mode_flags()
+    _refresh_unlocks()
+    _prune_event_buckets()
 
 
 func _load_services() -> void:

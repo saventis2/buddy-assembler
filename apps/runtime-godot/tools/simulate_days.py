@@ -24,6 +24,7 @@ sys.path.insert(0, str(REPO_ROOT / "packages" / "content-validator"))
 import headless_suite  # noqa: E402
 
 SCENE = "res://tests/SimulateDays.tscn"
+NO_SAVE_ARG = "--no-save"
 DONE_PREFIX = "simulate_days: DONE"
 TIMEOUT_SECONDS = 3600
 
@@ -69,7 +70,7 @@ def run_simulation(
         # Like the headless suite: a Windows import can exit 1 and still work,
         # so this only fills the cache and the simulation below decides.
         command_runner(
-            [godot, "--headless", "--path", str(project), "--import"],
+            [godot, "--headless", "--path", str(project), "--import", "--", NO_SAVE_ARG],
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -78,7 +79,7 @@ def run_simulation(
             timeout=TIMEOUT_SECONDS,
         )
 
-    args = [f"--days={days}", f"--seed={seed}", f"--journal={journal}"]
+    args = [NO_SAVE_ARG, f"--days={days}", f"--seed={seed}", f"--journal={journal}"]
     if out is not None:
         args.append(f"--out={out.resolve()}")
     command = [godot, "--headless", "--path", str(project), SCENE, "--", *args]

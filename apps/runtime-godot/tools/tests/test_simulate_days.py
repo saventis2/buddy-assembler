@@ -99,8 +99,8 @@ class SimulateDaysTests(unittest.TestCase):
                 command[:6],
                 ["godot", "--headless", "--path", str(project), sim.SCENE, "--"],
             )
-            self.assertEqual(command[6:9], ["--days=3", "--seed=7", "--journal=none"])
-            out_arg = command[9]
+            self.assertEqual(command[6:10], [sim.NO_SAVE_ARG, "--days=3", "--seed=7", "--journal=none"])
+            out_arg = command[10]
             self.assertTrue(out_arg.startswith("--out="))
             self.assertTrue(Path(out_arg.removeprefix("--out=")).is_absolute())
 
@@ -109,7 +109,9 @@ class SimulateDaysTests(unittest.TestCase):
             fresh = FakeGodot()
             code, _out, _err = run(fresh, make_project(Path(tmp), imported=False))
             self.assertEqual(code, 0)
-            self.assertEqual(sum("--import" in call for call in fresh.calls), 1)
+            imports = [call for call in fresh.calls if "--import" in call]
+            self.assertEqual(len(imports), 1)
+            self.assertEqual(imports[0][-2:], ["--", sim.NO_SAVE_ARG])
         with tempfile.TemporaryDirectory() as tmp:
             warm = FakeGodot()
             code, _out, _err = run(warm, make_project(Path(tmp), imported=True))
