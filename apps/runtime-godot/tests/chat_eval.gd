@@ -6,8 +6,12 @@ extends Node
 # check, honest retry and fallback as buddy_overlay.gd, with a real model.
 # Not part of the required suite (it needs Ollama); for the reviewer.
 #
+# --mode=letters (step 2c-2) treats each question as a letter from you and measures
+# what the buddy writes back: the request is AppState.letters_request_body, the
+# very one the letter writer sends, with the same check, honest retry and fallback.
+#
 # Usage (after --): --no-save --questions=<json> [--seed=N] [--model=<name>]
-#                   [--url=<ollama>] [--out=<path>]
+#                   [--url=<ollama>] [--out=<path>] [--mode=chat|letters]
 # The questions file is {"sets": {name: [question]}, "days": [1, 7, 30], "repeats": 2}.
 # --no-save is required, as for simulate_days: nothing here can touch the save.
 # --out gets one JSON row per reply (JSON lines).
@@ -18,6 +22,7 @@ const MindThinker = preload("res://scripts/services/mind_thinker.gd")
 var _http: HTTPRequest
 var _model := MindThinker.DEFAULT_MODEL
 var _endpoint := ""
+var _mode := "chat"
 var _rows: Array = []
 # set name -> {"first": n, "retry": n, "fallback": n, "error": n}
 var _summary := {}
@@ -50,6 +55,11 @@ func _ready() -> void:
 			url = text.substr(6)
 		elif text.begins_with("--out="):
 			out_path = text.substr(6)
+		elif text.begins_with("--mode="):
+			_mode = text.substr(7)
+			if _mode != "chat" and _mode != "letters":
+				_fail("chat_eval: --mode must be chat or letters")
+				return
 		else:
 			_fail("chat_eval: unknown argument '%s'" % text)
 			return
@@ -118,21 +128,27 @@ func _run(spec: Dictionary, seed_value: int, out_path: String) -> void:
 # One question, the way buddy_overlay.gd answers it: check, one honest retry,
 # then the fallback.
 func _ask(question: String) -> Dictionary:
-	var recalled: Dictionary = AppState.memory_recall_land(question)
 	var known: Dictionary = AppState.memory_known_words()
-	# On the land what_you_remember holds only what it knows about them.
-	var memory: Dictionary = AppState.memory_recall(question, false)
-	var context := {
-		"about": _about(), "recent": _recent_journal_texts(4), "turns": [], "user_text": question,
-		"town": {}, "memory": memory, "decision": "", "say": "", "land": true, "your_memories": recalled.get("lines", []),
-	}
+	var context := {}
+	if _mode == "letters":
+		context = {"work": {"kind": "reply", "letter": {"id": "eval", "text": question, "t": AppState._now_unix()}}}
+	else:
+		var recalled: Dictionary = AppState.memory_recall_land(question)
+		# On the land what_you_remember holds only what it knows about them.
+		var memory: Dictionary = AppState.memory_recall(question, false)
+		context = {
+			"about": _about(), "recent": _recent_journal_texts(4), "turns": [], "user_text": question,
+			"town": {}, "memory": memory, "decision": "", "say": "", "land": true, "your_memories": recalled.get("lines", []),
+		}
 	var row := {"question": question, "first": "", "first_check": {}, "retry": "", "final": "", "final_source": "error"}
 	var first: Dictionary = await _send(_body(context, ""))
-	if not bool(first.get("ok", false)):
+	if not bool(first.get("ok", false)) and not _unreadable(first):
 		row["error"] = str(first.get("reason", ""))
 		return row
-	row["first"] = str(first["reply"])
-	var checked: Dictionary = MindThinker.check_reply(str(first["reply"]), question, known)
+	row["first"] = str(first.get("reply", ""))
+	# As in letter_writer.gd, an unreadable letter counts as a failed check with
+	# nothing named: one retry, then the fallback.
+	var checked: Dictionary = MindThinker.check_reply(str(first["reply"]), question, known) if bool(first.get("ok", false)) else {"ok": false, "unknown": [], "premise": false, "unreadable": str(first.get("reason", ""))}
 	row["first_check"] = checked
 	if bool(checked.get("ok", false)):
 		row["final"] = str(first["reply"])
@@ -140,22 +156,36 @@ func _ask(question: String) -> Dictionary:
 		return row
 	var note: String = MindThinker.honest_retry_note(checked.get("unknown", []), bool(checked.get("premise", false)))
 	var retry: Dictionary = await _send(_body(context, note))
-	if not bool(retry.get("ok", false)):
+	if not bool(retry.get("ok", false)) and not _unreadable(retry):
 		row["error"] = str(retry.get("reason", ""))
 		return row
-	row["retry"] = str(retry["reply"])
-	var rechecked: Dictionary = MindThinker.check_reply(str(retry["reply"]), question, known)
+	row["retry"] = str(retry.get("reply", ""))
+	var rechecked: Dictionary = MindThinker.check_reply(str(retry["reply"]), question, known) if bool(retry.get("ok", false)) else {"ok": false, "unknown": [], "premise": false, "unreadable": str(retry.get("reason", ""))}
 	row["retry_check"] = rechecked
 	if bool(rechecked.get("ok", false)):
 		row["final"] = str(retry["reply"])
 		row["final_source"] = "retry"
 	else:
-		row["final"] = MindThinker.fallback_line(question, rechecked.get("unknown", []), known)
+		if _mode == "letters":
+			row["final"] = MindThinker.letter_fallback(question, rechecked.get("unknown", []), known, false)
+		else:
+			row["final"] = MindThinker.fallback_line(question, rechecked.get("unknown", []), known)
 		row["final_source"] = "fallback"
 	return row
 
 
+# Letters mode only: a reply that came back but could not be read (not a network
+# or server failure) is treated like the writer treats it, not as an error.
+func _unreadable(result: Dictionary) -> bool:
+	if _mode != "letters":
+		return false
+	var reason := str(result.get("reason", ""))
+	return not (reason.begins_with("transport_") or reason.begins_with("http_") or reason.begins_with("request_error"))
+
+
 func _body(context: Dictionary, extra_task: String) -> String:
+	if _mode == "letters":
+		return AppState.letters_request_body(_model, context["work"], extra_task)
 	return MindThinker.build_chat_request(
 		_model, context["about"], context["recent"], context["turns"], str(context["user_text"]), context["town"], context["memory"],
 		str(context["decision"]), str(context["say"]), bool(context["land"]), context["your_memories"], extra_task
@@ -175,7 +205,11 @@ func _send(body: String) -> Dictionary:
 		return {"ok": false, "reply": "", "reason": "transport_%d" % int(result[0])}
 	if int(result[1]) != 200:
 		return {"ok": false, "reply": "", "reason": "http_%d" % int(result[1])}
-	return MindThinker.parse_chat_reply((result[3] as PackedByteArray).get_string_from_utf8())
+	var text: String = (result[3] as PackedByteArray).get_string_from_utf8()
+	if _mode == "letters":
+		var letter: Dictionary = MindThinker.parse_letter_reply(text)
+		return {"ok": bool(letter["ok"]), "reply": str(letter["letter"]), "reason": str(letter["reason"])}
+	return MindThinker.parse_chat_reply(text)
 
 
 func _about() -> Dictionary:

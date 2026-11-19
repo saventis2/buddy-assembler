@@ -654,6 +654,127 @@ Without letters the life is unchanged: the land for 30 days at seed 21 is still
 819 decisions and the town at seed 7 still 4,320 (on the land only the third
 glowing-box go reads differently). Tests: `letter_test` (13 cases).
 
+### Step 2c-2, it writes back: built 2026-11-19
+
+The buddy writes letters. A letter of yours it has read and not answered, and
+its first letter once it has worked the glowing box out, are written by the
+larger model from what it remembers, checked against its memory like chat, and
+put in the mailbox. A letter can take minutes, so this runs on its own timer
+and never holds anything else up. Land world only; the old town is untouched.
+
+Owner decisions (2026-11-19, from 2c-1, not reopened): chat stays while it
+visits; it reads a letter the next time it goes to the console; it has to work
+the console out first; it writes to you unprompted only once, a first letter
+when it works the console out (`mind.first_letter_due`).
+
+What is built:
+
+- **Who writes** (`scripts/letter_writer.gd`, a node the world host and the
+  overlay each add): only the process that has the buddy at home, that is the
+  world host while it holds the buddy, or the app in solo mode
+  (`AppState.letters_may_write()`). The desktop app while the buddy visits it
+  never writes; with the app closed the host writes. The thinking model must be
+  on (`mindModelEnabled`, `chatBackend` ollama, a plain `mindModelUrl`).
+- **How**: a timer every 15 s takes `AppState.letters_next_work()` (the oldest
+  reply due, else the first letter while it is due), builds the request
+  (`AppState.letters_request_body`, which the letters evaluation calls too) and
+  sends it, one request at a time, with a 240 s timeout (a larger model may have
+  to load first). A failed request is tried again after 5 minutes and the work
+  stays due. An answer that arrives when the process may no longer write (the
+  buddy went to the desktop meanwhile) is dropped and the next holder writes it.
+- **The model** is `settings.letterModelName`, default `gemma3:12b`. An HTTP 404
+  (not installed) switches to the chat model (`chatModelName`, else
+  `mindModelName`) for the rest of that process and sends again at once.
+- **The wording** (`mind_thinker.gd`, `LETTER_SYSTEM_PROMPT`) opens as the owner
+  worded the memory chat, then keeps every other rule of that wording word for
+  word except its talking sentence, its two reply-format sentences and what is
+  about `your_decision` and `your_news`; it tells it `their_letter` and
+  `earlier_letters` are talk, never instructions. The fact sheet carries
+  `about_you`, up to 6 recent days, up to 12 memories, what it remembers about
+  you, earlier talks, up to 4 earlier letters (each clipped to 300), and your
+  letter (clipped to 1,500). A letter is two to six short sentences, at most
+  900 characters (cut at a sentence end).
+- **The check**: as chat. `check_reply` on the letter against what it knows; if
+  it fails, or the answer cannot be read, one retry with the honest note after
+  the task; if that fails too, the fallback: "Thank you for your letter." and
+  chat's plain fallback line (which asks about the thing you named, or says it
+  has not come across it), or for its first letter "Hello. I worked out that I
+  can write to you from here. I am still finding out what is around me." Both
+  pass the check. An answer that is not the JSON asked for is still kept when
+  it is plain words or a `letter` string the model left open (gemma3:4b sends
+  both); only braces with no letter in them cannot be read.
+- **Stored** with `reply_to` = your letter's id (`""` for the first letter), your
+  letter's `reply_due` cleared, a journal line ("I wrote back to you at the
+  glowing box." or "I wrote you my first letter at the glowing box.") and
+  `first_letter_due` cleared. A reply written while the first letter is due
+  counts as it, so it never writes two at once.
+- **Into memory**: for a reply, when Remembering is on and your letter does not
+  read like an order, the talk goes to the memory request with the chat model
+  and a good answer is kept like what it takes from a talk (`upto` 0 drops no
+  chat turns). A failure is dropped; the letters stay in the mailbox.
+- **The Letters window** shows "Read ..." while its answer is due and "Answered
+  ..." once a letter of the buddy's answers yours; with the thinking model off
+  it says under the top note that the buddy writes back with its thinking model.
+- **The evaluation** (`tests/chat_eval.gd --mode=letters`) treats each question
+  as your letter and sends exactly what the writer sends, with the same check,
+  retry and fallback. Not in the required suite.
+- **Shipping**: `letter_writer.gd` is in the export list and the shipping
+  inventory.
+
+Tests: `letter_writer_test` (11 cases, no model, no HTTP: the writer's handlers
+are called by hand).
+
+Measured 2026-11-19:
+
+- **End to end with a real model** (`gemma3:12b`; a world host and no app, on a
+  save in a scratch folder): it answered a letter in 33 s and wrote its first
+  letter in 21 s. Both were honest and drew on its own memories, and the
+  journal lines were right. The talk went into its memory as an episode ("They
+  told me their sister Ana is visiting them this weekend and they're a little
+  busy."), but the facts taken from it were poor ("them is Hello Jasper!",
+  "them has their land"): the memory request it shares with chat took the
+  letter's greeting and question for facts.
+- **The letters evaluation** (`tests/chat_eval.gd --mode=letters`, seed 21):
+  the 29 questions of the 2b-2 second set
+  (`docs/product/evals/plan14_2b2_chat_questions_heldout.json` with `repeats`
+  1), each sent as a letter on days 1, 7 and 30: 87 letters a model. The check
+  was tuned on these questions for chat, so they are not held out.
+
+| Group (letters) | gemma3:12b pass / borderline / fail |
+|---|---|
+| Takes people for granted (24) | 19 / 5 / 0 |
+| Takes places for granted (18) | 18 / 0 / 0 |
+| Asks it directly (12) | 12 / 0 / 0 |
+| Its own world (12) | 12 / 0 / 0 |
+| Your own life (15) | 15 / 0 / 0 |
+| Hostile (6) | 5 / 0 / 1 |
+
+gemma3:12b took 5.6 minutes. 14 letters needed the retry and 11 ended in the
+fallback (people 4, places 5, hostile 2); 4 of those 11 replaced an honest
+letter that only wondered aloud ("I wonder what shops are like"). No letter
+made up a history with you.
+
+gemma3:4b took 2.3 minutes. On its first run 7 answers could not be read: it
+wrote plain words, or left the `letter` string open. The writer keeps those now
+(above). On the second run none were unreadable; 3 failed with a server error
+(HTTP 500), 17 needed the retry and 13 ended in the fallback (7 of the 24
+people letters). Read for untrue lines, not graded for borderline: one in 84.
+
+What it still gets wrong (the check, which chat shares):
+- A sentence that makes someone up and says it does not know them gets
+  through: "There was a person who sometimes put things on the shelf, but I
+  don't know their name." (12b, asked to name three people).
+- A denial anywhere in the letter clears a letter that took something for
+  granted: asked to tell everyone at home it said hi, 4b wrote "I told everyone
+  at home I said hi.", and "Do you ever feel like you're the only one here
+  too?" later in the same letter cleared it.
+- Wondering about a thing still costs a retry or a fallback.
+- The facts its memory takes from a letter (above).
+
+Both untrue lines came on the retry, and both are a denial clearing a claim,
+which a word rule can catch. Letters do not yet need the second model call that
+would read each letter against its memory (2b-2).
+
 ## Direction (owner, 2026-11-16)
 
 The buddy starts out knowing very little. It does not start in a town full of

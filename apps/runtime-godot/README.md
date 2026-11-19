@@ -145,8 +145,12 @@ reads the letter at the glowing box in its house, the next time it goes there
 takes a few visits; until then letters wait there and the box blinks. While it is
 at home the letter goes through the world host's inbox, and the window shows it
 as on its way, waiting or read. Letters are kept in the buddy's save, so
-anything that looks like a password or a key is refused. Writing back is step
-2c-2. To see how soon a letter is read, add `--letter DAY:HH:MM:TEXT` (repeatable)
+anything that looks like a password or a key is refused. The buddy writes back
+(step 2c-2) with `letterModelName` in `settings.json` (default `gemma3:12b`,
+falling back to the chat model when that is not installed), from what it
+remembers, checked like chat, with a plain fallback letter when the check fails
+twice; only the process that has the buddy at home writes, and it needs the
+thinking model on. To see how soon a letter is read, add `--letter DAY:HH:MM:TEXT` (repeatable)
 to the fast-forward tool, for example `--letter 1:10:00:Hello`.
 
 ## Maple-Agnostic Slice

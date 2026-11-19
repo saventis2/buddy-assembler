@@ -12,6 +12,7 @@ extends Node
 
 const Whereabouts = preload("res://scripts/persistence/buddy_whereabouts.gd")
 const MindThinker = preload("res://scripts/services/mind_thinker.gd")
+const LetterWriter = preload("res://scripts/letter_writer.gd")
 
 const HOST_TICK_SECONDS := 10
 const DESKTOP_REASONS := ["bedtime", "quiet", "sent", "closed"]
@@ -74,6 +75,8 @@ func _ready() -> void:
 	_timer.timeout.connect(_tick)
 	add_child(_timer)
 	_timer.start()
+	# Writes the letters it has read, while it holds the buddy (step 2c-2).
+	add_child(LetterWriter.new())
 	_tick()
 
 

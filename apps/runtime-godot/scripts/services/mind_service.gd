@@ -176,6 +176,9 @@ const CONSOLE_READ_AFTER_LEARNING := " Then I read what you wrote."
 const CONSOLE_READ_ONE_LINE := "I read your letter at the glowing box."
 const CONSOLE_READ_MANY_LINE := "I read your letters at the glowing box."
 const CONSOLE_BLINK_LINE := "The glowing box was blinking. I watched it for a while, but I don't know what it wants."
+# The journal lines for a letter it wrote at the box (note_letter_written).
+const LETTER_REPLY_LINE := "I wrote back to you at the glowing box."
+const LETTER_FIRST_LINE := "I wrote you my first letter at the glowing box."
 
 
 func ensure_profile(profile: Dictionary) -> Dictionary:
@@ -2082,6 +2085,24 @@ func note_name(profile: Dictionary, now: int, chosen: String, land: Dictionary =
 		now, "reflect", place_id, place_name, "chose_name", "chose a name", 0.3,
 		"I thought about what to call myself. I'm %s." % chosen, "place:%s" % place_id, place_name
 	))
+	merged["mind"] = mind
+	return merged
+
+
+# It wrote a letter at the glowing box (step 2c-2; the world host or the solo app
+# writes it, while the buddy is at home). One line in the journal, and its first
+# letter is no longer due: a reply written while it was due counts as that first
+# letter, so it never writes two at once.
+func note_letter_written(profile: Dictionary, land: Dictionary, now: int, first: bool) -> Dictionary:
+	var merged := ensure_profile(profile)
+	var mind: Dictionary = merged["mind"]
+	var place_id := str(mind.get("location", ""))
+	var place_name := _place_name_here(land, place_id)
+	var text: String = LETTER_FIRST_LINE if first else LETTER_REPLY_LINE
+	var entry: Dictionary = _visit_entry(now, "reflect", place_id, place_name, "letter_written", "wrote a letter", 0.3, text, "place:%s" % place_id, place_name)
+	entry["kind"] = "letter"
+	_append_journal(mind, entry)
+	mind["first_letter_due"] = false
 	merged["mind"] = mind
 	return merged
 

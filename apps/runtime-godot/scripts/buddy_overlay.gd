@@ -340,6 +340,7 @@ const MindThinker = preload("res://scripts/services/mind_thinker.gd")
 const MapleTheme = preload("res://scripts/ui/maple_theme.gd")
 const VisitController = preload("res://scripts/visit_controller.gd")
 const LetterService = preload("res://scripts/services/letter_service.gd")
+const LetterWriter = preload("res://scripts/letter_writer.gd")
 const PORTABLE_FALLBACK_TEXTURE := preload("res://content/core_pack/character/idle.png")
 
 @onready var tick_timer: Timer = $TickTimer
@@ -673,6 +674,8 @@ func _ready() -> void:
         _show_while_away_report_once()
     _show_restart_verification_once()
     _start_visit_controller()
+    # Writes the letters it has read, when the buddy is at home with this app (solo mode).
+    add_child(LetterWriter.new())
 
 
 func _exit_tree() -> void:
@@ -3492,16 +3495,24 @@ func _refresh_letters_window() -> void:
         var state := ""
         if str(item.get("from", "")) == "you":
             state = AppState.letters_delivery_state(str(item.get("id", "")), int(item.get("t", 0)))
-        rows.append([str(item.get("id", "")), state, int(item.get("read_t", 0)), _away_name()])
+        var answer: Dictionary = LetterService.answered_by(AppState.profile, str(item.get("id", ""))) if state == "read" else {}
+        rows.append([str(item.get("id", "")), state, int(item.get("read_t", 0)), _away_name(), int(answer.get("t", 0))])
     var console_known := AppState.letters_console_known()
-    var signature := str([rows, console_known])
+    var model_off: bool = not bool(AppState.settings.get("mindModelEnabled", true))
+    var signature := str([rows, console_known, model_off])
     # The person has seen what is here.
     AppState.letters_mark_seen()
     if signature == _letters_signature:
         return
     _letters_signature = signature
-    _letters_note.text = "" if console_known else "Your buddy has not worked out the glowing box yet. Letters wait there until it does."
-    _letters_note.visible = not console_known
+    var note_lines: Array = []
+    if not console_known:
+        note_lines.append("Your buddy has not worked out the glowing box yet. Letters wait there until it does.")
+    if model_off:
+        note_lines.append("Your buddy writes back with its thinking model, which is off in Settings.")
+    _letters_note.text = "
+".join(note_lines)
+    _letters_note.visible = not note_lines.is_empty()
     for child in _letters_rows.get_children():
         _letters_rows.remove_child(child)
         child.queue_free()
@@ -3532,7 +3543,11 @@ func _refresh_letters_window() -> void:
             status.add_theme_font_size_override("font_size", 12)
             var state_now: String = str(row[1])
             if state_now == "read":
-                status.text = "Read %s" % _letters_when(int(letter.get("read_t", 0)))
+                var answered_t: int = int(row[4])
+                if answered_t > 0:
+                    status.text = "Answered %s" % _letters_when(answered_t)
+                else:
+                    status.text = "Read %s" % _letters_when(int(letter.get("read_t", 0)))
             elif state_now == "waiting":
                 status.text = "Waiting at the glowing box"
             elif state_now == "on_its_way":

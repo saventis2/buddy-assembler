@@ -22,8 +22,8 @@ unless the V1 exit criteria in `PR_PLAN.md` are signed off.
   running is deferred to the move to Nexus. And from 2026-11-18 (D-012): the
   buddy is told nothing about its world, and what it says on the land is
   checked against its own memory; from 2026-11-19 (step 2c-1) letters you write
-  arrive and are read at its console, and its writing back stays deferred to
-  step 2c-2.
+  arrive and are read at its console, and from step 2c-2 (2026-11-19) it writes
+  back.
 - Cross-platform parity (macOS, Linux, mobile).
 - Marketplace or user-submitted content hosting.
 

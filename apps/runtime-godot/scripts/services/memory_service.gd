@@ -1026,6 +1026,13 @@ static func looks_sensitive(text: String) -> bool:
 
 
 func _blocked(text: String) -> bool:
+	return looks_like_orders(text)
+
+
+# Whether text reads like an order to the buddy (an instruction, "ignore your
+# rules", "pretend"). Static, so the letter writer can ask without a memory
+# service; the same rules as _blocked.
+static func looks_like_orders(text: String) -> bool:
 	var lowered: String = text.to_lower()
 	for phrase in BLOCKED_PHRASES:
 		if lowered.contains(phrase):
@@ -1052,6 +1059,12 @@ func _recency(t: int, now_unix: int) -> float:
 
 
 func _when(t: int, now_unix: int) -> String:
+	return when_phrase(t, now_unix)
+
+
+# "earlier today", "yesterday", "3 days ago". Static, so the mailbox can use the
+# same wording (letter_service.gd).
+static func when_phrase(t: int, now_unix: int) -> String:
 	var hours: float = (now_unix - t) / 3600.0
 	if hours < 24.0:
 		return "earlier today"

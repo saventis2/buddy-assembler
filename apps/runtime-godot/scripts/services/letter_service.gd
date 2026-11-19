@@ -124,6 +124,75 @@ static func count_from_buddy_after(profile: Dictionary, seen_t: int) -> int:
 	return count
 
 
+# A letter from the buddy (step 2c-2), answering `reply_to` ("" for its first
+# letter, which answers nothing): your letter with that id is no longer waiting
+# for an answer. Returns {"profile", "ok", "id"}.
+static func add_from_buddy(profile: Dictionary, reply_to: String, text: String, now: int) -> Dictionary:
+	var cleaned: String = _clean(text)
+	if cleaned == "":
+		return {"profile": profile, "ok": false, "id": ""}
+	var items: Array = _items(profile)
+	if reply_to != "":
+		for item in items:
+			if str((item as Dictionary)["id"]) == reply_to:
+				(item as Dictionary)["reply_due"] = false
+	var letter_id: String = new_id(now)
+	items.append({"id": letter_id, "from": FROM_BUDDY, "text": cleaned, "t": now, "read_t": 0, "reply_due": false, "reply_to": reply_to})
+	var out: Dictionary = profile.duplicate(false)
+	out["letters"] = {"items": _trim(items)}
+	return {"profile": out, "ok": true, "id": letter_id}
+
+
+# What the buddy has to write next: {"kind": "reply", "letter": <the oldest of
+# your letters with an answer due>}, else {"kind": "first"} while its first
+# letter is due, else {}. A reply written while the first is due counts as it
+# (mind_service.note_letter_written clears the flag), so it never writes two.
+static func next_work(profile: Dictionary) -> Dictionary:
+	var oldest: Dictionary = {}
+	for item in _items(profile):
+		var row: Dictionary = item
+		if str(row["from"]) == FROM_YOU and bool(row["reply_due"]):
+			if oldest.is_empty() or int(row["t"]) < int(oldest["t"]):
+				oldest = row
+	if not oldest.is_empty():
+		return {"kind": "reply", "letter": oldest}
+	var mind_variant = profile.get("mind", null)
+	if typeof(mind_variant) == TYPE_DICTIONARY and bool((mind_variant as Dictionary).get("first_letter_due", false)):
+		return {"kind": "first"}
+	return {}
+
+
+# The letters sent before `before_t`, oldest first, the last `limit` of them, as
+# lines for the buddy to read: "they wrote yesterday: ..." / "you wrote 3 days ago: ...".
+static func earlier_letters(profile: Dictionary, before_t: int, now: int, limit: int = 4) -> Array:
+	var rows: Array = []
+	for item in _items(profile):
+		if int((item as Dictionary)["t"]) < before_t:
+			rows.append(item)
+	rows.sort_custom(func(a, b): return int(a["t"]) < int(b["t"]))
+	if rows.size() > limit:
+		rows = rows.slice(rows.size() - limit)
+	var lines: Array = []
+	for row_variant in rows:
+		var row: Dictionary = row_variant
+		var who: String = "they wrote" if str(row["from"]) == FROM_YOU else "you wrote"
+		var text: String = str(row["text"])
+		if text.length() > 300:
+			text = text.substr(0, 300).strip_edges() + "..."
+		lines.append("%s %s: %s" % [who, MemoryService.when_phrase(int(row["t"]), now), text])
+	return lines
+
+
+# The buddy's letter that answers `id`, or {}.
+static func answered_by(profile: Dictionary, id: String) -> Dictionary:
+	if id == "":
+		return {}
+	for item in _items(profile):
+		if str((item as Dictionary)["from"]) == FROM_BUDDY and str((item as Dictionary)["reply_to"]) == id:
+			return item
+	return {}
+
+
 # Same shape as an inbox request id (buddy_whereabouts.send_request).
 static func new_id(now: int) -> String:
 	var rng := RandomNumberGenerator.new()

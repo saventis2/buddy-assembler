@@ -7,6 +7,7 @@ const UnlockTable = preload("res://scripts/progression/unlock_table.gd")
 const ContentLoader = preload("res://scripts/content/content_loader.gd")
 const Whereabouts = preload("res://scripts/persistence/buddy_whereabouts.gd")
 const LetterService = preload("res://scripts/services/letter_service.gd")
+const MindThinkerScript = preload("res://scripts/services/mind_thinker.gd")
 
 const SETTINGS_PATH := "user://settings.json"
 const PROFILE_PATH := "user://profile.json"
@@ -947,6 +948,101 @@ func letters_items() -> Array:
             continue
         items.append({"id": str(sent["id"]), "from": LetterService.FROM_YOU, "text": str(sent["text"]), "t": int(sent["sent_at"]), "read_t": 0, "reply_due": false, "reply_to": ""})
     return items
+
+
+# --- Letters it writes (Plan 14 step 2c-2) -------------------------------
+# Only the process that has the buddy at home writes them: the world host while it
+# holds the buddy, or the app in solo mode. Never the desktop app while the buddy
+# is visiting it. The model calls themselves are in letter_writer.gd.
+func letters_may_write() -> bool:
+    if not small_beginnings():
+        return false
+    if _role == "solo":
+        return true
+    return _role == "host" and _still_holding()
+
+
+# {"kind": "reply", "letter"} for the oldest letter of yours it has read and not
+# answered, else {"kind": "first"} while its first letter is due, else {}.
+func letters_next_work() -> Dictionary:
+    if not letters_may_write():
+        return {}
+    return LetterService.next_work(profile)
+
+
+# Puts what it wrote in the mailbox, in the journal, and saves. Does nothing when
+# this process may no longer write (the buddy went to the desktop meanwhile).
+func letters_store_written(work: Dictionary, text: String) -> void:
+    if not letters_may_write():
+        return
+    var first: bool = str(work.get("kind", "")) != "reply"
+    var reply_to := ""
+    if not first and typeof(work.get("letter", null)) == TYPE_DICTIONARY:
+        reply_to = str((work["letter"] as Dictionary).get("id", ""))
+    # Only work that is still due: a letter already answered, or a first letter
+    # already written, is never written twice.
+    if first:
+        var mind_variant = profile.get("mind", null)
+        if typeof(mind_variant) != TYPE_DICTIONARY or not bool((mind_variant as Dictionary).get("first_letter_due", false)):
+            return
+    elif not _letters_reply_due(reply_to):
+        return
+    var now: int = _now_unix()
+    var added: Dictionary = LetterService.add_from_buddy(profile, reply_to, text, now)
+    if not bool(added["ok"]):
+        return
+    profile = added["profile"]
+    var noted = _call_service_with_fallback("mind", "note_letter_written", [profile, _land(), now, first], null)
+    if typeof(noted) == TYPE_DICTIONARY:
+        profile = noted
+    flush()
+
+
+func _letters_reply_due(id: String) -> bool:
+    for item in (LetterService.ensure_letters(profile)["letters"] as Dictionary)["items"]:
+        if str((item as Dictionary)["id"]) == id:
+            return bool((item as Dictionary)["reply_due"])
+    return false
+
+
+# The request for one piece of work (letters_next_work), exactly as the writer
+# sends it; the letters evaluation (tests/chat_eval.gd) calls this too, so it
+# measures what really goes out. `work["letter"]` is {"id", "text", "t"}.
+func letters_request_body(model: String, work: Dictionary, extra_task: String = "") -> String:
+    var first: bool = str(work.get("kind", "")) != "reply"
+    var now: int = _now_unix()
+    var their_text := ""
+    var their_t: int = now
+    if not first:
+        var letter: Dictionary = work.get("letter", {})
+        their_text = str(letter.get("text", ""))
+        their_t = int(letter.get("t", now))
+    var about := {}
+    var buddy_name := ""
+    var location := ""
+    var mind_variant = profile.get("mind", null)
+    if typeof(mind_variant) == TYPE_DICTIONARY:
+        buddy_name = str((mind_variant as Dictionary).get("name", ""))
+        location = str((mind_variant as Dictionary).get("location", ""))
+    if buddy_name != "":
+        about["name"] = buddy_name
+    about["mood"] = str(get_telemetry_snapshot().get("mood", "calm"))
+    var here := ""
+    var places_variant = get_town().get("places", [])
+    if location != "" and typeof(places_variant) == TYPE_ARRAY:
+        for place_variant in places_variant:
+            if typeof(place_variant) == TYPE_DICTIONARY and str((place_variant as Dictionary).get("id", "")) == location:
+                here = str((place_variant as Dictionary).get("name", location))
+    if here != "":
+        about["where_you_are"] = here
+    var recent: Array = []
+    for entry_variant in get_mind_journal(6):
+        if typeof(entry_variant) == TYPE_DICTIONARY:
+            recent.append(str((entry_variant as Dictionary).get("text", "")))
+    var recalled: Dictionary = memory_recall_land(their_text)
+    var memory: Dictionary = memory_recall(their_text, false)
+    var earlier: Array = LetterService.earlier_letters(profile, their_t, now)
+    return MindThinkerScript.build_letter_request(model, about, recent, recalled.get("lines", []), memory, earlier, their_text, first, extra_task)
 
 
 func letters_console_known() -> bool:
@@ -2063,6 +2159,7 @@ func _default_settings() -> Dictionary:
         "chatModelEnabled": true,
         "chatBackend": "ollama",
         "chatModelName": "gemma3:4b",
+        "letterModelName": "gemma3:12b",
         "memoryEnabled": true,
         "supportHintsEnabled": true,
         "productivityOptIn": false,

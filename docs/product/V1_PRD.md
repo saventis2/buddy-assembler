@@ -36,7 +36,7 @@ companionship.
   optional local Ollama model only; see `DEFERRED.md` and
   `PLAN13_TOWN_AND_CONVERSATION.md`)
 - a buddy that writes letters back (letters you write arrive and are read at
-  its console from step 2c-1; writing back comes in step 2c-2, see
+  its console from step 2c-1, and it writes back from step 2c-2; see
   `PLAN14_SMALL_BEGINNINGS.md`)
 - cross-platform parity
 - marketplace/plugin scripting runtime
