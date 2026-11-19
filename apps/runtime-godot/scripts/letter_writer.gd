@@ -29,9 +29,10 @@ const DEFAULT_LETTER_MODEL := "gemma3:12b"
 var _timer: Timer
 var _http: HTTPRequest = null
 var _memory_http: HTTPRequest = null
-# The letter request in flight: {"work", "model", "body", "extra", "retried"}. Empty when none.
+# The letter request in flight: {"work", "model", "body", "extra", "retried",
+# "built_t"}. Empty when none. built_t: when it was built, with the memories of then.
 var _pending: Dictionary = {}
-# The memory request in flight: {"body"}. Empty when none.
+# The memory request in flight: {"body", "built_t"}. Empty when none.
 var _memory_pending: Dictionary = {}
 var _next_try := 0.0
 # After a 404 (the letter model is not installed) the chat model, for the rest of
@@ -91,8 +92,15 @@ func _poll() -> void:
 # set the state).
 func _begin(work: Dictionary, extra_task: String, retried: bool) -> void:
 	var model: String = _letter_model()
-	_pending = {"work": work, "model": model, "body": AppState.letters_request_body(model, work, extra_task), "extra": extra_task, "retried": retried}
+	_pending = {"work": work, "model": model, "body": AppState.letters_request_body(model, work, extra_task), "extra": extra_task, "retried": retried, "built_t": AppState._now_unix()}
 	_dispatch_letter.call_deferred()
+
+
+# Whether memories were forgotten at or after `t` (MemoryService.forgot_at). The
+# same second counts: what is forgotten must not come back.
+func _forgotten_since(t: int) -> bool:
+	var forgot: int = MemoryService.forgot_at(AppState.profile)
+	return forgot > 0 and forgot >= t
 
 
 func _dispatch_letter() -> void:
@@ -134,6 +142,11 @@ func _on_letter_completed(result: int, response_code: int, _headers: PackedStrin
 	if result != HTTPRequest.RESULT_SUCCESS or response_code != 200:
 		_next_try = now + RETRY_SECONDS
 		return
+	# Memories were forgotten while it was writing (Forget in the Memory window):
+	# this answer was written from them, so it is written again from what is
+	# left, at the next poll. The work is still due.
+	if _forgotten_since(int(pending.get("built_t", 0))):
+		return
 	var first: bool = str(work.get("kind", "")) != "reply"
 	var their: String = "" if first else str((work["letter"] as Dictionary).get("text", ""))
 	var known: Dictionary = AppState.memory_known_words()
@@ -158,15 +171,23 @@ func _on_letter_completed(result: int, response_code: int, _headers: PackedStrin
 	_store(work, MindThinker.letter_fallback(their, unknown, known, first), their)
 
 
-# Puts the letter in the mailbox, and for a reply sends the talk to memory.
+# Puts the letter in the mailbox, and for a reply sends the talk to memory. An
+# answer that is not stored (its letter was answered meanwhile) sends nothing.
 func _store(work: Dictionary, written: String, their: String) -> void:
-	AppState.letters_store_written(work, written)
+	if not AppState.letters_store_written(work, written):
+		return
 	if str(work.get("kind", "")) != "reply":
 		return
 	if not AppState.memory_enabled() or MemoryService.looks_like_orders(their):
 		return
+	# Your letter came before memories were last forgotten: what it says was
+	# forgotten with them, as an unsaved talk is (buddy_overlay._after_memory_forgotten).
+	var letter_variant = work.get("letter", null)
+	var letter_t: int = int((letter_variant as Dictionary).get("t", 0)) if typeof(letter_variant) == TYPE_DICTIONARY else 0
+	if _forgotten_since(letter_t):
+		return
 	var body: String = MindThinker.build_memory_request(_chat_model(), [{"who": "them", "text": their}, {"who": "you", "text": written}])
-	_memory_pending = {"body": body}
+	_memory_pending = {"body": body, "built_t": AppState._now_unix()}
 	_dispatch_memory.call_deferred()
 
 
@@ -191,10 +212,17 @@ func _dispatch_memory() -> void:
 # What the buddy takes from the letter, kept like what it takes from a talk. A
 # failure is dropped, not tried again: the letters themselves stay in the mailbox.
 func _on_memory_completed(result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
+	var pending: Dictionary = _memory_pending
 	_memory_pending = {}
+	if pending.is_empty():
+		return
 	if result != HTTPRequest.RESULT_SUCCESS or response_code != 200:
 		return
 	if not AppState.letters_may_write() or not AppState.memory_enabled():
+		return
+	# Memories were forgotten after this was asked: keeping its answer would bring
+	# them back.
+	if _forgotten_since(int(pending.get("built_t", 0))):
 		return
 	var parsed: Dictionary = MindThinker.parse_memory_reply(body.get_string_from_utf8())
 	if not bool(parsed.get("ok", false)):

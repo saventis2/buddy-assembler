@@ -45,6 +45,7 @@ func _run_all() -> void:
 	_case("storing", func(): return _test_storing())
 	_case("the_writers_flow", func(): return _test_flow())
 	_case("memory_from_letters", func(): return _test_memory())
+	_case("forgetting_is_not_undone", func(): return _test_forgetting())
 	_case("who_writes", func(): return _test_who_writes())
 	_case("earlier_letters", func(): return _test_earlier_letters())
 	_case("the_request_body_is_gathered", func(): return _test_request_body())
@@ -630,6 +631,86 @@ func _test_memory() -> Variant:
 	_complete(writer, HTTPRequest.RESULT_SUCCESS, 200, _letter_body(GOOD_LETTER))
 	if not writer._memory_pending.is_empty() or _buddy_letters().size() != 1:
 		problem = "with Remembering off the letter is written and nothing goes to memory"
+	writer.free()
+	if problem != "":
+		return problem
+	# A late answer to a letter that was answered meanwhile is not stored, and
+	# sends nothing to memory either.
+	_reset()
+	_put_due_letter("A1", "My sister Ana has a kitten called Biscuit.", _now() - 600)
+	var same_work: Dictionary = AppState.letters_next_work()
+	writer = _writer(same_work)
+	_complete(writer, HTTPRequest.RESULT_SUCCESS, 200, _letter_body(GOOD_LETTER))
+	writer.free()
+	writer = _writer(same_work)
+	_complete(writer, HTTPRequest.RESULT_SUCCESS, 200, _letter_body(GOOD_LETTER))
+	if not writer._pending.is_empty() or not writer._memory_pending.is_empty() or _buddy_letters().size() != 1:
+		problem = "a late answer to a letter already answered is dropped and sends nothing to memory"
+	writer.free()
+	return problem if problem != "" else null
+
+
+# --- 8b: forgetting is not undone -------------------------------------------
+
+# Forget in the Memory window while a letter is being written or its talk sorted
+# into memories, or before a letter of yours is answered: nothing from before
+# brings back what was forgotten.
+func _test_forgetting() -> Variant:
+	var good_memory: String = JSON.stringify({"summary": "They told me about their sister's kitten.", "facts": [{"subject": "their sister Ana", "relation": "has", "object": "a kitten called Biscuit", "importance": "high"}]})
+	var problem := ""
+	# A memory request already out when everything is forgotten: its answer is dropped.
+	_reset()
+	_put_due_letter("A1", "My sister Ana has a kitten called Biscuit.", _now() - 600)
+	var writer: Node = _writer(AppState.letters_next_work())
+	_complete(writer, HTTPRequest.RESULT_SUCCESS, 200, _letter_body(GOOD_LETTER))
+	if writer._memory_pending.is_empty():
+		problem = "a reply sends its talk to memory"
+	else:
+		writer._memory_pending["built_t"] = _now() - 5
+		AppState.memory_forget_all()
+		writer._on_memory_completed(HTTPRequest.RESULT_SUCCESS, 200, PackedStringArray(), _envelope(good_memory))
+		if not writer._memory_pending.is_empty() or JSON.stringify(AppState.memory_list()).contains("Biscuit"):
+			problem = "a memory answer asked for before Forget everything is dropped"
+	writer.free()
+	if problem != "":
+		return problem
+	# A letter being written when one memory is forgotten: not stored, and written
+	# again from what is left at the next poll (still due, no long wait).
+	_reset()
+	var note: Dictionary = AppState.memory_add_note("They like strawberry tea.")
+	_put_due_letter("A1", THEIR_LETTER, _now() - 600)
+	writer = _writer(AppState.letters_next_work())
+	writer._pending["built_t"] = _now() - 5
+	if not bool(note.get("ok", false)) or not AppState.memory_forget(int(note["id"])):
+		problem = "a note can be added and forgotten: %s" % str(note)
+	else:
+		_complete(writer, HTTPRequest.RESULT_SUCCESS, 200, _letter_body(GOOD_LETTER))
+		if not _buddy_letters().is_empty() or not writer._pending.is_empty():
+			problem = "an answer written before a memory was forgotten is not stored"
+		elif AppState.letters_next_work().is_empty() or writer._next_try > Time.get_unix_time_from_system():
+			problem = "the letter is still due and is written again at the next poll"
+	writer.free()
+	if problem != "":
+		return problem
+	# Your letter from before the forget, answered after it: the answer is stored,
+	# but the letter teaches nothing. A letter after the forget does, as before.
+	_reset()
+	_put_due_letter("A1", "My sister Ana has a kitten called Biscuit.", _now() - 600)
+	AppState.memory_forget_all()
+	writer = _writer(AppState.letters_next_work())
+	writer._pending["built_t"] = _now() + 1
+	_complete(writer, HTTPRequest.RESULT_SUCCESS, 200, _letter_body(GOOD_LETTER))
+	if _buddy_letters().size() != 1 or not writer._memory_pending.is_empty():
+		problem = "a letter from before the forget is answered and sends nothing to memory: %s" % str(_buddy_letters())
+	writer.free()
+	if problem != "":
+		return problem
+	_put_due_letter("A2", "My brother Tom plays the drums.", _now() + 30)
+	writer = _writer(AppState.letters_next_work())
+	writer._pending["built_t"] = _now() + 60
+	_complete(writer, HTTPRequest.RESULT_SUCCESS, 200, _letter_body(GOOD_LETTER))
+	if _buddy_letters().size() != 2 or writer._memory_pending.is_empty():
+		problem = "a letter after the forget is taken into memory as before"
 	writer.free()
 	return problem if problem != "" else null
 

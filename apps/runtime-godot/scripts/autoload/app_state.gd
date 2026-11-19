@@ -972,9 +972,10 @@ func letters_next_work() -> Dictionary:
 
 # Puts what it wrote in the mailbox, in the journal, and saves. Does nothing when
 # this process may no longer write (the buddy went to the desktop meanwhile).
-func letters_store_written(work: Dictionary, text: String) -> void:
+# Returns whether the letter was stored.
+func letters_store_written(work: Dictionary, text: String) -> bool:
     if not letters_may_write():
-        return
+        return false
     var first: bool = str(work.get("kind", "")) != "reply"
     var reply_to := ""
     if not first and typeof(work.get("letter", null)) == TYPE_DICTIONARY:
@@ -984,18 +985,19 @@ func letters_store_written(work: Dictionary, text: String) -> void:
     if first:
         var mind_variant = profile.get("mind", null)
         if typeof(mind_variant) != TYPE_DICTIONARY or not bool((mind_variant as Dictionary).get("first_letter_due", false)):
-            return
+            return false
     elif not _letters_reply_due(reply_to):
-        return
+        return false
     var now: int = _now_unix()
     var added: Dictionary = LetterService.add_from_buddy(profile, reply_to, text, now)
     if not bool(added["ok"]):
-        return
+        return false
     profile = added["profile"]
     var noted = _call_service_with_fallback("mind", "note_letter_written", [profile, _land(), now, first], null)
     if typeof(noted) == TYPE_DICTIONARY:
         profile = noted
     flush()
+    return true
 
 
 func _letters_reply_due(id: String) -> bool:
@@ -1258,7 +1260,7 @@ func memory_add_note(text: String) -> Dictionary:
 
 
 func memory_forget(memory_id: int) -> bool:
-    var result = _call_service_with_fallback("memory", "forget", [profile, memory_id], {})
+    var result = _call_service_with_fallback("memory", "forget", [profile, memory_id, _now_unix()], {})
     if typeof(result) != TYPE_DICTIONARY or not bool(result.get("ok", false)):
         return false
     if typeof(result.get("profile", null)) == TYPE_DICTIONARY:
@@ -1268,7 +1270,7 @@ func memory_forget(memory_id: int) -> bool:
 
 
 func memory_forget_all() -> void:
-    _call_profile_service("memory", "forget_all", [profile])
+    _call_profile_service("memory", "forget_all", [profile, _now_unix()])
     flush()
 
 

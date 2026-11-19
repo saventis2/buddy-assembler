@@ -71,6 +71,7 @@ func _run_all() -> void:
 	_case("a_lost_lock_stops_writes", func(): return _test_a_lost_lock_stops_writes())
 	_case("the_visit_ends_here_without_a_host", func(): return _test_the_visit_ends_here_without_a_host())
 	_case("a_host_needs_both_settings", func(): return _test_a_host_needs_both_settings())
+	_case("no_host_wanted_keeps_the_visit", func(): return _test_no_host_wanted_keeps_the_visit())
 	_case("peek_never_writes", func(): return _test_peek_never_writes())
 	_case("solo_is_unchanged", func(): return _test_solo_is_unchanged())
 	_case("bedtime_call_waits_for_morning", func(): return _test_bedtime_call_waits_for_morning())
@@ -537,6 +538,21 @@ func _test_a_host_needs_both_settings() -> Variant:
 		return "with small beginnings off no host should be wanted"
 	if not VisitController.host_wanted({"worldHost": true, "smallBeginnings": true}):
 		return "with both on a host should be wanted"
+	return null
+
+
+# With no host wanted (the setting went off while the app is open) the buddy
+# stays with you: bedtime and a long quiet do not end the visit, or the next
+# poll would bring it straight back, every two seconds.
+func _test_no_host_wanted_keeps_the_visit() -> Variant:
+	if VisitController.visit_end_reason(false, true, VisitController.QUIET_SECONDS * 2.0) != "":
+		return "with no host wanted, neither bedtime nor a long quiet should end the visit"
+	if VisitController.visit_end_reason(true, true, 0.0) != "bedtime":
+		return "with a host wanted, bedtime should end the visit"
+	if VisitController.visit_end_reason(true, false, float(VisitController.QUIET_SECONDS)) != "quiet":
+		return "with a host wanted, a long quiet should end the visit"
+	if VisitController.visit_end_reason(true, false, VisitController.QUIET_SECONDS - 1.0) != "":
+		return "otherwise the visit should go on"
 	return null
 
 

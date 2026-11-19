@@ -262,6 +262,7 @@ Found in review and fixed before merging:
   - **Holding lasts only as long as the lock.** A process that froze for longer than the stale time can find its lock taken over. Before any write it now checks the lock is still its own, and it stops writing the buddy at once when it is not. An app in that state shows the buddy at home; a host in that state stops if another host has taken over.
   - **Forget is disabled while the buddy is at home**, because the forget would not be saved.
   - **The app finishes a visit itself** when the setting is off or no host is running, so the save never says "visiting" with nobody to finish it. A buddy that stays with you because no host could start now leaves for its visit like any other.
+- **From the Codex review of PR #109:** with the setting turned off while the app is open, the buddy that stays with you is not sent home at bedtime or after a long quiet (`visit_end_reason`). It has no world to go back to, and ending the visit brought it straight back on the next poll, with a goodbye and a hello every two seconds until morning.
 
 Checked end to end, with throwaway saves:
 
@@ -711,7 +712,13 @@ What is built:
 - **Into memory**: for a reply, when Remembering is on and your letter does not
   read like an order, the talk goes to the memory request with the chat model
   and a good answer is kept like what it takes from a talk (`upto` 0 drops no
-  chat turns). A failure is dropped; the letters stay in the mailbox.
+  chat turns). A failure is dropped; the letters stay in the mailbox. An answer
+  that is not stored (its letter was answered meanwhile) sends nothing.
+- **Forgetting is not undone** (from the Codex review of PR #109). Forgetting
+  records when (`memory.forgot_t`, `MemoryService.forgot_at`). A memory answer
+  asked for by then is dropped, a letter answer asked for by then is written
+  again from what is left, and your letters from by then teach it nothing when
+  they are answered, as the unsaved part of a talk is let go.
 - **The Letters window** shows "Read ..." while its answer is due and "Answered
   ..." once a letter of the buddy's answers yours; with the thinking model off
   it says under the top note that the buddy writes back with its thinking model.
@@ -721,7 +728,7 @@ What is built:
 - **Shipping**: `letter_writer.gd` is in the export list and the shipping
   inventory.
 
-Tests: `letter_writer_test` (11 cases, no model, no HTTP: the writer's handlers
+Tests: `letter_writer_test` (12 cases, no model, no HTTP: the writer's handlers
 are called by hand).
 
 Measured 2026-11-19:

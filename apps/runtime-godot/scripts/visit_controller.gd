@@ -104,6 +104,21 @@ static func host_wanted(settings: Dictionary) -> bool:
 	return bool(settings.get("worldHost", true)) and bool(settings.get("smallBeginnings", true))
 
 
+# Why a visit ends by itself now ("" while it goes on): bedtime, or a long quiet.
+# Only while a host is wanted to take the buddy home. With none wanted (the
+# setting went off while this app is open) it has no world to go back to, so it
+# stays with you, as the main menu says: ending the visit would only bring it
+# straight back on the next poll, with a goodbye and a hello every two seconds.
+static func visit_end_reason(host_is_wanted: bool, bedtime: bool, quiet_seconds: float) -> String:
+	if not host_is_wanted:
+		return ""
+	if bedtime:
+		return "bedtime"
+	if quiet_seconds >= QUIET_SECONDS:
+		return "quiet"
+	return ""
+
+
 func _buddy_is_visiting() -> bool:
 	var mind_variant = AppState.profile.get("mind", {})
 	return typeof(mind_variant) == TYPE_DICTIONARY and str((mind_variant as Dictionary).get("location", "")) == "visiting"
@@ -287,10 +302,9 @@ func _poll_away(now: float, host: Dictionary, host_alive: bool) -> void:
 
 
 func _poll_visiting(now: float) -> void:
-	if AppState.mind_is_bedtime(int(now)):
-		_go_home("bedtime")
-	elif now - _last_interaction >= QUIET_SECONDS:
-		_go_home("quiet")
+	var reason: String = visit_end_reason(host_wanted(AppState.settings), AppState.mind_is_bedtime(int(now)), now - _last_interaction)
+	if reason != "":
+		_go_home(reason)
 
 
 func _go_home(reason: String) -> void:

@@ -627,7 +627,8 @@ func _seed_from_mind(memory: Dictionary, mind_variant: Variant, land: Dictionary
 
 # --- Forgetting --------------------------------------------------------------
 
-func forget(profile: Dictionary, id: int) -> Dictionary:
+# With `now`, forgetting also records when (memory["forgot_t"], see forgot_at).
+func forget(profile: Dictionary, id: int, now: int = 0) -> Dictionary:
 	var out: Dictionary = ensure_profile(profile)
 	var memory: Dictionary = out["memory"]
 	var found := false
@@ -652,10 +653,12 @@ func forget(profile: Dictionary, id: int) -> Dictionary:
 			continue
 		episodes.append(episode)
 	memory["episodes"] = episodes
+	if found and now > 0:
+		memory["forgot_t"] = now
 	return {"profile": out, "ok": found}
 
 
-func forget_all(profile: Dictionary) -> Dictionary:
+func forget_all(profile: Dictionary, now: int = 0) -> Dictionary:
 	var out: Dictionary = ensure_profile(profile)
 	var memory: Dictionary = out["memory"]
 	var edges: Array = []
@@ -666,7 +669,19 @@ func forget_all(profile: Dictionary) -> Dictionary:
 	memory["edges"] = edges
 	memory["episodes"] = []
 	memory["turns"] = []
+	if now > 0:
+		memory["forgot_t"] = now
 	return out
+
+
+# When memories were last forgotten (0: never). What came before then must not
+# bring them back: letter_writer.gd takes nothing into memory from your letters
+# sent by then, and drops an answer it asked for by then.
+static func forgot_at(profile: Dictionary) -> int:
+	var memory_variant = profile.get("memory", null)
+	if typeof(memory_variant) != TYPE_DICTIONARY:
+		return 0
+	return int((memory_variant as Dictionary).get("forgot_t", 0))
 
 
 # --- Reading memories --------------------------------------------------------
