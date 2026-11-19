@@ -54,6 +54,14 @@ const MAPLE_LAYOUT_MEMORY := {
     "offset": Vector2i(72, 48),
     "margins": [14, 12, 14, 12],
 }
+# Letters (Plan 14 step 2c-1): the open window is refreshed this often.
+const LETTERS_REFRESH_SECONDS := 4.0
+const MAPLE_LAYOUT_LETTERS := {
+    "base_size": Vector2i(460, 560),
+    "min_size": Vector2i(360, 420),
+    "offset": Vector2i(80, 52),
+    "margins": [14, 12, 14, 12],
+}
 const CHAT_FONT_SIZE_M := 13
 const CHAT_FONT_SIZE_L := 16
 const SETTINGS_CHANGE_HISTORY_MAX := 20
@@ -330,6 +338,9 @@ const ManualVerificationReport = preload("res://scripts/utility/manual_verificat
 const PortableBuddyFallback = preload("res://scripts/visual/portable_buddy_fallback.gd")
 const MindThinker = preload("res://scripts/services/mind_thinker.gd")
 const MapleTheme = preload("res://scripts/ui/maple_theme.gd")
+const VisitController = preload("res://scripts/visit_controller.gd")
+const LetterService = preload("res://scripts/services/letter_service.gd")
+const LetterWriter = preload("res://scripts/letter_writer.gd")
 const PORTABLE_FALLBACK_TEXTURE := preload("res://content/core_pack/character/idle.png")
 
 @onready var tick_timer: Timer = $TickTimer
@@ -496,6 +507,18 @@ var _main_menu_status: Label = null
 var _main_menu_btn_pause: Button = null
 var _main_menu_btn_chat: Button = null
 var _main_menu_btn_stats: Button = null
+var _main_menu_btn_inventory: Button = null
+var _main_menu_btn_wardrobe: Button = null
+var _main_menu_btn_call: Button = null
+var _main_menu_health: Label = null
+var _settings_btn_world_host: Button = null
+# The world host (Plan 14 step 2a). Only in role "desktop": this app is then the
+# buddy visiting, and while it is at home the overlay shows a panel instead.
+var _visit: Node = null
+var _visit_health := ""
+var _visit_answer := {}
+var _away_panel_rect := Rect2()
+var _away_button_rect := Rect2()
 var _settings_btn_autonomy: Button = null
 var _settings_btn_model: Button = null
 var _settings_btn_chat_model: Button = null
@@ -529,6 +552,16 @@ var _memory_intro: Label = null
 var _memory_btn_toggle: Button = null
 var _memory_btn_forget_all: Button = null
 var _memory_forget_all_armed_until := 0
+var _letters_window: Window = null
+var _letters_note: Label = null
+var _letters_rows: VBoxContainer = null
+var _letters_input: TextEdit = null
+var _letters_counter: Label = null
+var _letters_send_btn: Button = null
+var _letters_error: Label = null
+var _letters_signature := ""
+var _letters_next_refresh := 0.0
+var _main_menu_btn_letters: Button = null
 var _town_window: Window = null
 var _town_map: Control = null
 var _town_heading: Label = null
@@ -640,6 +673,9 @@ func _ready() -> void:
     else:
         _show_while_away_report_once()
     _show_restart_verification_once()
+    _start_visit_controller()
+    # Writes the letters it has read, when the buddy is at home with this app (solo mode).
+    add_child(LetterWriter.new())
 
 
 func _exit_tree() -> void:
@@ -664,6 +700,8 @@ func _update_mouse_region() -> void:
 
 
 func _toggle_sleep_state() -> void:
+    if _is_away():
+        return
     # Shared by the right-click-on-sprite gesture and the settings popout's
     # Pause/Resume button so both entry points stay in sync.
     _state = "sleep" if _state != "sleep" else "idle"
@@ -676,6 +714,7 @@ func _toggle_sleep_state() -> void:
     _set_emote_from_state(_state)
     _set_visual_for_state(_state)
     AppState.record_interaction("toggle_sleep")
+    _note_visit_interaction()
     _productivity.note_user_activity(int(Time.get_unix_time_from_system()))
     queue_redraw()
 
@@ -742,6 +781,17 @@ func _input(event: InputEvent) -> void:
                 elif key_event.keycode == KEY_Q:
                     _unequip_selected_inventory_item()
 
+    if event is InputEventMouseButton and _is_away():
+        # At home: only the panel answers to the mouse (nothing here may pet or move it).
+        var away_event := event as InputEventMouseButton
+        if away_event.button_index == MOUSE_BUTTON_LEFT and away_event.pressed:
+            if _away_button_rect.has_point(away_event.position):
+                _visit.call_over()
+                _note_visit_interaction()
+            elif away_event.double_click and _hit_test(away_event.position) and not _settings_menu_open:
+                _toggle_settings_menu()
+        return
+
     if event is InputEventMouseButton:
         var button_event := event as InputEventMouseButton
         if button_event.button_index == MOUSE_BUTTON_LEFT:
@@ -759,6 +809,7 @@ func _input(event: InputEvent) -> void:
                 _set_emote_from_state(_state)
                 _set_visual_for_state(_state)
                 AppState.record_interaction("pet")
+                _note_visit_interaction()
                 var after := AppState.get_telemetry_snapshot()
                 _show_progress_feedback(before, after)
                 _productivity.note_user_activity(int(Time.get_unix_time_from_system()))
@@ -954,6 +1005,13 @@ func _ensure_settings_main_menu_ui() -> void:
         return
     _settings_main_menu_box.alignment = BoxContainer.ALIGNMENT_BEGIN
     _settings_main_menu_box.add_theme_constant_override("separation", 7)
+    if AppState.role() == "desktop":
+        _main_menu_health = Label.new()
+        _main_menu_health.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+        _main_menu_health.custom_minimum_size = Vector2(220, 0)
+        _main_menu_health.add_theme_color_override("font_color", MapleTheme.TEXT_DIM)
+        _main_menu_health.add_theme_font_size_override("font_size", 12)
+        _settings_main_menu_box.add_child(_main_menu_health)
     _main_menu_status = Label.new()
     _main_menu_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     _main_menu_status.custom_minimum_size = Vector2(220, 0)
@@ -961,12 +1019,16 @@ func _ensure_settings_main_menu_ui() -> void:
     _main_menu_status.add_theme_font_size_override("font_size", 12)
     _settings_main_menu_box.add_child(_main_menu_status)
     _main_menu_btn_chat = _add_main_menu_button("Chat", "Talk to your buddy and see what it has said.", _toggle_chat_window)
+    if AppState.role() == "desktop":
+        _main_menu_btn_call = _add_main_menu_button("Call over", "Ask your buddy to come and visit.", _call_or_send_home)
     _add_main_menu_button("Journal", "Read what your buddy has been doing on its own.", _open_journal)
     _add_main_menu_button("Memory", "What your buddy remembers about you. You can make it forget anything.", _toggle_memory_window)
+    if AppState.small_beginnings():
+        _main_menu_btn_letters = _add_main_menu_button("Letters", "Write to your buddy at the glowing box in its house, and read what it writes back.", _toggle_letters_window)
     _add_main_menu_button("Town", "Where your buddy is, and the town it lives in.", _toggle_town_window)
     _main_menu_btn_stats = _add_main_menu_button("Stats", "Level, bond and stat points.", _toggle_stats_menu)
-    _add_main_menu_button("Inventory", "Items your buddy has collected.", _toggle_inventory_menu)
-    _add_main_menu_button("Wardrobe", "Change what your buddy wears.", _toggle_wardrobe_menu)
+    _main_menu_btn_inventory = _add_main_menu_button("Inventory", "Items your buddy has collected.", _toggle_inventory_menu)
+    _main_menu_btn_wardrobe = _add_main_menu_button("Wardrobe", "Change what your buddy wears.", _toggle_wardrobe_menu)
     _main_menu_btn_pause = _add_main_menu_button("Pause", "Put your buddy to sleep, or wake it up.", func() -> void:
         _toggle_sleep_state()
         _refresh_settings_menu()
@@ -1041,12 +1103,19 @@ func _build_settings_sections() -> void:
     _settings_btn_memory = Button.new()
     _settings_btn_memory.tooltip_text = "When on, your buddy remembers what you tell it from one day to the next: a few facts and a line about each talk, kept in this PC's save. To pick those out, each finished talk is sent once more to the Ollama server in settings (this PC by default). Menu > Memory shows everything it remembers."
     _settings_btn_memory.pressed.connect(_toggle_memory_setting)
+    _settings_btn_world_host = Button.new()
+    _settings_btn_world_host.tooltip_text = "When on, your buddy lives on its own land in a background program that keeps running when this app is closed. This app is your buddy visiting you: it comes over when you open the app (unless it is asleep or busy) and goes home at bedtime, after two quiet hours, when you send it home, or when you close the app. Takes effect the next time the app starts."
+    _settings_btn_world_host.pressed.connect(func() -> void:
+        _set_setting_with_audit("worldHost", not bool(AppState.settings.get("worldHost", true)), "menu")
+        AppState.flush()
+        _refresh_settings_menu()
+    )
 
     _add_settings_section(sections, "How busy your buddy is", [
         settings_btn_event_freq, settings_btn_prompt_freq, settings_btn_intensity, settings_btn_quiet,
     ])
     _add_settings_section(sections, "Do not disturb", [settings_btn_dnd_15, settings_btn_dnd_30, settings_btn_dnd_off], 3)
-    _add_settings_section(sections, "Its own mind", [_settings_btn_autonomy, _settings_btn_model, _settings_btn_chat_model, _settings_btn_memory])
+    _add_settings_section(sections, "Its own mind", [_settings_btn_autonomy, _settings_btn_model, _settings_btn_chat_model, _settings_btn_memory, _settings_btn_world_host])
     _add_settings_section(sections, "Look and place", [settings_btn_mode, settings_btn_pack])
 
     _settings_btn_debug_toggle = Button.new()
@@ -2357,6 +2426,9 @@ func _apply_inventory_maple_theme() -> void:
 
 
 func _draw() -> void:
+    if _is_away():
+        _draw_away_panel()
+        return
     var center := _draw_center
     _draw_sit_chair(center)
     _draw_equipped_item_overlays(center, "back")
@@ -2406,6 +2478,8 @@ func _ground_surface_y(viewport_size: Vector2) -> float:
 
 
 func _hit_test(point: Vector2) -> bool:
+    if _is_away():
+        return _away_panel_rect.grow(8.0).has_point(point)
     var texture := _presentation_texture()
     if texture != null:
         var hit_rect := _presentation_rect(_draw_center, texture).grow(8.0)
@@ -2417,6 +2491,9 @@ func _hit_test(point: Vector2) -> bool:
 
 
 func _on_tick_timer_timeout() -> void:
+    # At home the host lives its life: nothing here runs (the timers stay alive).
+    if _is_away():
+        return
     var now_unix := Time.get_unix_time_from_system()
     _flush_deferred_world_prompt(int(now_unix))
     var context := AppState.get_behavior_context(_allowed_actions)
@@ -2528,6 +2605,11 @@ func _say_mind_line(line: String, suffix: String) -> void:
 # words. Returns false when no request was started (model off, bad URL, or
 # one already in flight); the caller then speaks the built-in wording.
 func _request_mind_thought(event: Dictionary, suffix: String) -> bool:
+    if AppState.small_beginnings():
+        # The land's lines are written by hand and carry what it found and
+        # noticed, so the model does not word over them. It still picks a name.
+        _maybe_choose_name()
+        return false
     if not bool(AppState.settings.get("mindModelEnabled", true)):
         _mind_model_status = "off"
         return false
@@ -2645,6 +2727,8 @@ func _place_display_name(place_id: String) -> String:
 
 
 func _town_npcs() -> Array:
+    if AppState.small_beginnings():
+        return []
     var world_variant = AppState.world_state.get("world", null)
     if typeof(world_variant) != TYPE_DICTIONARY:
         return []
@@ -2739,7 +2823,10 @@ func _start_chat_request(user_text: String) -> bool:
         return false
     _ensure_chat_http()
     var town := {"places": _town_place_names(), "people": _town_people()}
-    var memory: Dictionary = AppState.memory_recall(user_text)
+    # On the land its own memories go to chat apart (your_memories, below),
+    # so what_you_remember holds only what it knows about you.
+    var land: bool = AppState.small_beginnings()
+    var memory: Dictionary = AppState.memory_recall(user_text, not land)
     if _chat_turns.is_empty():
         # Start of a talk: code picks one thing it remembers about you that
         # it may ask after, so remembering does not wait for you to bring it up.
@@ -2752,18 +2839,34 @@ func _start_chat_request(user_text: String) -> bool:
     var target: Dictionary = AppState.mind_find_suggestion(user_text)
     if not target.is_empty():
         decision = _decision_for(target, AppState.mind_consider(target))
-    var body: String = MindThinker.build_chat_request(
-        _chat_model_name(), _chat_about(), _recent_journal_texts(4), _chat_turns, user_text, town, memory,
-        str(decision.get("fact", "")), str(decision.get("say", ""))
-    )
+    # On the land it speaks from its own memories, recalled for what was said.
+    var recalled: Dictionary = AppState.memory_recall_land(user_text) if land else {}
+    var your_memories: Array = recalled.get("lines", []) if land else []
+    var context := {
+        "about": _chat_about(), "recent": _recent_journal_texts(4), "turns": _chat_turns.duplicate(true), "user_text": user_text,
+        "town": town, "memory": memory, "decision": str(decision.get("fact", "")), "say": str(decision.get("say", "")),
+        "land": land, "your_memories": your_memories,
+    }
+    var body: String = _chat_body_from(context, "")
     var error: int = _chat_http.request(url, ["Content-Type: application/json"], HTTPClient.METHOD_POST, body)
     if error != OK:
         return false
+    if land:
+        AppState.memory_strengthen_recalled(recalled.get("ids", []))
     _chat_turns.append({"who": "them", "text": user_text})
     _trim_chat_turns()
     AppState.memory_note_turn("them", user_text)
-    _chat_pending = {"kind": "chat", "url": url, "body": body, "retried": false}
+    _chat_pending = {"kind": "chat", "url": url, "body": body, "retried": false, "user_text": user_text, "honest": false, "context": context}
     return true
+
+
+# The chat request for a context kept in _chat_pending, so the honest retry is
+# the same request with one more line in the task.
+func _chat_body_from(context: Dictionary, extra_task: String) -> String:
+    return MindThinker.build_chat_request(
+        _chat_model_name(), context["about"], context["recent"], context["turns"], str(context["user_text"]), context["town"], context["memory"],
+        str(context["decision"]), str(context["say"]), bool(context["land"]), context["your_memories"], extra_task
+    )
 
 
 func _recent_journal_texts(limit: int) -> Array:
@@ -2787,37 +2890,20 @@ func _pick_bring_up(memory: Dictionary) -> String:
     return ""
 
 
-# The decision about a suggestion: a fact with the reason, and the one thing
-# the reply must say. Both models turned a soft "yes, next" into "maybe
-# tomorrow", so the answer is spelled out where the model reads it last.
+# The decision about a suggestion, worded in MindThinker.decision_lines. On a
+# visit (the desktop holds the buddy on its land) its life there waits until
+# it is home again, so a yes is for then.
 func _decision_for(target: Dictionary, considered: Dictionary) -> Dictionary:
-    var target_name: String = str(target.get("name", ""))
-    var is_npc: bool = str(target.get("kind", "")) == "npc"
-    var asked: String = ("They suggested you go and see %s." if is_npc else "They suggested you go to %s.") % target_name
-    var going: String = ("going to see %s" if is_npc else "going to %s") % target_name
-    var reason: String = str(considered.get("reason", ""))
-    match str(considered.get("answer", "")):
-        "yes":
-            return {
-                "fact": "%s You said yes, because %s." % [asked, reason],
-                "say": "Tell them yes: you are %s in a few minutes, not later." % going,
-            }
-        "later":
-            return {
-                "fact": "%s You said not yet, because %s." % [asked, reason],
-                "say": "Tell them not yet, and why.",
-            }
-        "no":
-            return {
-                "fact": "%s You said no, because %s." % [asked, reason],
-                "say": "Tell them no, kindly, and why.",
-            }
-    return {}
+    var visiting: bool = AppState.small_beginnings() and AppState.role() == "desktop"
+    return MindThinker.decision_lines(target, considered, visiting)
 
 
 # Opening the chat after a while: the buddy says hello first and shares one
 # thing from its day. Code picks the news and the memory; the model words them.
 func _maybe_greet() -> void:
+    # At home it is the host's buddy: no hello from here.
+    if _is_away():
+        return
     _end_stale_conversation()
     if not _chat_turns.is_empty() or not _chat_pending.is_empty():
         return
@@ -2835,11 +2921,17 @@ func _maybe_greet() -> void:
         return
     _ensure_chat_http()
     var town := {"places": _town_place_names(), "people": _town_people()}
+    var land: bool = AppState.small_beginnings()
+    var your_memories: Array = []
+    if land:
+        var recalled: Dictionary = AppState.memory_recall_land(str(news.get("text", "")))
+        your_memories = recalled.get("lines", [])
     var body: String = MindThinker.build_greeting_request(
-        _chat_model_name(), _chat_about(), _recent_journal_texts(4), town, memory, str(news.get("text", ""))
+        _chat_model_name(), _chat_about(), _recent_journal_texts(4), town, memory, str(news.get("text", "")),
+        land, your_memories
     )
     if _chat_http.request(url, ["Content-Type: application/json"], HTTPClient.METHOD_POST, body) == OK:
-        _chat_pending = {"kind": "greeting", "news_t": int(news.get("t", 0))}
+        _chat_pending = {"kind": "greeting", "news_t": int(news.get("t", 0)), "land": land}
 
 
 # Called after every line added to the talk, so it also notes when the talk
@@ -2897,6 +2989,11 @@ func _retry_chat_request() -> void:
 
 
 func _on_chat_http_completed(result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
+    # The buddy went home while the model was thinking: the answer is not ours
+    # to say, and the buddy it would change is the host's now.
+    if _is_away():
+        _chat_pending = {}
+        return
     var pending := _chat_pending
     _chat_pending = {}
     var kind := str(pending.get("kind", ""))
@@ -2924,6 +3021,24 @@ func _on_chat_http_completed(result: int, response_code: int, _headers: PackedSt
         var reply: Dictionary = MindThinker.parse_chat_reply(body.get_string_from_utf8())
         if bool(reply.get("ok", false)):
             var reply_text: String = str(reply.get("reply", ""))
+            if bool(pending.get("context", {}).get("land", false)):
+                # On the land what it says is checked against its memory. A
+                # reply that names what it has not met is asked for once more,
+                # told so; if that fails too, it says what it honestly can.
+                var user_text: String = str(pending.get("user_text", ""))
+                var known: Dictionary = AppState.memory_known_words()
+                var checked: Dictionary = MindThinker.check_reply(reply_text, user_text, known)
+                if not bool(checked.get("ok", false)):
+                    if not bool(pending.get("honest", false)):
+                        var note: String = MindThinker.honest_retry_note(checked.get("unknown", []), bool(checked.get("premise", false)), checked.get("held", []))
+                        var retry_context: Dictionary = pending["context"]
+                        _chat_pending = {
+                            "kind": "chat", "url": str(pending.get("url", "")), "body": _chat_body_from(retry_context, note),
+                            "retried": false, "user_text": user_text, "honest": true, "context": retry_context,
+                        }
+                        _retry_chat_request.call_deferred()
+                        return
+                    reply_text = MindThinker.fallback_line(user_text, checked.get("unknown", []), known)
             _chat_turns.append({"who": "you", "text": reply_text})
             _trim_chat_turns()
             AppState.memory_note_turn("you", reply_text)
@@ -2936,6 +3051,9 @@ func _on_chat_http_completed(result: int, response_code: int, _headers: PackedSt
         var greeting: Dictionary = MindThinker.parse_chat_reply(body.get_string_from_utf8())
         if bool(greeting.get("ok", false)):
             var hello: String = str(greeting.get("reply", ""))
+            # On the land a hello that names what it has not met is not said.
+            if bool(pending.get("land", false)) and not bool(MindThinker.check_reply(hello, "", AppState.memory_known_words()).get("ok", false)):
+                return
             _chat_turns.append({"who": "you", "text": hello})
             _trim_chat_turns()
             AppState.memory_note_turn("you", hello)
@@ -3047,7 +3165,9 @@ func _after_memory_forgotten() -> void:
 
 func _toggle_memory_setting() -> void:
     _toggle_bool_setting("memoryEnabled")
-    if not AppState.memory_enabled():
+    # At home the buddy's memories are the host's to change: the talk in progress
+    # is dropped when it next arrives instead (see _on_visit_arrived).
+    if not AppState.memory_enabled() and not _is_away():
         # Off means nothing new is kept, including the talk in progress.
         AppState.memory_discard_turns(int(AppState.memory_pending_turns().get("upto", 0)))
     _refresh_memory_window()
@@ -3170,12 +3290,20 @@ func _refresh_memory_window() -> void:
         forget.text = "Forget"
         forget.tooltip_text = "Forget this for good."
         forget.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+        # At home its memories are the host's: a forget here would not be saved.
+        if _is_away():
+            forget.disabled = true
+            forget.tooltip_text = "%s is at home. Forget it when it visits." % _away_name()
         if str(row.get("kind", "")) == "pending":
             forget.pressed.connect(func() -> void:
+                if _is_away():
+                    return
                 _after_memory_forgotten()
             )
         else:
             forget.pressed.connect(func() -> void:
+                if _is_away():
+                    return
                 if AppState.memory_forget(memory_id):
                     _after_memory_forgotten()
             )
@@ -3184,10 +3312,16 @@ func _refresh_memory_window() -> void:
     _memory_btn_toggle.text = "Remembering: %s" % ("on" if enabled else "off")
     var armed := int(Time.get_unix_time_from_system()) <= _memory_forget_all_armed_until
     _memory_btn_forget_all.text = "Click again to forget all" if armed else "Forget everything"
-    _memory_btn_forget_all.disabled = rows.is_empty()
+    _memory_btn_forget_all.disabled = rows.is_empty() or _is_away()
+    _memory_btn_forget_all.tooltip_text = (
+        "%s is at home. Forget it when it visits." % _away_name() if _is_away()
+        else "Forget everything it knows about you. Click twice."
+    )
 
 
 func _on_forget_all_pressed() -> void:
+    if _is_away():
+        return
     var now_unix := int(Time.get_unix_time_from_system())
     if now_unix <= _memory_forget_all_armed_until:
         _memory_forget_all_armed_until = 0
@@ -3196,6 +3330,244 @@ func _on_forget_all_pressed() -> void:
         return
     _memory_forget_all_armed_until = now_unix + 5
     _refresh_memory_window()
+
+
+# --- Letters window (Plan 14 step 2c-1) ----------------------------------------
+# Write to the buddy at the glowing box in its house, and read what it writes
+# back. Land world only. The writing box is built once and never rebuilt, so a
+# refresh cannot lose what is being typed; the list is rebuilt only when it changes.
+func _toggle_letters_window() -> void:
+    _ensure_letters_window()
+    var opening := not _letters_window.visible
+    if opening:
+        _letters_signature = ""
+        _refresh_letters_window()
+    _layout_popup_window(_letters_window, opening, MAPLE_LAYOUT_LETTERS)
+
+
+func _ensure_letters_window() -> void:
+    if _letters_window != null:
+        return
+    var window := Window.new()
+    window.name = "LettersWindow"
+    window.title = "Letters"
+    window.visible = false
+    window.always_on_top = true
+    window.wrap_controls = true
+    add_child(window)
+    _letters_window = window
+    window.close_requested.connect(func() -> void:
+        window.hide()
+    )
+    _ensure_maple_window_background(window)
+
+    var margin := MarginContainer.new()
+    margin.name = "MarginContainer"
+    margin.anchor_right = 1.0
+    margin.anchor_bottom = 1.0
+    window.add_child(margin)
+    var root := VBoxContainer.new()
+    root.add_theme_constant_override("separation", 8)
+    margin.add_child(root)
+
+    _letters_note = Label.new()
+    _letters_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    _letters_note.custom_minimum_size = Vector2(300, 0)
+    _letters_note.add_theme_color_override("font_color", MapleTheme.TEXT_DIM)
+    root.add_child(_letters_note)
+
+    var scroll := ScrollContainer.new()
+    scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+    root.add_child(scroll)
+    _letters_rows = VBoxContainer.new()
+    _letters_rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    _letters_rows.add_theme_constant_override("separation", 6)
+    scroll.add_child(_letters_rows)
+
+    _letters_input = TextEdit.new()
+    _letters_input.custom_minimum_size = Vector2(300, 90)
+    _letters_input.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
+    _letters_input.placeholder_text = "Write a letter. Ctrl+Enter sends it."
+    _letters_input.text_changed.connect(_on_letters_input_changed)
+    _letters_input.gui_input.connect(_on_letters_input_gui)
+    root.add_child(_letters_input)
+
+    var send_row := HBoxContainer.new()
+    send_row.add_theme_constant_override("separation", 8)
+    root.add_child(send_row)
+    _letters_counter = Label.new()
+    _letters_counter.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    _letters_counter.add_theme_color_override("font_color", MapleTheme.TEXT_DIM)
+    send_row.add_child(_letters_counter)
+    _letters_send_btn = Button.new()
+    _letters_send_btn.text = "Send"
+    _letters_send_btn.tooltip_text = "Leave the letter at the glowing box. Your buddy reads it the next time it goes there."
+    _letters_send_btn.pressed.connect(_on_letters_send_pressed)
+    send_row.add_child(_letters_send_btn)
+
+    _letters_error = Label.new()
+    _letters_error.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    _letters_error.custom_minimum_size = Vector2(300, 0)
+    _letters_error.add_theme_color_override("font_color", Color(0.95, 0.55, 0.45))
+    _letters_error.visible = false
+    root.add_child(_letters_error)
+    _on_letters_input_changed()
+
+
+func _on_letters_input_changed() -> void:
+    if _letters_input == null:
+        return
+    var length: int = _letters_input.text.length()
+    var limit: int = LetterService.MAX_LETTER_CHARS
+    _letters_counter.text = "%d / %d" % [length, limit]
+    _letters_send_btn.disabled = _letters_input.text.strip_edges() == "" or length > limit
+
+
+func _on_letters_input_gui(event: InputEvent) -> void:
+    var key_event := event as InputEventKey
+    if key_event != null and key_event.pressed and key_event.ctrl_pressed and (key_event.keycode == KEY_ENTER or key_event.keycode == KEY_KP_ENTER):
+        _letters_input.accept_event()
+        if not _letters_send_btn.disabled:
+            _on_letters_send_pressed()
+
+
+func _on_letters_send_pressed() -> void:
+    _send_letter(_letters_input.text, "")
+
+
+# A refusal shows under the writing box; a letter that was sent clears it.
+func _send_letter(text: String, resend_of: String) -> void:
+    var result: Dictionary = AppState.letters_send(text, resend_of)
+    if bool(result.get("ok", false)):
+        if resend_of == "":
+            _letters_input.text = ""
+            _on_letters_input_changed()
+        _letters_error.visible = false
+        _letters_signature = ""
+        _refresh_letters_window()
+        return
+    _letters_error.text = _letters_refusal_text(str(result.get("reason", "")))
+    _letters_error.visible = true
+
+
+func _letters_refusal_text(reason: String) -> String:
+    if reason == "empty":
+        return "Write something first."
+    if reason == "too_long":
+        return "That is too long for one letter. The most is %d characters." % LetterService.MAX_LETTER_CHARS
+    if reason == "sensitive":
+        return "That looks like a password or a key. Letters are kept in your buddy's save, so it was not sent."
+    if reason == "too_many_waiting":
+        return "%d letters are already waiting at the glowing box. Let your buddy read some first." % LetterService.MAX_WAITING
+    if reason == "no_host":
+        return "Your buddy's world is not running right now, so the letter was not sent. Try again in a moment."
+    if reason == "town":
+        return "Letters are only for the small-beginnings world."
+    return "The letter could not be sent."
+
+
+func _letters_when(unix_time: int) -> String:
+    var bias := int(Time.get_time_zone_from_system().get("bias", 0))
+    var stamp: Dictionary = Time.get_datetime_dict_from_unix_time(unix_time + bias * 60)
+    return "%02d/%02d %02d:%02d" % [int(stamp.get("day", 0)), int(stamp.get("month", 0)), int(stamp.get("hour", 0)), int(stamp.get("minute", 0))]
+
+
+# Every few seconds while the window is open, on the overlay's own timer.
+func _tick_letters_window() -> void:
+    if _letters_window == null or not _letters_window.visible:
+        return
+    var now := Time.get_unix_time_from_system()
+    if now < _letters_next_refresh:
+        return
+    _letters_next_refresh = now + LETTERS_REFRESH_SECONDS
+    _refresh_letters_window()
+
+
+func _refresh_letters_window() -> void:
+    if _letters_window == null or _letters_rows == null:
+        return
+    var items: Array = AppState.letters_items()
+    # Rows are rebuilt only when something in them changed, so the scroll stays put.
+    var rows: Array = []
+    for item_variant in items:
+        var item: Dictionary = item_variant
+        var state := ""
+        if str(item.get("from", "")) == "you":
+            state = AppState.letters_delivery_state(str(item.get("id", "")), int(item.get("t", 0)))
+        var answer: Dictionary = LetterService.answered_by(AppState.profile, str(item.get("id", ""))) if state == "read" else {}
+        rows.append([str(item.get("id", "")), state, int(item.get("read_t", 0)), _away_name(), int(answer.get("t", 0))])
+    var console_known := AppState.letters_console_known()
+    var model_off: bool = not bool(AppState.settings.get("mindModelEnabled", true))
+    var signature := str([rows, console_known, model_off])
+    # The person has seen what is here.
+    AppState.letters_mark_seen()
+    if signature == _letters_signature:
+        return
+    _letters_signature = signature
+    var note_lines: Array = []
+    if not console_known:
+        note_lines.append("Your buddy has not worked out the glowing box yet. Letters wait there until it does.")
+    if model_off:
+        note_lines.append("Your buddy writes back with its thinking model, which is off in Settings.")
+    _letters_note.text = "
+".join(note_lines)
+    _letters_note.visible = not note_lines.is_empty()
+    for child in _letters_rows.get_children():
+        _letters_rows.remove_child(child)
+        child.queue_free()
+    if items.is_empty():
+        var empty := Label.new()
+        empty.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+        empty.custom_minimum_size = Vector2(300, 0)
+        empty.text = "No letters yet. Write one below."
+        _letters_rows.add_child(empty)
+    for index in range(items.size()):
+        var letter: Dictionary = items[index]
+        var from_you: bool = str(letter.get("from", "")) == "you"
+        var header := Label.new()
+        header.add_theme_color_override("font_color", MapleTheme.TEXT_DIM)
+        header.add_theme_font_size_override("font_size", 12)
+        header.text = "%s · %s" % ["You" if from_you else _away_name(), _letters_when(int(letter.get("t", 0)))]
+        _letters_rows.add_child(header)
+        var body := Label.new()
+        body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+        body.custom_minimum_size = Vector2(300, 0)
+        body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+        body.text = str(letter.get("text", ""))
+        _letters_rows.add_child(body)
+        if from_you:
+            var row: Array = rows[index]
+            var status := Label.new()
+            status.add_theme_color_override("font_color", MapleTheme.TEXT_DIM)
+            status.add_theme_font_size_override("font_size", 12)
+            var state_now: String = str(row[1])
+            if state_now == "read":
+                var answered_t: int = int(row[4])
+                if answered_t > 0:
+                    status.text = "Answered %s" % _letters_when(answered_t)
+                else:
+                    status.text = "Read %s" % _letters_when(int(letter.get("read_t", 0)))
+            elif state_now == "waiting":
+                status.text = "Waiting at the glowing box"
+            elif state_now == "on_its_way":
+                status.text = "On its way"
+            else:
+                status.text = "Not delivered"
+            _letters_rows.add_child(status)
+            if state_now == "lost":
+                var again := Button.new()
+                again.text = "Send again"
+                again.tooltip_text = "Send the same letter as a new one."
+                again.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+                var again_text := str(letter.get("text", ""))
+                var again_id := str(letter.get("id", ""))
+                again.pressed.connect(func() -> void:
+                    _send_letter(again_text, again_id)
+                )
+                _letters_rows.add_child(again)
+        if index < items.size() - 1:
+            _letters_rows.add_child(HSeparator.new())
 
 
 # --- Town window (Plan 13 A2) -------------------------------------------------
@@ -3776,6 +4148,7 @@ func _pack_scale_for_slot(slot_index: int) -> float:
 
 func _on_telemetry_timer_timeout() -> void:
     _refresh_telemetry()
+    _tick_letters_window()
 
 
 func _refresh_telemetry() -> void:
@@ -3876,6 +4249,8 @@ func _refresh_telemetry() -> void:
 func _toggle_settings_menu() -> void:
     _settings_menu_open = not _settings_menu_open
     if _settings_menu_open:
+        _note_visit_interaction()
+    if _settings_menu_open:
         _set_settings_menu_mode(false)
     _layout_settings_window()
     _refresh_settings_menu()
@@ -3889,6 +4264,8 @@ func _toggle_stats_menu() -> void:
 
 
 func _toggle_inventory_menu() -> void:
+    if _is_away():
+        return
     if _menu_rebuild_enabled:
         _toggle_rebuild_menu("inventory")
         return
@@ -3899,6 +4276,8 @@ func _toggle_inventory_menu() -> void:
 
 
 func _toggle_wardrobe_menu() -> void:
+    if _is_away():
+        return
     if _menu_rebuild_enabled:
         _toggle_rebuild_menu("wardrobe")
         return
@@ -4320,11 +4699,17 @@ func _refresh_settings_menu() -> void:
         _main_menu_status.text = status_text
     if _main_menu_btn_chat != null:
         _main_menu_btn_chat.text = "Chat (%d new)" % _chat_unread_prompt_count if _chat_unread_prompt_count > 0 else "Chat"
+    if _main_menu_btn_letters != null:
+        var new_letters := AppState.letters_new_from_buddy()
+        _main_menu_btn_letters.text = "Letters (%d new)" % new_letters if new_letters > 0 else "Letters"
     if _main_menu_btn_stats != null:
         var spare_points := int(snapshot.get("stat_points_unspent", 0))
         _main_menu_btn_stats.text = "Stats (%d points to spend)" % spare_points if spare_points > 0 else "Stats"
     if _settings_btn_autonomy != null:
         _settings_btn_autonomy.text = "Acts on its own: %s" % ("on" if bool(AppState.settings.get("autonomyEnabled", true)) else "off")
+    if _settings_btn_world_host != null:
+        _settings_btn_world_host.text = "World host: %s" % ("on" if bool(AppState.settings.get("worldHost", true)) else "off")
+    _refresh_visit_menu()
     if _settings_btn_model != null:
         _settings_btn_model.text = "Thinking model: %s" % ("on" if bool(AppState.settings.get("mindModelEnabled", true)) else "off")
     if _settings_btn_chat_model != null:
@@ -4471,6 +4856,11 @@ func _send_chat_input() -> void:
     chat_input.text = ""
     _chat_turn_user_count += 1
     _append_chat_line("You", raw, "#9FD9FF")
+    _note_visit_interaction()
+    if _is_away():
+        # At home it is the host's buddy: nothing here may reach the model or the memory.
+        _append_chat_line(_away_name(), "%s is at home. Use Call over to bring it here." % _away_name(), "#F4E9CF")
+        return
     AppState.record_interaction("chat_reply")
     _productivity.note_user_activity(int(Time.get_unix_time_from_system()))
 
@@ -5295,8 +5685,10 @@ func _update_stat_button_text(btn: Button, short_name: String, value: int, unspe
         return
     var full_names := {"STR": "Strength", "DEX": "Dexterity", "CHA": "Charisma", "END": "Endurance", "WIS": "Wisdom", "KNO": "Knowledge"}
     btn.text = "%s  %d%s" % [str(full_names.get(short_name, short_name)), value, "   +" if unspent > 0 else ""]
-    btn.disabled = unspent <= 0
-    if unspent <= 0:
+    btn.disabled = unspent <= 0 or _is_away()
+    if _is_away():
+        btn.tooltip_text = "%s is at home." % _away_name()
+    elif unspent <= 0:
         btn.tooltip_text = "No unspent stat points. Level up to earn more."
     else:
         btn.tooltip_text = "Spend 1 point on %s." % short_name
@@ -6639,7 +7031,200 @@ func _restart_runtime_deferred() -> void:
     get_tree().reload_current_scene()
 
 
+# --- World host: the buddy visiting (Plan 14 step 2a) -----------------------
+
+func _is_away() -> bool:
+    return _visit != null and not _visit.is_visiting()
+
+
+func _away_name() -> String:
+    var buddy_name: String = _buddy_name()
+    return buddy_name if buddy_name != "" else "Your buddy"
+
+
+func _note_visit_interaction() -> void:
+    if _visit != null:
+        _visit.note_interaction()
+
+
+func _start_visit_controller() -> void:
+    # A test, a check or a tool that reads the buddy while a host runs is not the
+    # app: it never calls the buddy over or starts a host.
+    if AppState.role() != "desktop" or not AppState.is_real_launch():
+        return
+    _visit = VisitController.new()
+    _visit.arrived.connect(_on_visit_arrived)
+    _visit.left.connect(_on_visit_left)
+    _visit.answer.connect(_on_visit_answer)
+    _visit.health.connect(_on_visit_health)
+    add_child(_visit)
+    _visit.start()
+    _refresh_settings_menu()
+
+
+func _call_or_send_home() -> void:
+    if _visit == null:
+        return
+    if _visit.is_visiting():
+        _visit.send_home()
+    else:
+        _visit.call_over()
+    _note_visit_interaction()
+    _refresh_settings_menu()
+
+
+func _on_visit_arrived(reason: String) -> void:
+    _visit_answer = {}
+    # The item catalogue is rebuilt from the content pack and is not in the save.
+    AppState.apply_loaded_pack(_active_pack_id, _active_manifest)
+    _refresh_equipped_visual_state()
+    var lines := {
+        "opened": "I saw your light on, so I came over.",
+        "called": "You called? Here I am.",
+        "lonely": "It was too quiet at home. Can I stay a while?",
+        "pending": "I finished what I was doing. Here I am.",
+    }
+    _update_balloon_position()
+    _buddy_say(str(lines.get(reason, lines["called"])))
+    if _buddy_name() == "":
+        # Names are otherwise only chosen from mind events, and a visit has none.
+        _maybe_choose_name()
+    if not AppState.memory_enabled():
+        # Remembering was turned off while it was at home: the talk in progress goes now.
+        AppState.memory_discard_turns(int(AppState.memory_pending_turns().get("upto", 0)))
+    _refresh_memory_window()
+    _refresh_settings_menu()
+    queue_redraw()
+
+
+# A visit that ends takes its model work with it: a reply, greeting, name or
+# memory request still out is cancelled, so its answer is not said on a
+# desktop the buddy has left, or written into a buddy this app no longer holds.
+func _drop_model_work() -> void:
+    if _chat_http != null and not _chat_pending.is_empty():
+        _chat_http.cancel_request()
+    _chat_pending = {}
+
+
+func _on_visit_left(reason: String) -> void:
+    _drop_model_work()
+    var lines := {
+        "bedtime": "I'm getting sleepy. I'm going home to bed. Goodnight!",
+        "quiet": "It's gone quiet, so I'll go home and see to my things. Call me over if you want me.",
+        "sent": "Off home, then. See you soon.",
+    }
+    if lines.has(reason):
+        _buddy_say(str(lines[reason]))
+    _visit_answer = {}
+    _refresh_memory_window()
+    _refresh_settings_menu()
+    queue_redraw()
+
+
+func _on_visit_answer(come: String, at: int, why: String) -> void:
+    _visit_answer = {"come": come, "at": at, "why": why}
+    queue_redraw()
+
+
+func _on_visit_health(state: String) -> void:
+    _visit_health = state
+    _refresh_settings_menu()
+
+
+func _away_answer_line() -> String:
+    if _visit_answer.is_empty():
+        return ""
+    var buddy_name := _away_name()
+    var come := str(_visit_answer.get("come", ""))
+    var at := int(_visit_answer.get("at", 0))
+    if come == "later":
+        # Activity labels are past tense ("had a nap"), so they are not used here.
+        var minutes := maxi(1, int(ceil(float(at - int(Time.get_unix_time_from_system())) / 60.0)))
+        return "%s is in the middle of something. It will come in about %d minutes." % [buddy_name, minutes]
+    if come == "asleep":
+        var bias_minutes := int(Time.get_time_zone_from_system().get("bias", 0))
+        var local := Time.get_datetime_dict_from_unix_time(at + bias_minutes * 60)
+        return "%s is asleep. It will come when it wakes, at about %02d:%02d." % [buddy_name, int(local.get("hour", 0)), int(local.get("minute", 0))]
+    if come == "now":
+        return "%s is on the way." % buddy_name
+    return ""
+
+
+func _draw_away_panel() -> void:
+    var font: Font = ThemeDB.fallback_font
+    var font_size := 14
+    var width := 260.0
+    var pad := 10.0
+    var lines: Array = ["%s is at home." % _away_name()]
+    var journal: Array = AppState.get_mind_journal(1)
+    if not journal.is_empty() and typeof(journal[journal.size() - 1]) == TYPE_DICTIONARY:
+        var latest := str((journal[journal.size() - 1] as Dictionary).get("text", ""))
+        if latest != "":
+            lines.append(latest)
+    var answer_line := _away_answer_line()
+    var heights: Array = []
+    var total := pad
+    for line_variant in lines:
+        var size := font.get_multiline_string_size(str(line_variant), HORIZONTAL_ALIGNMENT_LEFT, width, font_size)
+        heights.append(size.y)
+        total += size.y + 6.0
+    var answer_height := 0.0
+    if answer_line != "":
+        answer_height = font.get_multiline_string_size(answer_line, HORIZONTAL_ALIGNMENT_LEFT, width, font_size).y
+        total += answer_height + 6.0
+    var button_height := 28.0
+    total += button_height + pad
+    var anchor := _floor_point()
+    var panel := Rect2(Vector2(anchor.x - (width + pad * 2.0) * 0.5, anchor.y - total), Vector2(width + pad * 2.0, total))
+    _away_panel_rect = panel
+    draw_rect(panel, Color(0.07, 0.09, 0.15, 0.88))
+    draw_rect(panel, Color(0.85, 0.75, 0.45, 0.9), false, 1.5)
+    var y := panel.position.y + pad
+    var x := panel.position.x + pad
+    for index in range(lines.size()):
+        var colour := Color(0.96, 0.91, 0.81) if index == 0 else Color(0.78, 0.82, 0.9)
+        draw_multiline_string(font, Vector2(x, y + font_size), str(lines[index]), HORIZONTAL_ALIGNMENT_LEFT, width, font_size, -1, colour)
+        y += float(heights[index]) + 6.0
+    if answer_line != "":
+        draw_multiline_string(font, Vector2(x, y + font_size), answer_line, HORIZONTAL_ALIGNMENT_LEFT, width, font_size, -1, Color(1.0, 0.84, 0.48))
+        y += answer_height + 6.0
+    _away_button_rect = Rect2(Vector2(x, y), Vector2(width, button_height))
+    draw_rect(_away_button_rect, Color(0.22, 0.3, 0.45))
+    draw_rect(_away_button_rect, Color(0.85, 0.75, 0.45, 0.9), false, 1.0)
+    draw_string(font, Vector2(x, y + 19.0), "Call over", HORIZONTAL_ALIGNMENT_CENTER, width, font_size, Color(0.96, 0.91, 0.81))
+
+
+# Keeps the main menu in step with where the buddy is.
+func _refresh_visit_menu() -> void:
+    if _visit == null and _main_menu_health == null:
+        return
+    var away := _is_away()
+    if _main_menu_health != null:
+        var health_text := {
+            "running": "Its world is running.",
+            "starting": "Starting its world\u2026",
+            "not_running": "Its world isn't running, so it's staying with you for now.",
+        }
+        _main_menu_health.text = str(health_text.get(_visit_health, ""))
+    if _main_menu_btn_call != null:
+        _main_menu_btn_call.text = "Call over" if away else "Send home"
+        _main_menu_btn_call.tooltip_text = "Ask your buddy to come and visit." if away else "Send your buddy home."
+    var tooltip := "%s is at home." % _away_name()
+    for entry in [
+        [_main_menu_btn_inventory, "Items your buddy has collected."],
+        [_main_menu_btn_wardrobe, "Change what your buddy wears."],
+        [_main_menu_btn_pause, "Put your buddy to sleep, or wake it up."],
+    ]:
+        var button := entry[0] as Button
+        if button != null:
+            button.disabled = away
+            button.tooltip_text = tooltip if away else str(entry[1])
+
+
 func _quit_runtime() -> void:
+    if _visit != null:
+        # The buddy goes home before the app closes, so the host can have it back.
+        _visit.close_app()
     AppState.flush()
     get_tree().quit()
 

@@ -137,6 +137,13 @@ func _test_forgetting_stops_use() -> Variant:
 		return "still remembered: %s" % str(got)
 	if _svc.forget(p, 99999)["ok"]:
 		return "forget of unknown id was ok"
+	# With a time, forgetting records when (letters from before then teach nothing).
+	if MemoryService.forgot_at(res["profile"]) != 0:
+		return "forgetting without a time records none"
+	if MemoryService.forgot_at(_svc.forget(p, edge_id, T0 + DAY)["profile"]) != T0 + DAY:
+		return "forgetting a memory records when"
+	if MemoryService.forgot_at(_svc.forget(p, 99999, T0 + DAY)["profile"]) != 0:
+		return "forgetting nothing records nothing"
 	var twice := _consolidate(_tea_profile(), [_fact("them", "likes", "strawberry tea")], "We had strawberry tea again.", T0 + DAY)
 	var tea_id: int = int(_edges(twice)[0]["id"])
 	var gone: Dictionary = _svc.forget(twice, tea_id)["profile"]
@@ -160,6 +167,8 @@ func _test_forgetting_stops_use() -> Variant:
 		return "edges after forget_all: %s" % str(edges)
 	if wiped["memory"]["episodes"].size() != 0 or wiped["memory"]["turns"].size() != 0:
 		return "episodes or turns remain"
+	if MemoryService.forgot_at(_svc.forget_all(q, T0 + 2 * DAY)) != T0 + 2 * DAY:
+		return "forgetting everything records when"
 	return null
 
 
