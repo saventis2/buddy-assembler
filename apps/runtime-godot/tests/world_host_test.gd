@@ -619,6 +619,16 @@ func _test_bedtime_call_waits_for_morning() -> Variant:
 		return "called at 03:00 it should come at 07:00 the same morning: %s" % [early]
 	if str(svc.consider_call(_profile(), _land(), _midnight() + 10 * 3600).get("come", "")) != "now":
 		return "a free buddy called at 10:00 did not come now"
+	# In a zone half or three quarters of an hour off UTC it still comes at
+	# 07:00 on the local clock, not 07:30 or 07:45 (Codex review of #110).
+	for bias_minutes in [330, 345, -210]:
+		var zoned := MindService.new()
+		zoned.set_time_zone_bias_minutes(bias_minutes)
+		var local_midnight: int = _midnight() - bias_minutes * 60
+		var zoned_night: Dictionary = zoned.consider_call(_profile(), _land(), local_midnight + 22 * 3600)
+		var zoned_morning: int = local_midnight + (24 + MindService.VISIT_MORNING_HOUR) * 3600
+		if str(zoned_night.get("come", "")) != "asleep" or int(zoned_night.get("at", 0)) != zoned_morning:
+			return "with a bias of %d minutes, called at 22:00 local it answered %s, not asleep until 07:00 local (%d)" % [bias_minutes, zoned_night, zoned_morning]
 	return null
 
 

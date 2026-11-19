@@ -2075,11 +2075,15 @@ func consider_call(profile: Dictionary, land: Dictionary, now: int) -> Dictionar
 
 
 # The next time after now that the local clock shows this hour, on the hour.
+# The hour boundary is the local one: in a zone half an hour off UTC
+# (UTC+05:30) a UTC boundary would be 07:30 on the local clock.
 func _next_local_hour(now: int, hour: int) -> int:
-	var t := now - (now % 3600) + 3600
+	var bias: int = _time_zone_bias_minutes() * 60
+	var local_now: int = now + bias
+	var t: int = local_now - posmod(local_now, 3600) + 3600
 	for _hour_step in range(25):
-		if _local_hour(t) == hour:
-			return t
+		if int(Time.get_datetime_dict_from_unix_time(t).get("hour", -1)) == hour:
+			return t - bias
 		t += 3600
 	return now + 3600
 
