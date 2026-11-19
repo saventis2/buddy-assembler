@@ -16,6 +16,17 @@ extends RefCounted
 #       "found":   what arriving for the first time reads like.
 #       "wonder":  what it thinks while it has the sign but not the place.
 #   "sights": things it notices here, once each. "hours" limits when.
+# Thing: a creature (or the moon) it meets again where it lives. The first
+# meeting is the sight, and the rest follow Plan 14 section 2 (unseen, noticed, named).
+#   "real_names": its real names, lowercase. Never used in any line.
+#   "sight":      the sight that is the first meeting (at one of its places).
+#   "places", "hours": where and when it can be met again ("hours" like a sight's).
+#   "describe":   how it speaks of it before it has a name.
+#   "parts":      [firsts, seconds]; its own name is "the " + a first + " " + a second,
+#                 picked by its own seed.
+#   "again":      meetings before it has a name; may use {describe} / {Describe}.
+#   "naming":     the meeting that names it; uses {describe} and {name}.
+#   "named":      meetings after; use {name} / {Name} ("the stick bird" / "The stick bird").
 # Activity:
 #   "minutes": how long it takes (default 20).
 #   "until_hour": it lasts until that hour next comes round (sleeping until morning).
@@ -61,6 +72,250 @@ const LAND := {
 			"I lost interest halfway.",
 		],
 	},
+	# Things it meets again and again, and what it comes to call them. The first
+	# meeting is the sight; see "Thing" in the header.
+	"things": [
+		{
+			"id": "heron", "real_names": ["heron", "herons"], "sight": "stick_bird", "places": ["water", "tall_reeds"], "hours": [5, 21],
+			"describe": "the tall grey bird at the water",
+			"parts": [["stick", "still", "grey"], ["bird", "stander", "wader"]],
+			"again": [
+				"{Describe} was back, standing on one leg in the shallows as if the other was for later.",
+				"{Describe} was there again, so still that I counted to a hundred and it hadn't moved.",
+				"I saw {describe} again. It saw me too, and took one slow step away, to show it could.",
+			],
+			"naming": ["I have started calling {describe} {name}. It didn't say no."],
+			"named": [
+				"{Name} was at the water again, pretending to be a stick.",
+				"{Name} caught something silver and swallowed it whole. I didn't know it could do that.",
+				"I watched {name} for a while. It watched the water. Neither of us won.",
+			],
+		},
+		{
+			"id": "wren", "real_names": ["wren", "wrens"], "sight": "roof_shouter", "places": ["yard", "gate"], "hours": [5, 20],
+			"describe": "the small brown bird that shouts at me",
+			"parts": [["roof", "loud", "little"], ["bird", "shouter", "singer"]],
+			"again": [
+				"{Describe} was on the roof again, shouting about something. Probably me.",
+				"{Describe} followed me along the fence, shouting the whole way.",
+				"I heard {describe} before I saw it. It is very loud for something so small.",
+			],
+			"naming": ["I have started calling {describe} {name}. It shouted at that too."],
+			"named": [
+				"{Name} was on the gate, telling everyone about me.",
+				"{Name} sang something long and complicated from the roof. I clapped. It flew off.",
+				"I saw {name} go into the wall with something in its beak. I think it lives in there.",
+			],
+		},
+		{
+			"id": "spider", "real_names": ["spider", "spiders"], "sight": "corner_spinner", "places": ["home"],
+			"describe": "the thing with too many legs in the corner",
+			"parts": [["corner", "leggy", "ceiling"], ["watcher", "spinner", "sitter"]],
+			"again": [
+				"{Describe} was still there. I think we have an understanding.",
+				"{Describe} had made something new since I last looked. I walked round it.",
+				"I looked up and {describe} was looking down. We both pretended we hadn't.",
+			],
+			"naming": ["I have started calling {describe} {name}. It didn't object."],
+			"named": [
+				"{Name} was in the corner again, doing nothing with great patience.",
+				"{Name} moved when I walked past, only a little, to let me know.",
+				"I said hello to {name}. It is a good listener.",
+			],
+		},
+		{
+			"id": "ant", "real_names": ["ant", "ants"], "sight": "carrying_line", "places": ["yard", "patch"], "hours": [7, 20],
+			"describe": "the tiny black things that carry bits about",
+			"parts": [["busy", "carrying", "tiny"], ["line", "crowd", "ones"]],
+			"again": [
+				"{Describe} crossed in front of me, all going the same way. I let them.",
+				"I followed {describe} for a while and lost them at a crack.",
+				"{Describe} had made a new path. I stepped over it carefully, like a guest.",
+			],
+			"naming": ["I have started calling {describe} {name}. They didn't mind."],
+			"named": [
+				"{Name} crossed the ground again with more bits than I thought possible.",
+				"I stepped round {name} so as not to spoil anything.",
+				"{Name} went past with a crumb bigger than the one carrying it. I wanted to help.",
+			],
+		},
+		{
+			"id": "moth", "real_names": ["moth", "moths"], "sight": "window_bumper", "places": ["home", "yard"], "hours": [20, 4],
+			"describe": "the soft grey thing that bumps the window at night",
+			"parts": [["window", "soft", "night"], ["bumper", "knocker", "flutterer"]],
+			"again": [
+				"{Describe} was back at the glass, hoping it had changed its mind.",
+				"{Describe} found the window again, and still wants in.",
+				"I saw {describe} again, going round and round in the dark.",
+			],
+			"naming": ["I call {describe} {name} now. It doesn't mind."],
+			"named": [
+				"{Name} bumped the window, politely, and then again.",
+				"{Name} landed on my hand for a moment. It was so light I wasn't sure it had.",
+				"I put my hand near {name} and it came to look. Then it went back to the window.",
+			],
+		},
+		{
+			"id": "bat", "real_names": ["bat", "bats"], "sight": "dusk_flitters", "places": ["yard", "high_ground"], "hours": [19, 22],
+			"describe": "the dark shapes that fly round the roof at dusk",
+			"parts": [["dusk", "dark", "quick"], ["flitters", "turners", "swoopers"]],
+			"again": [
+				"{Describe} were back, too fast to count. I counted anyway and got five.",
+				"I watched {describe} until it was too dark to tell them from the sky.",
+				"{Describe} turned all at once, as if they had all heard the same thing.",
+			],
+			"naming": ["I have started calling {describe} {name}. They didn't stop."],
+			"named": [
+				"{Name} turned over the roof again, so quick that I lost track.",
+				"I stood outside until the dark came, and {name} came with it.",
+				"{Name} went right past my head. I held very still, which did nothing.",
+			],
+		},
+		{
+			"id": "squirrel", "real_names": ["squirrel", "squirrels"], "sight": "smoke_tail", "places": ["big_tree", "dark_trees"], "hours": [7, 19],
+			"describe": "the grey thing with a tail like smoke",
+			"parts": [["smoke", "grey", "quick"], ["tail", "runner", "climber"]],
+			"again": [
+				"{Describe} was on a trunk again, upside down and not bothered about it.",
+				"{Describe} ran straight past me and stopped, as if it had forgotten why.",
+				"I saw {describe} again. It had something in its mouth and looked pleased.",
+			],
+			"naming": ["I have started calling {describe} {name}. It chattered at me."],
+			"named": [
+				"{Name} came down the trunk head first, which looks wrong every time.",
+				"{Name} buried something and then looked round to check I hadn't seen. I had.",
+				"{Name} ran up the trunk and along a branch that was too thin. It was fine.",
+			],
+		},
+		{
+			"id": "bee", "real_names": ["bee", "bees", "bumblebee", "bumblebees"], "sight": "furry_hummers", "places": ["patch", "long_grass"], "hours": [8, 19],
+			"describe": "the fat furry things in the flowers",
+			"parts": [["furry", "fat", "flower"], ["hummers", "buzzers", "bumblers"]],
+			"again": [
+				"{Describe} were in the flowers again, humming to themselves, not interested in me.",
+				"I watched {describe} for a while. They went from flower to flower as if checking.",
+				"{Describe} bumped into each other and into me. Nobody apologised.",
+			],
+			"naming": ["I have started calling {describe} {name}. They hummed back."],
+			"named": [
+				"{Name} went from flower to flower as if working down a list.",
+				"I sat very still and {name} stopped worrying about me.",
+				"{Name} came out of a flower covered in yellow dust and carried on as if nothing was strange.",
+			],
+		},
+		{
+			"id": "snail", "real_names": ["snail", "snails"], "sight": "house_carrier", "places": ["patch", "yard"],
+			"describe": "the soft thing that carries its house on its back",
+			"parts": [["house", "slow", "round"], ["carrier", "traveller", "creeper"]],
+			"again": [
+				"{Describe} was further along than last time. I didn't see it go.",
+				"{Describe} was on the same leaf, I think, going the same slow way.",
+				"I saw {describe} again. It pulled in when I looked.",
+			],
+			"naming": ["I call {describe} {name} now. It is in no hurry."],
+			"named": [
+				"{Name} was crossing the path, very slowly, with all its things.",
+				"I moved {name} off the path. It was back on the path before I had stood up.",
+				"{Name} left a shiny line behind it, like a note nobody asked for.",
+			],
+		},
+		{
+			"id": "hare", "real_names": ["hare", "hares", "rabbit", "rabbits"], "sight": "long_ears", "places": ["long_grass", "high_ground"], "hours": [5, 20],
+			"describe": "the brown thing with long ears",
+			"parts": [["long", "tall", "brown"], ["ears", "leaper", "runner"]],
+			"again": [
+				"{Describe} sat up and looked at me, then was gone before I had finished looking back.",
+				"{Describe} ran across in front of me, zig and then zag, like it had changed its mind.",
+				"I saw {describe} again. It did a high jump for no reason I could find.",
+			],
+			"naming": ["I have started calling {describe} {name}. It was gone before I could ask."],
+			"named": [
+				"{Name} sat up very straight and looked at me. Then there was only an empty place.",
+				"{Name} went past in two big jumps and a stop. I clapped, which was a mistake.",
+				"I stood still for a long time and {name} came quite close. I counted the whiskers.",
+			],
+		},
+		{
+			"id": "frog", "real_names": ["frog", "frogs", "toad", "toads"], "sight": "wet_sitter", "places": ["water", "grey_bank", "tall_reeds"], "hours": [6, 21],
+			"describe": "the green thing with long back legs",
+			"parts": [["wet", "green", "stone"], ["sitter", "hopper", "splasher"]],
+			"again": [
+				"{Describe} was sitting in the wet again, looking pleased with itself.",
+				"{Describe} jumped when I came near, and I jumped too. I think we both won.",
+				"I saw {describe} again, very still. It blinked once. That was the conversation.",
+			],
+			"naming": ["I have started calling {describe} {name}. It didn't jump away."],
+			"named": [
+				"{Name} was back on its stone, as if it had been keeping it warm.",
+				"{Name} made one huge jump and landed somewhere I couldn't see. Show-off.",
+				"I looked at {name} for a long time. It looked at nothing, very well.",
+			],
+		},
+		{
+			"id": "duck", "real_names": ["duck", "ducks", "duckling", "ducklings"], "sight": "seven_followers", "places": ["tall_reeds", "water"], "hours": [6, 20],
+			"describe": "the brown bird with the small ones behind her",
+			"parts": [["leading", "brown", "water"], ["bird", "swimmer", "paddler"]],
+			"again": [
+				"{Describe} went by again on the water, all in a line, like a small parade.",
+				"{Describe} stopped to check behind her, then went on. I felt checked too.",
+				"I saw {describe} again. The small ones were louder. She didn't mind.",
+			],
+			"naming": ["I call {describe} {name} now. She didn't look round."],
+			"named": [
+				"{Name} came out onto the water with all of them behind her, still in a line.",
+				"{Name} said something sharp to the small ones and they all went quiet. I took notes.",
+				"I watched {name} and her small ones go round the same bit of water three times.",
+			],
+		},
+		{
+			"id": "woodpecker", "real_names": ["woodpecker", "woodpeckers"], "sight": "red_top", "places": ["dark_trees", "big_tree"], "hours": [7, 18],
+			"describe": "the bird with a red head that hits the trees",
+			"parts": [["red", "tree", "busy"], ["knocker", "tapper", "bird"]],
+			"again": [
+				"{Describe} was at it again, hitting the trunk as if it owed something.",
+				"I heard {describe} before I saw it. It knocks like it owns the place.",
+				"{Describe} stopped when I looked up, then started again, very fast.",
+			],
+			"naming": ["I have started calling {describe} {name}. It knocked twice."],
+			"named": [
+				"{Name} was on the same trunk, hitting it exactly as hard as before.",
+				"{Name} hit the tree so fast I could not see it move. My head hurt just watching.",
+				"I stood under {name} for a while. Small bits of bark fell on me, and I didn't mind.",
+			],
+		},
+		{
+			"id": "deer", "real_names": ["deer"], "sight": "thin_legs", "places": ["dark_trees", "high_ground"], "hours": [5, 21],
+			"describe": "the tall brown thing on thin legs",
+			"parts": [["thin", "tall", "quiet"], ["stepper", "one", "watcher"]],
+			"again": [
+				"{Describe} was standing at the edge of the view again, so still I nearly missed it.",
+				"{Describe} lifted its head when I moved. I stopped. It stayed. We stayed a while.",
+				"I saw {describe} again. It looked at me for one breath, then left.",
+			],
+			"naming": ["I have started calling {describe} {name}. It looked, and left."],
+			"named": [
+				"{Name} stood at the edge of everything again, tall and quiet and thinking.",
+				"{Name} looked at me for one breath, as before, and then left without a sound.",
+				"I kept very still and {name} came closer than ever. I did not breathe much.",
+			],
+		},
+		{
+			"id": "moon", "real_names": ["moon"], "sight": "round_light", "places": ["yard", "high_ground"], "hours": [21, 5],
+			"describe": "the big light in the sky at night",
+			"parts": [["night", "round", "white"], ["light", "lamp", "eye"]],
+			"again": [
+				"{Describe} was out again, and it looked a bit different, as if it had been busy.",
+				"{Describe} followed me about, if that is what that was.",
+				"I looked up and {describe} was there, looking down. I waved. Nothing happened.",
+			],
+			"naming": ["I have started calling {describe} {name}. It stayed where it was."],
+			"named": [
+				"{Name} was out again, and bright enough to see my own feet by.",
+				"{Name} was behind a thin cloud, like a lamp with a cloth over it.",
+				"I sat outside for a while with {name}. Neither of us said anything.",
+			],
+		},
+	],
 	"places": [
 		{
 			"id": "home", "name": "the house", "map": [0.42, 0.50], "kind": "home",

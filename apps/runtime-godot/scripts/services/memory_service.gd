@@ -10,6 +10,7 @@ extends RefCounted
 # input; every other profile key is carried through untouched.
 
 const MindThinker = preload("res://scripts/services/mind_thinker.gd")
+const WorldRules = preload("res://scripts/services/world_rules.gd")
 
 const MAX_EDGES := 300
 const MAX_NOTES := 10
@@ -65,6 +66,8 @@ const LAND_TAGS := {
 	"heard_of": ["place", "places", "where", "home", "land", "found", "near", "far", "around"],
 	"couldnt_reach": ["place", "places", "where", "home", "land", "found", "near", "far", "around"],
 	"noticed": ["seen", "saw", "noticed", "found", "lately", "new"],
+	"met": ["see", "saw", "seen", "animal", "animals", "bird", "birds", "creature", "creatures", "met"],
+	"calls": ["call", "called", "name", "names", "named"],
 	"did": ["do", "did", "doing", "today", "like", "likes", "favourite", "favorite", "fun", "play", "enjoy"],
 	"liked": ["do", "did", "doing", "today", "like", "likes", "favourite", "favorite", "fun", "play", "enjoy"],
 	"disliked": ["do", "did", "doing", "today", "like", "likes", "favourite", "favorite", "fun", "play", "enjoy"],
@@ -333,7 +336,7 @@ func note_today(profile: Dictionary, events: Array, land: Dictionary) -> Diction
 			"activity_label": str(event.get("activity_label", "")),
 			"valence": float(event.get("valence", 0.0)),
 		}
-		for pair in [["found", "found_place"], ["sign", "sign_of"], ["blocked", "blocked_at"], ["sight", "sight"], ["learned", "learned"]]:
+		for pair in [["found", "found_place"], ["sign", "sign_of"], ["blocked", "blocked_at"], ["sight", "sight"], ["learned", "learned"], ["thing", "thing"], ["named", "named"]]:
 			var value: String = str(event.get(pair[1], ""))
 			if value != "":
 				item[pair[0]] = value
@@ -398,6 +401,21 @@ func nightly_pass(profile: Dictionary, land: Dictionary, now: int) -> Dictionary
 		if sight_id != "":
 			var line: String = _sight_line(land, sight_id)
 			_upsert(memory, me, "noticed", {"id": "sight:" + sight_id, "label": line if line != "" else text}, LAND_NOTICED[2], "land", LAND_NOTICED[0], LAND_NOTICED[1], t, 0)
+		var thing_id: String = str(item.get("thing", ""))
+		if thing_id != "":
+			var thing: Dictionary = _land_thing(land, thing_id)
+			var own_name: String = str(_dict(_dict(_dict(out.get("mind", {})).get("things", {})).get(thing_id, {})).get("name", ""))
+			var thing_label: String = own_name if own_name != "" else str(thing.get("describe", thing_id))
+			var met: Dictionary = _upsert(memory, me, "met", {"id": "thing:" + thing_id, "label": thing_label}, LAND_NOTICED[2], "land", LAND_NOTICED[0], LAND_NOTICED[1], t, 0)
+			# Once it has a name, the line says what the name is for ("the leggy
+			# watcher (the thing with too many legs in the corner)"): with the
+			# name alone, the model took its name for the spider for a bird's.
+			if own_name != "":
+				met["described"] = str(thing.get("describe", thing_id))
+		var named_as: String = str(item.get("named", ""))
+		if named_as != "" and thing_id != "":
+			var called: Dictionary = _upsert(memory, me, "calls", {"id": "thing:" + thing_id, "label": named_as}, LAND_NOTICED[2], "land", LAND_NOTICED[0], LAND_NOTICED[1], t, 0)
+			called["described"] = str(_land_thing(land, thing_id).get("describe", thing_id))
 		if str(item.get("learned", "")) == "console":
 			_upsert(memory, me, "believes", {"id": "belief:console", "label": "the glowing box is a way to talk to you"}, LAND_BELIEVES[2], "land", LAND_BELIEVES[0], LAND_BELIEVES[1], t, 0)
 		var place_id: String = str(item.get("place", ""))
@@ -455,6 +473,7 @@ func land_memory_report(profile: Dictionary, land: Dictionary = {}) -> Dictionar
 	var mind: Dictionary = mind_variant if typeof(mind_variant) == TYPE_DICTIONARY else {}
 	var known: Dictionary = _dict(mind.get("known_places", {}))
 	var seen: Dictionary = _dict(mind.get("seen", {}))
+	var things: Dictionary = _dict(mind.get("things", {}))
 	var done: Dictionary = _dict(mind.get("done", {}))
 	var home: String = str(land.get("home_place", "home"))
 	var by_relation := {}
@@ -476,6 +495,8 @@ func land_memory_report(profile: Dictionary, land: Dictionary = {}) -> Dictionar
 			traced = id == home or known.has(id)
 		elif o.begins_with("sight:"):
 			traced = seen.has(o.substr(6))
+		elif o.begins_with("thing:"):
+			traced = things.has(o.substr(6))
 		elif o.begins_with("activity:"):
 			traced = done.has(o.substr(9))
 		if not traced:
@@ -557,6 +578,15 @@ func _sight_line(land: Dictionary, sight_id: String) -> String:
 
 
 # A sign's own words, from the place it points to.
+func _land_thing(land: Dictionary, thing_id: String) -> Dictionary:
+	var things = land.get("things", [])
+	if typeof(things) == TYPE_ARRAY:
+		for thing in things:
+			if typeof(thing) == TYPE_DICTIONARY and str(thing.get("id", "")) == thing_id:
+				return thing
+	return {}
+
+
 func _sign_line(land: Dictionary, place_id: String) -> String:
 	var discover = _land_place(land, place_id).get("discover", null)
 	if typeof(discover) != TYPE_DICTIONARY:
@@ -578,6 +608,8 @@ func _seed_from_mind(memory: Dictionary, mind_variant: Variant, land: Dictionary
 	var today_sign := {}
 	var today_sight := {}
 	var today_done := {}
+	var today_thing := {}
+	var today_named := {}
 	for item_variant in _today(memory):
 		if typeof(item_variant) != TYPE_DICTIONARY:
 			continue
@@ -588,6 +620,10 @@ func _seed_from_mind(memory: Dictionary, mind_variant: Variant, land: Dictionary
 			today_sign[str(item["sign"])] = true
 		if str(item.get("sight", "")) != "":
 			today_sight[str(item["sight"])] = true
+		if str(item.get("thing", "")) != "":
+			today_thing[str(item["thing"])] = int(today_thing.get(str(item["thing"]), 0)) + 1
+		if str(item.get("named", "")) != "":
+			today_named[str(item["thing"])] = true
 		var today_activity: String = str(item.get("activity", ""))
 		if today_activity != "":
 			today_done[today_activity] = int(today_done.get(today_activity, 0)) + 1
@@ -614,6 +650,20 @@ func _seed_from_mind(memory: Dictionary, mind_variant: Variant, land: Dictionary
 		var line: String = _sight_line(land, str(sight_id))
 		var sight := {"id": "sight:" + str(sight_id), "label": line if line != "" else str(sight_id)}
 		_upsert(memory, me, "noticed", sight, LAND_NOTICED[2], "land", LAND_NOTICED[0], LAND_NOTICED[1], int(seen[sight_id]), 0)
+	var things: Dictionary = _dict(mind.get("things", {}))
+	for thing_id in things.keys():
+		var record: Dictionary = _dict(things[thing_id])
+		var thing_name: String = str(record.get("name", ""))
+		var thing_label: String = thing_name if thing_name != "" else str(_land_thing(land, str(thing_id)).get("describe", thing_id))
+		var met_before_today: int = int(record.get("met", 1)) - int(today_thing.get(str(thing_id), 0))
+		if met_before_today > 0:
+			var met_edge: Dictionary = _upsert(memory, me, "met", {"id": "thing:" + str(thing_id), "label": thing_label}, LAND_NOTICED[2], "land", LAND_NOTICED[0], LAND_NOTICED[1], int(record.get("last_t", now)), 0)
+			met_edge["count"] = met_before_today
+			if thing_name != "":
+				met_edge["described"] = str(_land_thing(land, str(thing_id)).get("describe", thing_id))
+		if thing_name != "" and not today_named.has(str(thing_id)):
+			var calls_edge: Dictionary = _upsert(memory, me, "calls", {"id": "thing:" + str(thing_id), "label": thing_name}, LAND_NOTICED[2], "land", LAND_NOTICED[0], LAND_NOTICED[1], int(record.get("named_t", now)), 0)
+			calls_edge["described"] = str(_land_thing(land, str(thing_id)).get("describe", thing_id))
 	var done: Dictionary = _dict(mind.get("done", {}))
 	for activity_id in done.keys():
 		var before_today: int = int(done[activity_id]) - int(today_done.get(str(activity_id), 0))
@@ -861,7 +911,8 @@ func strengthen_recalled(profile: Dictionary, ids: Array, now_unix: int) -> Dict
 # the words of its own memories of the land, its own name) and "theirs" for
 # what it knows of the person's life ("their sister Ana"). Its own wins where a
 # word is both. check_reply keeps them apart: knowing your sister does not give
-# it one.
+# it one. "held" marks a real name from the land data (things, raw materials)
+# it has not learned: it may not say it (Plan 14 step 3b-2).
 func known_words(profile: Dictionary, land: Dictionary) -> Dictionary:
 	var known := {}
 	var mind: Dictionary = _dict(profile.get("mind", {}))
@@ -879,7 +930,22 @@ func known_words(profile: Dictionary, land: Dictionary) -> Dictionary:
 			# The person's own people and things ("their sister Ana").
 			_add_keys(known, str(edge.get("s_label", "")), "theirs")
 			_add_keys(known, str(edge.get("o_label", "")), "theirs")
+	# The real names it has not learned: held back from what it says and writes.
+	for thing_variant in land.get("things", []):
+		_add_held(known, _dict(thing_variant).get("real_names", []))
+	for material_id in WorldRules.RAW.keys():
+		_add_held(known, _dict(WorldRules.RAW[material_id]).get("real_names", []))
 	return known
+
+
+# Held words never take the place of a word it has as its own or theirs.
+func _add_held(known: Dictionary, names) -> void:
+	if typeof(names) != TYPE_ARRAY:
+		return
+	for real_name in names:
+		var key: String = str(real_name)
+		if key != "" and not known.has(key):
+			known[key] = "held"
 
 
 func _add_keys(known: Dictionary, text: String, whose: String = "own") -> void:
@@ -892,8 +958,11 @@ func _land_edge_keys(edge: Dictionary) -> Array:
 	var keys: Array = _keys(str(edge.get("o_label", "")))
 	var o: String = str(edge.get("o", ""))
 	var colon: int = o.find(":")
-	if colon >= 0:
+	# A thing's id is its real name: only its own words may make it relevant,
+	# the name and how it describes the thing ("tall", "grey", "bird").
+	if colon >= 0 and not o.begins_with("thing:"):
 		keys.append(o.substr(colon + 1))
+	keys.append_array(_keys(str(edge.get("described", ""))))
 	return keys
 
 
@@ -956,6 +1025,18 @@ func _render_edge(edge: Dictionary, now_unix: int) -> String:
 			line = "you found %s %s" % [o_label, _when(seen, now_unix)]
 		elif r == "noticed":
 			line = "you noticed: %s" % o_label
+		elif r == "met":
+			var met_count: int = int(edge.get("count", 1))
+			var described: String = str(edge.get("described", ""))
+			var met_label: String = o_label
+			if described != "" and described != o_label:
+				met_label = "%s (%s)" % [o_label, described]
+			if met_count > 1:
+				line = "you have come across %s %d times, last %s" % [met_label, met_count, _when(seen, now_unix)]
+			else:
+				line = "you came across %s %s" % [met_label, _when(seen, now_unix)]
+		elif r == "calls":
+			line = "you call %s %s" % [str(edge.get("described", "it")), o_label]
 		elif r == "heard_of":
 			line = "you noticed a sign of somewhere you have not been: %s" % o_label
 		elif r == "couldnt_reach":

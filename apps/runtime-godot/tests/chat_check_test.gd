@@ -6,6 +6,7 @@ extends Node
 
 const MindThinker = preload("res://scripts/services/mind_thinker.gd")
 const MemoryService = preload("res://scripts/services/memory_service.gd")
+const LandData = preload("res://scripts/services/land_data.gd")
 
 const DAY := 86400
 const T0 := 1_800_000_000
@@ -44,6 +45,8 @@ func _run_all() -> void:
 	_case("fallbacks_use_their_words", func(): return _test_fallbacks_use_their_words())
 	_case("denials_and_premises", func(): return _test_denials_and_premises())
 	_case("their_life_is_not_its_own", func(): return _test_their_life_is_not_its_own())
+	_case("real_names_are_held_back", func(): return _test_real_names_are_held_back())
+	_case("known_words_hold_real_names", func(): return _test_known_words_hold_real_names())
 
 
 func _case(name: String, body: Callable) -> void:
@@ -468,4 +471,87 @@ func _test_known_words_cover_its_world() -> Variant:
 	# And so the check lets it talk about them.
 	if not bool(MindThinker.check_reply("I found the old Library, and saw dandelions.", "hello", known).get("ok", false)):
 		return "it should be able to talk about what it found"
+	return null
+
+
+# Plan 14 step 3b-2: a real name it has not learned is checked like a person,
+# place or pet word: it may not say it, but it may ask what it is.
+func _test_real_names_are_held_back() -> Variant:
+	var known := {"heron": "held", "frog": "held", "stick": "own", "bird": "own"}
+	for row in [
+		# [reply, what they said, ok, held word wanted ("" for none)]
+		["I saw a heron at the water.", "hello", false, "heron"],
+		["I saw two herons.", "hello", false, "heron"],
+		["The stick bird was at the water again.", "hello", true, ""],
+		["I don't know what a heron is.", "have you seen a heron?", true, ""],
+		["What is a heron?", "have you seen a heron?", true, ""],
+		["Is your heron friendly?", "my heron is lovely", true, ""],
+		["My frog sat on a stone.", "hello", false, "frog"],
+	]:
+		var result: Dictionary = MindThinker.check_reply(str(row[0]), str(row[1]), known)
+		if bool(result.get("ok", false)) != bool(row[2]):
+			return "'%s' (they said '%s'): ok should be %s, got %s" % [row[0], row[1], row[2], result]
+		var held: Array = result.get("held", [])
+		if str(row[3]) != "":
+			if held != [str(row[3])] or not (result.get("unknown", []) as Array).has(str(row[3])):
+				return "'%s': held and unknown should hold only '%s', got %s" % [row[0], row[3], result]
+		elif not held.is_empty():
+			return "'%s': nothing should be held, got %s" % [row[0], result]
+	# A held word is never "own" and never "theirs".
+	if MindThinker._known_kind(known, "herons") != "held" or MindThinker._known_kind(known, "stick") != "own":
+		return "_known_kind should say held for a held word"
+	# The retry note names a real name in its own sentence, and nothing twice.
+	var note: String = MindThinker.honest_retry_note(["heron", "henderson"], false, ["heron"])
+	var first: String = note.get_slice("Say you have not come across them", 0)
+	var rest: String = note.substr(first.length())
+	if not first.contains("henderson") or first.contains("heron,") or first.contains("henderson, heron"):
+		return "the first sentence should name henderson only: %s" % note
+	if not rest.contains("You do not know the words heron:") or rest.contains("henderson"):
+		return "the new sentence should name heron only: %s" % note
+	if MindThinker.honest_retry_note(["heron"], false, ["heron"]).contains("have not met or seen"):
+		return "a held word alone must not get the 'not met' sentence: %s" % note
+	# The fallback asks what the word means, as they wrote it, and passes the check.
+	var line: String = MindThinker.fallback_line("have you seen a heron?", ["heron"], known)
+	if line != "What does 'heron' mean? I don't know that word yet.":
+		return "the fallback for a held word is wrong: %s" % line
+	if not bool(MindThinker.check_reply(line, "have you seen a heron?", known).get("ok", false)):
+		return "the fallback '%s' fails the check" % line
+	var plural: String = MindThinker.fallback_line("do you have any frogs?", ["frog"], known)
+	if plural != "What does 'frogs' mean? I don't know that word yet." or not bool(MindThinker.check_reply(plural, "do you have any frogs?", known).get("ok", false)):
+		return "the plural fallback is wrong or fails the check: %s" % plural
+	# "the moon": "What is the moon?" would fail the check (the names eval, 3b-2).
+	var known_moon := {"moon": "held"}
+	var moon: String = MindThinker.fallback_line("what's the moon like from where you live?", ["moon"], known_moon)
+	if moon != "What does 'moon' mean? I don't know that word yet." or not bool(MindThinker.check_reply(moon, "what's the moon like from where you live?", known_moon).get("ok", false)):
+		return "the fallback for 'the moon' is wrong or fails the check: %s" % moon
+	return null
+
+
+func _test_known_words_hold_real_names() -> Variant:
+	var land := {
+		"home_place": "home",
+		"places": [{"id": "home", "name": "the house"}, {"id": "pond", "name": "the frog pond"}],
+		"things": [
+			{"id": "heron", "real_names": ["heron", "herons"]},
+			{"id": "frog", "real_names": ["frog", "frogs"]},
+		],
+	}
+	var profile := _profile([])
+	profile["mind"]["known_places"] = {"pond": {"stage": "found", "t": T0}}
+	var known: Dictionary = _svc.known_words(profile, land)
+	for pair in [["heron", "held"], ["herons", "held"], ["clay", "held"], ["flint", "held"], ["reeds", "held"], ["nettle", "held"], ["house", "own"], ["moss", "own"]]:
+		if str(known.get(pair[0], "")) != str(pair[1]):
+			return "'%s' should be %s, got '%s'" % [pair[0], pair[1], known.get(pair[0], "")]
+	# Everyday words stay allowed, and a word that is also its own stays its own.
+	for word in ["stone", "water", "stick", "grass"]:
+		if known.has(word):
+			return "'%s' is an everyday word and must not be held: %s" % [word, known.keys()]
+	if str(known.get("frog", "")) != "own":
+		return "'frog' is in a place name it knows, so it stays its own: %s" % [known.get("frog", "")]
+	# On the real land every real name is held and the check catches one.
+	var real: Dictionary = _svc.known_words(_profile([]), LandData.LAND)
+	if str(real.get("heron", "")) != "held" or str(real.get("clay", "")) != "held":
+		return "the real land should hold heron and clay: %s" % [real.keys()]
+	if bool(MindThinker.check_reply("I saw a heron at the water.", "hello", real).get("ok", false)):
+		return "a held real name should fail the check on the real land"
 	return null

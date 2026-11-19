@@ -3030,7 +3030,7 @@ func _on_chat_http_completed(result: int, response_code: int, _headers: PackedSt
                 var checked: Dictionary = MindThinker.check_reply(reply_text, user_text, known)
                 if not bool(checked.get("ok", false)):
                     if not bool(pending.get("honest", false)):
-                        var note: String = MindThinker.honest_retry_note(checked.get("unknown", []), bool(checked.get("premise", false)))
+                        var note: String = MindThinker.honest_retry_note(checked.get("unknown", []), bool(checked.get("premise", false)), checked.get("held", []))
                         var retry_context: Dictionary = pending["context"]
                         _chat_pending = {
                             "kind": "chat", "url": str(pending.get("url", "")), "body": _chat_body_from(retry_context, note),

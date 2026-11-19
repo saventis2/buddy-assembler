@@ -81,6 +81,10 @@ const MIND_DEFAULTS := {
 	"known_places": {},
 	# Things it has noticed on its land, once each: {sight_id: t}.
 	"seen": {},
+	# Things it meets again on its land (land_data "things"):
+	# {thing_id: {"met", "first_t", "last_t", "name", "named_t"}}. The sight is
+	# meeting 1; "name" is its own name for it, once it has one.
+	"things": {},
 	# How many times it has done each activity: {activity_id: count}.
 	"done": {},
 	# It is in the middle of something until this time; nothing is decided before then.
@@ -111,6 +115,10 @@ const LAND_SIGN_PULL := 0.2
 # at most once a day after a failure.
 const LAND_TRY_BONUS := 0.05
 const LAND_SIGHT_CHANCE := 0.12
+# When it has nothing new to notice, how often it meets a thing that lives here
+# again, and which meeting gives the thing its own name (the sight is meeting 1).
+const LAND_MEET_CHANCE := 0.3
+const LAND_NAME_AFTER := 3
 const LAND_WONDER_CHANCE := 0.5
 const LAND_GOOD_TAIL_CHANCE := 0.4
 # An activity's own "bad" line is used when it went this badly (about one time
@@ -200,12 +208,15 @@ func ensure_profile(profile: Dictionary) -> Dictionary:
 		mind["wants"] = []
 	if typeof(mind.get("day_plan", null)) != TYPE_DICTIONARY:
 		mind["day_plan"] = {}
-	for key in ["known_places", "seen", "done"]:
+	for key in ["known_places", "seen", "things", "done"]:
 		if typeof(mind.get(key, null)) != TYPE_DICTIONARY:
 			mind[key] = {}
 	merged["mind"] = mind
 	return merged
 
+
+# Tests set this to 0 to see the same life without any meetings.
+var meet_chance := LAND_MEET_CHANCE
 
 # Set by the fast-forward simulator so a replay does not depend on the machine's time zone.
 var _pinned_bias_minutes := 0
@@ -976,7 +987,7 @@ func _decide(
 		elif waking == "" and intent != "rest" and not box_text:
 			# Something noticed or wondered about takes the place of the tail.
 			# Going to sleep gets neither: its line is the last thing it knows.
-			if not _land_afterthought(entry, intent, place, hour, mind, all_places, decision_unix, rng):
+			if not _land_afterthought(entry, intent, place, hour, mind, all_places, decision_unix, rng, town, int(merged.get("personality_seed", 0))):
 				entry["text"] = str(entry["text"]) + _land_tail(activity, times_before, valence, town, rng)
 		mind["busy_until"] = decision_unix + slots * DECISION_INTERVAL_SECONDS
 	var journal: Array = mind["journal"]
@@ -1758,7 +1769,7 @@ func _land_tail(activity: Dictionary, times_done: int, valence: float, land: Dic
 # added something; a line is never grown past LAND_MAX_LINE_CHARS.
 func _land_afterthought(
 	entry: Dictionary, intent: String, place: Dictionary, hour: int, mind: Dictionary, all_places: Array,
-	decision_unix: int, rng: RandomNumberGenerator
+	decision_unix: int, rng: RandomNumberGenerator, town: Dictionary = {}, personality_seed: int = 0
 ) -> bool:
 	var room := LAND_MAX_LINE_CHARS - str(entry["text"]).length() - 1
 	if intent == "rest":
@@ -1807,11 +1818,106 @@ func _land_afterthought(
 				continue
 			unseen.append(sight)
 	if unseen.is_empty() or rng.randf() >= LAND_SIGHT_CHANCE:
-		return false
+		return _land_meet(entry, place, hour, mind, town, decision_unix, rng, personality_seed, room)
 	var noticed: Dictionary = unseen[rng.randi_range(0, unseen.size() - 1)]
 	entry["text"] = str(entry["text"]) + " " + str(noticed.get("line", ""))
 	entry["sight"] = str(noticed.get("id", ""))
 	seen[str(noticed.get("id", ""))] = decision_unix
+	# The sight of a thing is its first meeting.
+	for thing_variant in _land_things(town):
+		var first_thing: Dictionary = thing_variant
+		if str(first_thing.get("sight", "")) == str(noticed.get("id", "")):
+			(mind["things"] as Dictionary)[str(first_thing.get("id", ""))] = {"met": 1, "first_t": decision_unix, "last_t": decision_unix, "name": "", "named_t": 0}
+			entry["thing"] = str(first_thing.get("id", ""))
+	return true
+
+
+func _land_things(town: Dictionary) -> Array:
+	var things_variant = town.get("things", null)
+	return things_variant if typeof(things_variant) == TYPE_ARRAY else []
+
+
+# Its own name for a thing: "the " + a first part + " " + a second, chosen by its
+# own seed, so two buddies name the same thing differently.
+func land_thing_name(thing: Dictionary, personality_seed: int) -> String:
+	var parts: Array = thing.get("parts", [])
+	var firsts: Array = parts[0]
+	var seconds: Array = parts[1]
+	var h: int = absi(hash("%d|%s" % [personality_seed, str(thing.get("id", ""))]))
+	var first_index: int = h % firsts.size()
+	var second_index: int = int(h / 7) % seconds.size()
+	return "the %s %s" % [str(firsts[first_index]), str(seconds[second_index])]
+
+
+func _upper_first(text: String) -> String:
+	return text.substr(0, 1).to_upper() + text.substr(1)
+
+
+func land_fill_thing_line(line: String, thing: Dictionary, name: String) -> String:
+	var describe := str(thing.get("describe", ""))
+	return line.replace("{Describe}", _upper_first(describe)).replace("{describe}", describe).replace("{Name}", _upper_first(name)).replace("{name}", name)
+
+
+# Meeting again a thing that lives here, whose sight it has noticed. These are
+# the last random draws of a decision; when nothing is added the rng goes back
+# to where it was, so the tail that follows is the one it would have been.
+func _land_meet(
+	entry: Dictionary, place: Dictionary, hour: int, mind: Dictionary, town: Dictionary,
+	decision_unix: int, rng: RandomNumberGenerator, personality_seed: int, room: int
+) -> bool:
+	if meet_chance <= 0.0:
+		return false
+	var place_id := str(place.get("id", ""))
+	var seen: Dictionary = mind["seen"]
+	var candidates: Array = []
+	for thing_variant in _land_things(town):
+		var candidate: Dictionary = thing_variant
+		if not (candidate.get("places", []) as Array).has(place_id):
+			continue
+		if not _hour_fits(candidate.get("hours", null), hour) or not seen.has(str(candidate.get("sight", ""))):
+			continue
+		candidates.append(candidate)
+	if candidates.is_empty():
+		return false
+	var saved_state: int = rng.state
+	if rng.randf() >= meet_chance:
+		rng.state = saved_state
+		return false
+	var thing: Dictionary = candidates[rng.randi_range(0, candidates.size() - 1)]
+	var thing_id := str(thing.get("id", ""))
+	var things: Dictionary = mind["things"]
+	var seen_t: int = int(seen[str(thing.get("sight", ""))])
+	var record: Dictionary = {"met": 1, "first_t": seen_t, "last_t": seen_t, "name": "", "named_t": 0}
+	if things.has(thing_id):
+		record = (things[thing_id] as Dictionary).duplicate()
+	var met: int = int(record["met"]) + 1
+	var thing_name: String = str(record.get("name", ""))
+	var template := ""
+	var naming := false
+	if thing_name != "":
+		var named_lines: Array = thing.get("named", [])
+		template = str(named_lines[(met - LAND_NAME_AFTER - 1) % named_lines.size()])
+	elif met < LAND_NAME_AFTER:
+		var again_lines: Array = thing.get("again", [])
+		template = str(again_lines[(met - 2) % again_lines.size()])
+	else:
+		naming = true
+		thing_name = land_thing_name(thing, personality_seed)
+		var naming_lines: Array = thing.get("naming", [])
+		template = str(naming_lines[(met - LAND_NAME_AFTER) % naming_lines.size()])
+	var line := land_fill_thing_line(template, thing, thing_name)
+	if line.length() > room:
+		rng.state = saved_state
+		return false
+	record["met"] = met
+	record["last_t"] = decision_unix
+	if naming:
+		record["name"] = thing_name
+		record["named_t"] = decision_unix
+		entry["named"] = thing_name
+	things[thing_id] = record
+	entry["text"] = str(entry["text"]) + " " + line
+	entry["thing"] = thing_id
 	return true
 
 

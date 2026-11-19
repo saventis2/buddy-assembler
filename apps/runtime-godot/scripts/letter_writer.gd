@@ -155,6 +155,7 @@ func _on_letter_completed(result: int, response_code: int, _headers: PackedStrin
 	var written := ""
 	var unknown: Array = []
 	var premise := false
+	var held: Array = []
 	var passed := false
 	if bool(parsed.get("ok", false)):
 		written = str(parsed["letter"])
@@ -162,11 +163,12 @@ func _on_letter_completed(result: int, response_code: int, _headers: PackedStrin
 		passed = bool(checked.get("ok", false))
 		unknown = checked.get("unknown", [])
 		premise = bool(checked.get("premise", false))
+		held = checked.get("held", [])
 	if passed:
 		_store(work, written, their)
 		return
 	if not bool(pending.get("retried", false)):
-		_begin(work, MindThinker.honest_retry_note(unknown, premise), true)
+		_begin(work, MindThinker.honest_retry_note(unknown, premise, held), true)
 		return
 	_store(work, MindThinker.letter_fallback(their, unknown, known, first), their)
 

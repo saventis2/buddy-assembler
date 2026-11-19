@@ -154,7 +154,7 @@ func _ask(question: String) -> Dictionary:
 		row["final"] = str(first["reply"])
 		row["final_source"] = "first"
 		return row
-	var note: String = MindThinker.honest_retry_note(checked.get("unknown", []), bool(checked.get("premise", false)))
+	var note: String = MindThinker.honest_retry_note(checked.get("unknown", []), bool(checked.get("premise", false)), checked.get("held", []))
 	var retry: Dictionary = await _send(_body(context, note))
 	if not bool(retry.get("ok", false)) and not _unreadable(retry):
 		row["error"] = str(retry.get("reason", ""))

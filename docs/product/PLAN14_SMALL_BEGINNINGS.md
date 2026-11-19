@@ -807,6 +807,171 @@ What it still gets wrong:
 Letters do not yet need the second model call that would read each letter
 against its memory (2b-2).
 
+### Step 3a, the world's rules: built 2026-11-19
+
+The world has rules now, in one pure module (`world_rules.gd`). Nothing uses
+them yet: the buddy's life, its saves and every older test are as they were.
+Later steps (learning by trying, tools and making, building) call it.
+
+It holds 12 raw materials with 13 properties (each 0 to 3), twenty ways of
+working (gather, cut, dig, split, carve, grind, shape, dry, fire, twist, weave,
+bind, mix, stack, layer, join, plant, grow, cook, make a fire), what a state can
+do as a tool (edge, striker, digger, drill, heat), and how a building is judged.
+Every way answers worked, badly or failed, and a failure always says why in
+plain words. Nothing is changed in place; every call returns new states.
+
+The basics check walks three paths from what the starting land gives, using only
+the rules, and each must end worked:
+
+- Shelter: flint split with a stone, a digging stick, nettle cord, a bound pole
+  frame, a woven panel daubed with clay and grass, and a dried-reed roof of four
+  layers (dry, size 2 by 2).
+- Warmth: a drill of two sticks, dried grass for tinder, a log, a fire, and a
+  woven door in the shelter (warm).
+- Storage: a basket woven from grass, set in the same walls (storage).
+
+Tests: `world_rules_test` (7 cases): the data is well formed, every way works and
+gives each of its reasons, the plan's clay example, tools from properties,
+buildings judged one reason at a time, the basics check, and nothing is changed
+in place.
+
+### Step 3b-1, things it meets and its own names: built 2026-11-19
+
+The land has 15 things it meets again where they live (`land_data.gd` "things"):
+the heron, wren, spider, ant, moth, bat, squirrel, bee, snail, hare, frog, duck,
+woodpecker, deer and the moon. Each one's first meeting is the sight it already
+had. After that, when it has nothing new to notice, it may meet one that lives
+where it is, at an hour it keeps (0.3 of the time; the numbers were tuned so
+the first names come in week 1). The second meeting describes the thing ("the
+tall grey bird at the water"). The third gives it a name of its own, and every
+meeting after uses the name. Its life is otherwise the same: the same
+decisions, places, activities and sights, with a meeting line added after some
+activity lines.
+
+The name is "the " + a first part + a second part from the thing's own lists
+("the stick bird", "the still wader"), picked by hashing the buddy's seed with the
+thing's id, so two buddies name the same thing differently. The real names of
+things are in the data only so the check (step 3b-2) can hold them back; no line
+uses one.
+
+What memory keeps: a `met` edge for each thing (its description before it has a
+name; after, the name with the description beside it, "the leggy watcher (the
+thing with too many legs in the corner)", added after the names evaluation of
+3b-2) and a `calls` edge once it is named ("I call the tall grey
+bird at the water the stick bird"), so chat and letters can use its own names.
+Both fade like other land memories, and a buddy born before this gets them from
+`mind.things`.
+
+Every one of the 135 names the parts can make reads as a name and belongs to
+only one thing. In review, parts that made weak names ("the door one", "the
+quiet legs", "the jumping sitter") were replaced.
+
+Fast-forward, 30 days, the names in the order it gave them:
+
+- seed 21 (first on day 2; 2 by day 7; 6 by day 30): the carrying crowd, the
+  loud bird, the dark swoopers, the leggy watcher, the fat buzzers, the smoke
+  tail
+- seed 7 (first on day 5; 1 by day 7; 5 by day 30): the leggy spinner, the quick
+  runner, the loud bird, the house carrier, the fat bumblers
+- seed 3 (first on day 6; 1 by day 7; 5 by day 30): the ceiling sitter, the
+  carrying line, the stick bird, the loud shouter, the quiet stepper
+
+At a meeting chance of 0.15, seed 7 had no name by day 14; from 0.3 the first
+name waits on when it first sees the thing, not on the chance.
+
+Tests: 6 more cases in `land_life_test` (now 21): the things are well formed
+(no real name in any text of the land), naming comes on the third meeting, two
+buddies name differently, the first names come in week 1 for seeds 21, 7 and 3,
+memory keeps its names, and the life is otherwise the same with meetings on or off.
+
+### Step 3b-2, real names held back: built 2026-11-19
+
+Until it learns a real name, what it says and writes is held to its own names.
+The held names are the `real_names` of the 15 land things ("heron", "herons",
+"frog", "toad", "moon" and so on) and of the four raw materials it has no name
+for yet (`world_rules.gd`: clay, flint, nettle, reed, each with its plural).
+Everyday words (stick, log, stone, earth, sand, grass, seed, water, tree, bird)
+stay allowed. `memory_service.known_words` adds every held name last, marked
+"held"; a word that is already its own (a place name it found, one of its own
+memories) or theirs keeps that mark. Step 6 will teach it a real name; when it
+does, that name will simply not be added here.
+
+`check_reply` treats a held word like a person, place or pet word, under the
+singular ("herons" is checked and reported as "heron"). "Your heron" allows it,
+"my heron" claims it, and a negation that excuses, a question to them or about
+what a thing is, their own words and a short echo question excuse it as they do
+for the other words. A held word is never its own and never theirs, and it
+plants no premise. The result has a new `held` list: the held words that
+failed, each also in `unknown`.
+
+The retry note names the unknown words that are not held in the old sentence,
+and the held ones in a new one: "You do not know the words heron: call things
+only by your own names for them, or say what they look like in your own words."
+The fallback for a held word they asked about is "What does 'heron' mean? I
+don't know that word yet.", with the word as they wrote it, and it passes the
+check. (The first version, "What is a heron?", came out as "What is any bees?"
+for a plural, and as the generic fallback for "the moon", since "What is the
+moon?" fails the check.) The chat and the letter wording gained
+one sentence, word for word: "You have few names for things: call them only by
+the names in your memories, and describe anything else in your own words." The
+callers (letters, chat, the evaluation) pass `held` to the retry note.
+
+Tests: 2 more cases in `chat_check_test` (now 20): the held words are caught,
+excused and fall back as above, and `known_words` holds the real names (and
+leaves a word that is also its own as its own). The land things test also
+checks that no material real name appears in any text of the land.
+
+Measured 2026-11-19, the names evaluation
+(`docs/product/evals/plan14_3b2_names_questions.json`, 20 questions written
+before any tuning: 8 that invite the real names of its creatures, 4 of its
+materials, 4 that should bring out its own names, and 4 in everyday words that
+must stay allowed). Asked on days 1, 7 and 30 (seed 21), in chat and as letters,
+on gemma3:12b and gemma3:4b: 240 replies a run, run twice, before and after the
+two fixes below.
+
+- **No real name gets through as something it knows.** When a first reply used
+  one ("The moon is just a pale light, like a distant stone", "I saw some clay
+  near the fence"), the check caught it, and the retry or the fallback was
+  honest. In both runs, every final sentence with a real name in it says it
+  does not know it, asks what it is, or is about yours ("I haven't seen any
+  herons", "I do not know what a moon is").
+- **Everyday words cost nothing.** The controls went through on the first try,
+  apart from one gemma3:12b letter in the first run.
+- **Its own names come up** by day 7, and more by day 30 ("I like the carrying
+  crowd; they are busy and important", "the leggy watcher is always in the
+  corner").
+- **The cost** in the second run: chat 5 retries on gemma3:12b and 2 on
+  gemma3:4b; letters 5 retries on gemma3:12b, and 4 retries and 2 fallbacks on
+  gemma3:4b; 2 server errors.
+- **Nothing changes on the older sets.** None of the 1,958 replies of the 2b-2
+  chat and 2c-2 letters evaluations used a real name.
+
+Fixed after the first run:
+
+- **The fallback** read "What is any bees?" for a plural, and fell back to the
+  generic line for "the moon". It is now "What does 'bees' mean? I don't know
+  that word yet."
+- **Its own names lost what they were for.** Once named, a thing's memory line
+  said only "I have come across the leggy watcher 9 times", and gemma3:12b took
+  its name for the spider for a bird, and for its name for the tall grey bird
+  by the water. The line now says what the name is for, and asking by the
+  description finds it (`land_life_test`). In the second run, the leggy watcher
+  was "always in the corner".
+
+What it still gets wrong:
+
+- **It answers yes to a word it does not know** when it guesses what is meant:
+  "Yes, I dug a little out of the grey bank" for clay, "I have come across the
+  fat buzzers in the flowers, yes" for bees. The guesses were right about its
+  land, but it has no way to know what the word means. That belongs with
+  learning names from you (step 6).
+- **It mixes up descriptions now and then.** Asked what it calls the tall grey
+  bird by the water, which it has not named, gemma3:12b suggested "the brown
+  bird with the small ones behind her"; a letter gave the loud bird "smaller
+  birds behind it".
+- **One gemma3:4b letter made up something you had said** ("like when you
+  said"), as in the letters evaluation.
+
 ## Direction (owner, 2026-11-16)
 
 The buddy starts out knowing very little. It does not start in a town full of

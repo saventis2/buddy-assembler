@@ -9,6 +9,9 @@ const LifeSim = preload("res://tests/life_sim.gd")
 const ContentLoader = preload("res://scripts/content/content_loader.gd")
 const MindService = preload("res://scripts/services/mind_service.gd")
 const LandData = preload("res://scripts/services/land_data.gd")
+const MindThinker = preload("res://scripts/services/mind_thinker.gd")
+const MemoryService = preload("res://scripts/services/memory_service.gd")
+const WorldRules = preload("res://scripts/services/world_rules.gd")
 
 const NEEDS := ["energy", "comfort", "curiosity", "reflection"]
 const MONTH_SEEDS := [21, 22, 23]
@@ -64,6 +67,12 @@ func _run_all() -> void:
 	_case("a_month_on_the_land", func(): return _test_a_month_on_the_land())
 	_case("no_need_is_pinned", func(): return _test_no_need_is_pinned())
 	_case("it_sleeps_at_night", func(): return _test_it_sleeps_at_night())
+	_case("things_are_well_formed", func(): return _test_things_are_well_formed())
+	_case("naming_comes_on_the_third_meeting", func(): return _test_naming_comes_on_the_third_meeting())
+	_case("two_buddies_name_differently", func(): return _test_two_buddies_name_differently())
+	_case("first_names_in_week_one", func(): return _test_first_names_in_week_one())
+	_case("memory_keeps_its_names", func(): return _test_memory_keeps_its_names())
+	_case("the_life_is_otherwise_the_same", func(): return _test_the_life_is_otherwise_the_same())
 
 
 func _case(name: String, body: Callable) -> void:
@@ -735,4 +744,334 @@ func _test_it_sleeps_at_night() -> Variant:
 				sleeps += 1
 		if sleeps < 28 or sleeps > 34:
 			return "seed %d went to bed %d times in 30 days, expected 28 to 34" % [int(MONTH_SEEDS[index]), sleeps]
+	return null
+
+
+# --- 16 to 21: things it meets again, and its own names for them -----------------
+
+const THING_LINE_LIMIT := 110
+const THINGS_RUN_DAYS := 14
+const THING_SEEDS := [21, 7, 3]
+
+
+# Every string under `value`, skipping ids, place lists and map positions.
+func _all_strings(value: Variant, out: Array) -> void:
+	if typeof(value) == TYPE_STRING:
+		out.append(str(value))
+	elif typeof(value) == TYPE_ARRAY:
+		for item in value:
+			_all_strings(item, out)
+	elif typeof(value) == TYPE_DICTIONARY:
+		for key in (value as Dictionary).keys():
+			if ["id", "from", "map", "kind"].has(str(key)):
+				continue
+			_all_strings((value as Dictionary)[key], out)
+
+
+func _thing_name_combos(thing: Dictionary) -> Array:
+	var names: Array = []
+	for first in thing["parts"][0]:
+		for second in thing["parts"][1]:
+			names.append("the %s %s" % [str(first), str(second)])
+	return names
+
+
+func _test_things_are_well_formed() -> Variant:
+	var land: Dictionary = LandData.LAND.duplicate(true)
+	var svc := _new_service()
+	var things: Array = land.get("things", [])
+	if things.size() != 15:
+		return "expected 15 things, found %d" % things.size()
+	var sights_at := {}
+	var place_ids := {}
+	for place_variant in land["places"]:
+		var place: Dictionary = place_variant
+		place_ids[str(place["id"])] = true
+		for sight_variant in place.get("sights", []):
+			var sight_id := str((sight_variant as Dictionary)["id"])
+			if not sights_at.has(sight_id):
+				sights_at[sight_id] = []
+			(sights_at[sight_id] as Array).append(str(place["id"]))
+	var you_pattern := RegEx.new()
+	you_pattern.compile("(?i)\\byou(?:'re|rs|r)?\\b")
+	var word_pattern := RegEx.new()
+	word_pattern.compile("^[a-z]+$")
+	var ids := {}
+	var real_names := {}
+	var not_for_parts: Array = []
+	not_for_parts.append_array(MindThinker.WORLD_PEOPLE)
+	not_for_parts.append_array(MindThinker.WORLD_SETTLEMENTS)
+	not_for_parts.append_array(MindThinker.WORLD_PETS)
+	for thing_variant in things:
+		for real_name in (thing_variant as Dictionary).get("real_names", []):
+			real_names[str(real_name)] = true
+	# The raw materials it has no name for yet are held back the same way.
+	for material_id in WorldRules.RAW.keys():
+		for real_name in (WorldRules.RAW[material_id] as Dictionary).get("real_names", []):
+			real_names[str(real_name)] = true
+	for thing_variant in things:
+		var thing: Dictionary = thing_variant
+		var id := str(thing.get("id", ""))
+		if id == "" or ids.has(id):
+			return "thing id '%s' is empty or repeated" % id
+		ids[id] = true
+		if (thing.get("real_names", []) as Array).is_empty():
+			return "thing %s has no real names" % id
+		for real_name in thing["real_names"]:
+			if str(real_name) != str(real_name).to_lower():
+				return "thing %s: real name '%s' is not lowercase" % [id, str(real_name)]
+		var places: Array = thing.get("places", [])
+		if places.is_empty():
+			return "thing %s has no places" % id
+		var sight_ok := false
+		for place_id in places:
+			if not place_ids.has(str(place_id)):
+				return "thing %s: place %s does not exist" % [id, str(place_id)]
+			if sights_at.has(str(thing.get("sight", ""))) and (sights_at[str(thing["sight"])] as Array).has(str(place_id)):
+				sight_ok = true
+		if not sight_ok:
+			return "thing %s: its sight '%s' is not at any of its places" % [id, str(thing.get("sight", ""))]
+		if thing.has("hours"):
+			var hours_problem := _hours_error(thing["hours"])
+			if hours_problem != "":
+				return "thing %s: %s" % [id, hours_problem]
+		var parts: Array = thing.get("parts", [])
+		if parts.size() != 2 or (parts[0] as Array).is_empty() or (parts[1] as Array).is_empty():
+			return "thing %s: parts is not two lists" % id
+		for list_variant in parts:
+			for part in list_variant:
+				if word_pattern.search(str(part)) == null:
+					return "thing %s: part '%s' is not a lowercase word" % [id, str(part)]
+				if real_names.has(str(part)) or not_for_parts.has(str(part)):
+					return "thing %s: part '%s' is a real name or a people/place/pet word" % [id, str(part)]
+		if str(thing.get("describe", "")) == "":
+			return "thing %s has no describe" % id
+		var again: Array = thing.get("again", [])
+		var naming: Array = thing.get("naming", [])
+		var named: Array = thing.get("named", [])
+		if again.size() != 3 or named.size() != 3 or naming.size() < 1 or naming.size() > 2:
+			return "thing %s: needs 3 again, 1-2 naming and 3 named lines" % id
+		for line_variant in naming:
+			if (not str(line_variant).contains("{describe}") and not str(line_variant).contains("{Describe}")) or not str(line_variant).contains("{name}"):
+				return "thing %s: a naming line lacks {describe}/{Describe} or {name}" % id
+		for line_variant in named:
+			if not str(line_variant).contains("{name}") and not str(line_variant).contains("{Name}"):
+				return "thing %s: a named line lacks {name}/{Name}" % id
+		for group in [again, naming, named]:
+			for line_variant in group:
+				for full_name in _thing_name_combos(thing):
+					var filled: String = svc.land_fill_thing_line(str(line_variant), thing, full_name)
+					if filled.length() > THING_LINE_LIMIT:
+						return "thing %s: '%s' is %d characters (at most %d)" % [id, filled, filled.length(), THING_LINE_LIMIT]
+					if filled.contains("{") or filled.contains("}"):
+						return "thing %s: '%s' has a placeholder left" % [id, filled]
+					var problem := _line_error(filled, you_pattern)
+					if problem != "":
+						return "thing %s: '%s' %s" % [id, filled, problem]
+	# No real name of any thing in any text of the land.
+	var texts: Array = []
+	var rest: Dictionary = land.duplicate(true)
+	rest.erase("things")
+	_all_strings(rest, texts)
+	for thing_variant in things:
+		var thing_texts: Dictionary = {}
+		for key in ["describe", "again", "naming", "named"]:
+			thing_texts[key] = (thing_variant as Dictionary)[key]
+		_all_strings(thing_texts, texts)
+	var word_finder := RegEx.new()
+	word_finder.compile("[a-z]+")
+	for text in texts:
+		# An id such as "tall_reeds" is a key, not something it says.
+		if str(text).contains("_") and not str(text).contains(" "):
+			continue
+		for found in word_finder.search_all(str(text).to_lower()):
+			if real_names.has(found.get_string()):
+				return "the real name '%s' appears in: %s" % [found.get_string(), str(text)]
+	return null
+
+
+func _test_naming_comes_on_the_third_meeting() -> Variant:
+	var svc := _new_service()
+	var land: Dictionary = LandData.LAND.duplicate(true)
+	var lived := _live(svc, _base_profile(21), land, _start(), 4000)
+	var by_thing := {}
+	for event_variant in lived["events"]:
+		var event: Dictionary = event_variant
+		var thing_id := str(event.get("thing", ""))
+		if thing_id == "":
+			continue
+		if not by_thing.has(thing_id):
+			by_thing[thing_id] = []
+		(by_thing[thing_id] as Array).append(event)
+	var recorded: Dictionary = (lived["profile"]["mind"] as Dictionary)["things"]
+	var named_count := 0
+	var deep_count := 0
+	for thing_id in by_thing.keys():
+		var thing: Dictionary = {}
+		for thing_variant in land["things"]:
+			if str((thing_variant as Dictionary)["id"]) == str(thing_id):
+				thing = thing_variant
+		var meetings: Array = by_thing[thing_id]
+		var own_name: String = svc.land_thing_name(thing, 21)
+		for index in range(meetings.size()):
+			var event: Dictionary = meetings[index]
+			var text := str(event["text"])
+			var met := index + 1
+			if met == 1:
+				if str(event.get("sight", "")) != str(thing["sight"]):
+					return "%s: meeting 1 is not its sight" % thing_id
+				continue
+			if str(event.get("sight", "")) != "":
+				return "%s: meeting %d is a sight" % [thing_id, met]
+			var pool: Array = thing["again"] if met < 3 else (thing["named"] if met > 3 else thing["naming"])
+			var expected_line := ""
+			if met == 2:
+				expected_line = svc.land_fill_thing_line(str(pool[0]), thing, own_name)
+			elif met == 3:
+				expected_line = svc.land_fill_thing_line(str(pool[0]), thing, own_name)
+				if str(event.get("named", "")) != own_name:
+					return "%s: meeting 3 did not name it '%s'" % [thing_id, own_name]
+			else:
+				expected_line = svc.land_fill_thing_line(str(pool[(met - 4) % pool.size()]), thing, own_name)
+				if event.has("named"):
+					return "%s: meeting %d named it again" % [thing_id, met]
+			if met != 3 and event.has("named"):
+				return "%s: meeting %d carries a name" % [thing_id, met]
+			if not text.ends_with(expected_line):
+				return "%s: meeting %d reads '%s', expected it to end '%s'" % [thing_id, met, text, expected_line]
+		if meetings.size() >= 3:
+			named_count += 1
+			if str((recorded[thing_id] as Dictionary).get("name", "")) != own_name:
+				return "%s: mind.things has the wrong name" % thing_id
+		if meetings.size() >= 4:
+			deep_count += 1
+		if int((recorded[thing_id] as Dictionary).get("met", 0)) != meetings.size():
+			return "%s: mind.things.met is %d, expected %d" % [thing_id, int((recorded[thing_id] as Dictionary).get("met", 0)), meetings.size()]
+	if named_count < 1 or deep_count < 1:
+		return "no thing got through to a fourth meeting (named %d, past naming %d)" % [named_count, deep_count]
+	return null
+
+
+func _test_two_buddies_name_differently() -> Variant:
+	var svc := _new_service()
+	var differing := 0
+	for thing_variant in LandData.LAND["things"]:
+		var thing: Dictionary = thing_variant
+		var one: String = svc.land_thing_name(thing, 1)
+		var two: String = svc.land_thing_name(thing, 2)
+		if one != svc.land_thing_name(thing, 1) or two != svc.land_thing_name(thing, 2):
+			return "the same seed gave two names for %s" % str(thing["id"])
+		if one != two:
+			differing += 1
+	if differing < 5:
+		return "seeds 1 and 2 named only %d of 15 things differently" % differing
+	print("land_life_test: seeds 1 and 2 name %d of 15 things differently" % differing)
+	return null
+
+
+func _test_first_names_in_week_one() -> Variant:
+	var land: Dictionary = LandData.LAND
+	for seed_value in THING_SEEDS:
+		var report: Dictionary = LifeSim.run(AppState, {"days": THINGS_RUN_DAYS, "seed": seed_value, "small_beginnings": true})
+		if report.has("error"):
+			return "seed %d: run failed" % seed_value
+		var first_name_t := {}
+		var first_sight_t := {}
+		var first_name_day := 0
+		for day_variant in report["days"]:
+			var day_row: Dictionary = day_variant
+			for first_variant in day_row["firsts"]:
+				var first: Dictionary = first_variant
+				if str(first["kind"]) == "named":
+					first_name_t[str(first["id"])] = int(first["t"])
+					if first_name_day == 0:
+						first_name_day = int(day_row["day"])
+					print("land_life_test: seed %d day %d named %s '%s'" % [seed_value, int(day_row["day"]), str(first["id"]), str(first["name"])])
+				elif str(first["kind"]) == "sight":
+					first_sight_t[str(first["id"])] = int(first["t"])
+		if first_name_day == 0 or first_name_day > 7:
+			return "seed %d: first own name on day %d (expected 1..7)" % [seed_value, first_name_day]
+		for thing_variant in land["things"]:
+			var thing: Dictionary = thing_variant
+			if first_name_t.has(str(thing["id"])):
+				if not first_sight_t.has(str(thing["sight"])) or int(first_sight_t[str(thing["sight"])]) > int(first_name_t[str(thing["id"])]):
+					return "seed %d: %s was named before its sight was noticed" % [seed_value, str(thing["id"])]
+	return null
+
+
+func _test_memory_keeps_its_names() -> Variant:
+	var report: Dictionary = LifeSim.run(AppState, {"days": THINGS_RUN_DAYS, "seed": 21, "small_beginnings": true})
+	if report.has("error"):
+		return "run failed"
+	var profile: Dictionary = AppState.profile
+	var memory_service := MemoryService.new()
+	var names := {}
+	for thing_id in ((profile["mind"] as Dictionary)["things"] as Dictionary).keys():
+		var own_name := str((((profile["mind"] as Dictionary)["things"] as Dictionary)[thing_id] as Dictionary).get("name", ""))
+		if own_name != "":
+			names[own_name] = true
+	var calls := 0
+	for edge_variant in (profile["memory"] as Dictionary)["edges"]:
+		var edge: Dictionary = edge_variant
+		if str(edge.get("r", "")) == "calls":
+			calls += 1
+			if not names.has(str(edge.get("o_label", ""))):
+				return "a calls edge is labelled '%s', which is not a name in mind.things" % str(edge.get("o_label", ""))
+			if str(edge.get("described", "")) == "":
+				return "a calls edge has no described"
+	if calls < 1:
+		return "no calls edge in the land memory (names: %d)" % names.size()
+	var land_report: Dictionary = memory_service.land_memory_report(profile, LandData.LAND)
+	if int(land_report.get("untraceable", -1)) != 0:
+		return "untraceable is %d, expected 0" % int(land_report.get("untraceable", -1))
+	var now: int = LifeSim.DEFAULT_START_UNIX + THINGS_RUN_DAYS * LifeSim.SECONDS_PER_DAY
+	var recalled: Dictionary = memory_service.recall_land(profile, "what do you call the things you see?", now)
+	var starts_ok := false
+	for line in recalled["lines"]:
+		if str(line).begins_with("I call "):
+			starts_ok = true
+	if not starts_ok:
+		return "recall_land gave no line starting 'I call ': %s" % JSON.stringify(recalled["lines"])
+	# A named thing's "met" line says what the name is for (the names eval,
+	# 3b-2: with the name alone the model took its name for the spider for a
+	# bird), and asking by its description finds it.
+	for edge_variant in (profile["memory"] as Dictionary)["edges"]:
+		var met_edge: Dictionary = edge_variant
+		if str(met_edge.get("r", "")) == "met" and names.has(str(met_edge.get("o_label", ""))):
+			if str(met_edge.get("described", "")) == "":
+				return "the met edge for '%s' does not say what it is" % str(met_edge.get("o_label", ""))
+	var by_description: Dictionary = memory_service.recall_land(profile, "what do you call the thing with too many legs in the corner?", now)
+	var described_ok := false
+	for line in by_description["lines"]:
+		if str(line).contains("(the thing with too many legs in the corner)") or str(line).contains("the thing with too many legs in the corner the "):
+			described_ok = true
+	if names.size() > 0 and ((profile["mind"] as Dictionary)["things"] as Dictionary).has("spider") and str((((profile["mind"] as Dictionary)["things"] as Dictionary)["spider"] as Dictionary).get("name", "")) != "" and not described_ok:
+		return "asking by its description does not recall the named spider: %s" % JSON.stringify(by_description["lines"])
+	return null
+
+
+func _test_the_life_is_otherwise_the_same() -> Variant:
+	var land: Dictionary = LandData.LAND.duplicate(true)
+	var with_meetings := _new_service()
+	var without_meetings := _new_service()
+	without_meetings.meet_chance = 0.0
+	var a := _live(with_meetings, _base_profile(21), land, _start(), 1500)
+	var b := _live(without_meetings, _base_profile(21), land, _start(), 1500)
+	var limit: int = _start() + 10 * 86400
+	var compared := 0
+	var met_any := false
+	for index in range(mini((a["events"] as Array).size(), (b["events"] as Array).size())):
+		var one: Dictionary = a["events"][index]
+		var two: Dictionary = b["events"][index]
+		if int(one["t"]) >= limit:
+			break
+		compared += 1
+		if str(one.get("thing", "")) != "" and str(one.get("sight", "")) == "":
+			met_any = true
+		if int(one["t"]) != int(two["t"]) or str(one.get("place_id", "")) != str(two.get("place_id", "")) or str(one.get("activity_id", "")) != str(two.get("activity_id", "")):
+			return "decision %d differs once meetings are switched on" % index
+	if compared < 100:
+		return "only %d decisions compared" % compared
+	if not met_any:
+		return "no meeting happened in 10 days, so nothing was compared"
 	return null

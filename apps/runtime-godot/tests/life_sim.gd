@@ -67,6 +67,8 @@ static func run(app_state: Node, config: Dictionary) -> Dictionary:
 	var text_counts := {}
 	var signs_total := 0
 	var sights_total := 0
+	var names_total := 0
+	var first_name_day := 0
 	var blocked_total := 0
 	var night_rows := 0
 	var need_stats := {}
@@ -129,6 +131,9 @@ static func run(app_state: Node, config: Dictionary) -> Dictionary:
 					var sight_id: String = str(entry.get("sight", ""))
 					if sight_id != "":
 						found.append({"kind": "sight", "id": sight_id, "name": sight_id})
+					var named_as: String = str(entry.get("named", ""))
+					if named_as != "":
+						found.append({"kind": "named", "id": str(entry.get("thing", "")), "name": named_as})
 				elif kind == "purchase" and float(entry.get("valence", 0.0)) > 0.0:
 					# The same kind also carries "I didn't have enough saved" lines.
 					found.append({"kind": "purchase", "id": str(entry.get("subject_id", "")), "name": str(entry.get("subject_name", ""))})
@@ -150,6 +155,10 @@ static func run(app_state: Node, config: Dictionary) -> Dictionary:
 						signs_total += 1
 					elif first_row["kind"] == "sight":
 						sights_total += 1
+					elif first_row["kind"] == "named":
+						names_total += 1
+						if first_name_day == 0:
+							first_name_day = day
 				var text: String = str(entry.get("text", ""))
 				if not seen_texts.has(text):
 					seen_texts[text] = true
@@ -335,6 +344,8 @@ static func run(app_state: Node, config: Dictionary) -> Dictionary:
 			"intents": intents_total,
 			"signs": signs_total,
 			"sights": sights_total,
+			"names": names_total,
+			"first_name_day": first_name_day,
 			"blocked_tries": blocked_total,
 			"night_rows": night_rows,
 			"top10_share": _snap(top10_share),
@@ -432,6 +443,11 @@ static func format_text(report: Dictionary, journal: String) -> String:
 	lines.append("places visited %d, companions met %d, wants noticed %d, purchases %d" % [int(totals.get("places_visited", 0)), int(totals.get("companions_met", 0)), int(totals.get("wants_noticed", 0)), int(totals.get("purchases", 0))])
 	lines.append("intents: " + _counts_text(totals.get("intents", {})))
 	lines.append("signs %d, sights %d, failed tries %d, night rows %d, top-10 lines cover %s of the journal" % [int(totals.get("signs", 0)), int(totals.get("sights", 0)), int(totals.get("blocked_tries", 0)), int(totals.get("night_rows", 0)), str(totals.get("top10_share", 0))])
+	if bool(config.get("small_beginnings", false)):
+		if int(totals.get("names", 0)) > 0:
+			lines.append("names: %d (first on day %d)" % [int(totals.get("names", 0)), int(totals.get("first_name_day", 0))])
+		else:
+			lines.append("names: 0")
 	var needs_totals: Dictionary = totals.get("needs", {})
 	for need_name in MOOD_KEYS:
 		var need_row: Dictionary = needs_totals.get(need_name, {})
