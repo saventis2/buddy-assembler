@@ -37,6 +37,25 @@ Run the complete local/CI-parity gate with:
 pwsh ./apps/runtime-godot/tests/run_headless_checks.ps1
 ```
 
+The gate includes `life_sim_test` (`tests/LifeSimTest.tscn`), which checks that
+a simulated life is repeatable from a seed and never writes the save files.
+
+## Fast-forward
+
+To see how a new buddy's life reads over many days without waiting for them:
+
+```powershell
+python apps/runtime-godot/tools/simulate_days.py --godot "C:\path\to\Godot_v4.2.2-stable_win64_console.exe" --days 30 --seed 1 --journal firsts --out report.json
+```
+
+It runs the real mind code with a supplied clock, in a headless process, and
+prints each day's decisions, the new places, people and wishes it met, and how
+often the journal repeated itself. `--journal` is `all`, `firsts` or `none`;
+`--out` also writes the full report as JSON. The same seed gives the same life
+on any machine. Once a process starts a simulation it never saves, so the real
+save files are not touched. Not simulated: ambient desktop animation, quests and
+encounters, talking to the buddy, and the language model.
+
 The current implementation is intentionally minimal and is a vertical-slice
 scaffold, not final production content.
 
