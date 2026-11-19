@@ -11,6 +11,11 @@ const MAX_DAYS := 3650
 
 
 func _ready() -> void:
+	# AppState must already have skipped all save loading before this scene runs.
+	if not AppState.is_simulating():
+		_fail("simulate_days: start this with tools/simulate_days.py. It passes %s so the save files are never opened." % AppState.NO_SAVE_ARG)
+		return
+	print("simulate_days: started without opening the save files")
 	var days := DEFAULT_DAYS
 	var seed_value := 1
 	var journal := "firsts"
@@ -18,6 +23,8 @@ func _ready() -> void:
 	var out_path := ""
 	for arg in OS.get_cmdline_user_args():
 		var text := str(arg)
+		if text == AppState.NO_SAVE_ARG:
+			continue
 		if text.begins_with("--days="):
 			var value := text.substr(7)
 			if not value.is_valid_int():

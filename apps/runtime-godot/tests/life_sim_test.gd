@@ -55,6 +55,8 @@ func _slots_per_day() -> int:
 
 
 func _test_nothing_is_saved() -> Variant:
+	if not AppState.is_simulating():
+		return "saving was still enabled when the scene started"
 	var before := _disk_state()
 	var report: Dictionary = LifeSim.run(AppState, {"days": 1, "seed": 5})
 	if report.has("error"):
