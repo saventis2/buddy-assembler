@@ -186,7 +186,14 @@ func _store(work: Dictionary, written: String, their: String) -> void:
 	var letter_t: int = int((letter_variant as Dictionary).get("t", 0)) if typeof(letter_variant) == TYPE_DICTIONARY else 0
 	if _forgotten_since(letter_t):
 		return
-	var body: String = MindThinker.build_memory_request(_chat_model(), [{"who": "them", "text": their}, {"who": "you", "text": written}])
+	# Its sentences, without the greeting and the questions with nothing of their
+	# own: those are not facts about them.
+	var turns: Array = []
+	for line in MindThinker.letter_memory_lines(their):
+		turns.append({"who": "them", "text": str(line)})
+	if turns.is_empty():
+		return
+	var body: String = MindThinker.build_memory_request(_chat_model(), turns)
 	_memory_pending = {"body": body, "built_t": AppState._now_unix()}
 	_dispatch_memory.call_deferred()
 

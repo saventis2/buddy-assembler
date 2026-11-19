@@ -710,9 +710,10 @@ What is built:
   `first_letter_due` cleared. A reply written while the first letter is due
   counts as it, so it never writes two at once.
 - **Into memory**: for a reply, when Remembering is on and your letter does not
-  read like an order, the talk goes to the memory request with the chat model
-  and a good answer is kept like what it takes from a talk (`upto` 0 drops no
-  chat turns). A failure is dropped; the letters stay in the mailbox. An answer
+  read like an order, your letter goes to the memory request with the chat
+  model, without its opening greeting and its questions with nothing of yours
+  in them (`letter_memory_lines`), and a good answer is kept like what it takes
+  from a talk (`upto` 0 drops no chat turns). A failure is dropped; the letters stay in the mailbox. An answer
   that is not stored (its letter was answered meanwhile) sends nothing.
 - **Forgetting is not undone** (from the Codex review of PR #109). Forgetting
   records when (`memory.forgot_t`, `MemoryService.forgot_at`). A memory answer
@@ -767,20 +768,44 @@ wrote plain words, or left the `letter` string open. The writer keeps those now
 (HTTP 500), 17 needed the retry and 13 ended in the fallback (7 of the 24
 people letters). Read for untrue lines, not graded for borderline: one in 84.
 
-What it still gets wrong (the check, which chat shares):
-- A sentence that makes someone up and says it does not know them gets
-  through: "There was a person who sometimes put things on the shelf, but I
-  don't know their name." (12b, asked to name three people).
-- A denial anywhere in the letter clears a letter that took something for
-  granted: asked to tell everyone at home it said hi, 4b wrote "I told everyone
-  at home I said hi.", and "Do you ever feel like you're the only one here
-  too?" later in the same letter cleared it.
-- Wondering about a thing still costs a retry or a fallback.
-- The facts its memory takes from a letter (above).
+Both untrue lines came on the retry, and both were a denial clearing a claim.
+Fixed in the check, which chat shares:
+- **Not knowing who someone is excuses only what comes after it**
+  (`_identity_unknowns`). "There was a person who sometimes put things on the
+  shelf, but I don't know their name." (12b, asked to name three people) now
+  fails on "person", while "I don't know the name of your street" still passes.
+- **In a question, only the words before it turns to the person can say there
+  is none** (`_before_you`). Asked to tell everyone at home it said hi, 4b
+  wrote "I told everyone at home I said hi.", and "Do you ever feel like you're
+  the only one here too?" later in the same letter no longer clears it, while
+  "I don't have a mum, do you?" still does. A first try at this, where no
+  question could deny, failed 12 honest replies ("I haven't met your dad, have
+  I?").
+- Checked by re-running the check over every saved reply of the 2b-2 chat
+  evaluations and of both letters evaluations (1,095 first and retried
+  replies, no model): exactly these two change, both from pass to fail. The
+  cases are in `chat_check_test`.
 
-Both untrue lines came on the retry, and both are a denial clearing a claim,
-which a word rule can catch. Letters do not yet need the second model call that
-would read each letter against its memory (2b-2).
+Fixed in what goes to memory: a letter's opening greeting and its questions
+with nothing of the person's own in them are left out (`letter_memory_lines`),
+and the rest stays together as lines of up to 500 characters. Measured by
+sending four letters three times each to gemma3:4b, the old way and the new:
+9 of the 12 old runs took the greeting or a question for a fact about you
+("them is Hello Jasper!", "them has their land", "them is a kitten called
+Moss" when Moss is the buddy, "them wants their house"), and none of the 12
+new runs did. A wish about the buddy's day, "I hope your day was nice", still
+became "them likes your day".
+
+What it still gets wrong:
+- Wondering about a thing still costs a retry or a fallback.
+- gemma3:4b's memory pass is still noisy on short statements, in letters and in
+  chat alike: pieces of sentences ("them likes I like it", "they does they")
+  and, when there is little to go on, the wording's own example ("a kitten
+  called Biscuit"). That memory pass is the one chat uses, and it needs its own
+  measured set before its wording or its filter changes.
+
+Letters do not yet need the second model call that would read each letter
+against its memory (2b-2).
 
 ## Direction (owner, 2026-11-16)
 

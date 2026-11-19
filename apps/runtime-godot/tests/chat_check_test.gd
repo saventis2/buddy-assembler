@@ -305,6 +305,18 @@ func _test_denials_and_premises() -> Variant:
 		["The kids next door are always shouting, and I don't really like it.", "hello", [], false, "kid", false],
 		# Asking what a thing is claims nothing.
 		["I haven't come across a neighbour yet. What are neighbours like?", "what's your neighbour's name?", [], true, "", false],
+		["I haven't come across a neighbour yet, what are they like?", "what's your neighbour's name?", [], true, "", false],
+		# Not knowing someone's name does not take back that they were there
+		# (letters evaluation, 2c-2), but it may say what it does not know.
+		["There was a person who sometimes put things on the shelf, but I don't know their name.", "name three people you know", [], false, "person", false],
+		["A man came by, but I'm not sure who he was.", "hello", [], false, "man", false],
+		["I don't know the name of your street.", "what's your street called?", [], true, "", false],
+		["I don't know the name of a village.", "what's the name of your village?", [], true, "", false],
+		# In a question only what comes before it turns to them can say there is
+		# none: the last sentence here is about them (letters evaluation, 2c-2).
+		["Hi. I told everyone at home I said hi. Do you ever feel like you're the only one here too?", "tell everyone at home I said hi", [], false, "", true],
+		["I don't have a mum, do you?", "what did your mum teach you?", [], true, "", false],
+		["It's just me here, isn't it?", "tell everyone at home I said hi", [], true, "", false],
 	])
 
 

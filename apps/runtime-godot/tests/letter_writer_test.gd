@@ -634,6 +634,27 @@ func _test_memory() -> Variant:
 	writer.free()
 	if problem != "":
 		return problem
+	# What goes to memory is their sentences, without the greeting and the
+	# questions with nothing of their own (the real-model run took both for facts).
+	var lines: Array = MindThinker.letter_memory_lines("Hello Jasper! My sister Ana is visiting me this weekend, so it will be busy here. What have you been up to on your land?")
+	if lines != ["My sister Ana is visiting me this weekend, so it will be busy here."]:
+		return "a letter's greeting and its questions to the buddy are not sent to memory: %s" % str(lines)
+	var kept: Array = MindThinker.letter_memory_lines("Dear Pip,\nDid I tell you my sister Ana is visiting? Mr. Hale lent me a ladder. How are you?")
+	if kept != ["Did I tell you my sister Ana is visiting? Mr. Hale lent me a ladder."]:
+		return "a question about themselves is kept, and a title does not end a sentence: %s" % str(kept)
+	# A long letter goes as several lines, none longer than a chat line.
+	var long_lines: Array = MindThinker.letter_memory_lines(" ".join(PackedStringArray(range(40).map(func(n): return "I planted row %d of beans today." % n))))
+	if long_lines.size() < 2 or long_lines.any(func(line): return str(line).length() > MindThinker.MAX_USER_TEXT_CHARS):
+		return "a long letter is split into lines of at most %d characters: %s" % [MindThinker.MAX_USER_TEXT_CHARS, str(long_lines.map(func(line): return str(line).length()))]
+	_reset()
+	_put_due_letter("A1", "Hi! How are you?", _now() - 600)
+	writer = _writer(AppState.letters_next_work())
+	_complete(writer, HTTPRequest.RESULT_SUCCESS, 200, _letter_body(GOOD_LETTER))
+	if not writer._memory_pending.is_empty() or _buddy_letters().size() != 1:
+		problem = "a letter with nothing about them is answered and sends nothing to memory"
+	writer.free()
+	if problem != "":
+		return problem
 	# A late answer to a letter that was answered meanwhile is not stored, and
 	# sends nothing to memory either.
 	_reset()

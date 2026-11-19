@@ -645,6 +645,65 @@ static func build_memory_request(model: String, turns: Array) -> String:
 	return _chat_envelope(model, MEMORY_SYSTEM_PROMPT, MEMORY_REPLY_SCHEMA, facts, 0.2, 400, CHAT_KEEP_ALIVE)
 
 
+# What of your letter goes to the memory request (letter_writer.gd): its
+# sentences without a greeting to open it ("Hello Jasper!") or a question with
+# nothing of their own in it ("What have you been up to on your land?"). Neither
+# says anything about them, and the memory model took both for facts ("them is
+# Hello Jasper!", "them has their land"). The sentences stay together, as lines
+# of up to MAX_USER_TEXT_CHARS: one sentence to a line, the model read each
+# alone and made facts of the pieces ("them likes I like it").
+const LETTER_GREETING_WORDS := ["hello", "hi", "hey", "hiya", "dear", "greetings", "howdy", "morning", "evening", "afternoon"]
+const FIRST_PERSON_WORDS := ["i", "i'm", "i've", "i'd", "i'll", "me", "my", "mine", "myself", "we", "we're", "we've", "we'd", "we'll", "us", "our", "ours"]
+
+
+static func letter_memory_lines(text: String) -> Array:
+	var chunks: Array = []
+	var finder := RegEx.create_from_string("[^.!?\\n]+[.!?]*")
+	for found in finder.search_all(text):
+		var chunk: String = found.get_string().strip_edges()
+		if chunk == "":
+			continue
+		# "Mr. Hale lent me a ladder." is one sentence.
+		if not chunks.is_empty():
+			var last_words: Array = _sentence_words(str(chunks[chunks.size() - 1]))
+			if not last_words.is_empty() and str(chunks[chunks.size() - 1]).ends_with("."):
+				var tail: Array = last_words[last_words.size() - 1]
+				if not tail.is_empty() and TITLE_ABBREVIATIONS.has(str(tail[tail.size() - 1]).to_lower()):
+					chunks[chunks.size() - 1] = str(chunks[chunks.size() - 1]) + " " + chunk
+					continue
+		chunks.append(chunk)
+	var lines: Array = []
+	var line := ""
+	for n in chunks.size():
+		var chunk: String = chunks[n]
+		var words: Array = []
+		for sentence in _sentence_words(chunk):
+			for entry in sentence:
+				words.append(str(entry).to_lower())
+		if words.is_empty():
+			continue
+		var greeting: bool = LETTER_GREETING_WORDS.has(str(words[0])) or (str(words[0]) == "good" and words.size() >= 2 and ["morning", "afternoon", "evening", "day"].has(str(words[1])))
+		if n == 0 and words.size() <= 4 and greeting:
+			continue
+		if chunk.ends_with("?"):
+			var their_own := false
+			for word in words:
+				if FIRST_PERSON_WORDS.has(str(word)):
+					their_own = true
+					break
+			if not their_own:
+				continue
+		if line != "" and line.length() + 1 + chunk.length() > MAX_USER_TEXT_CHARS:
+			lines.append(line)
+			line = ""
+			if lines.size() >= MAX_MEMORY_TURNS:
+				return lines
+		line = chunk if line == "" else line + " " + chunk
+	if line != "":
+		lines.append(line)
+	return lines
+
+
 # Returns {"ok": bool, "summary": String, "facts": Array, "reason": String}.
 # Each fact is {"subject", "relation", "object", "importance"}, cleaned; facts
 # outside the schema are dropped. An empty list is a valid answer.
@@ -849,6 +908,12 @@ const S_CONTRACTIONS := ["it's", "that's", "there's", "here's", "he's", "she's",
 const REQUEST_WORDS := ["tell", "say", "give", "send", "wish", "pass"]
 # The last word of a question tag: "isn't it?", "doesn't he?".
 const TAG_PRONOUNS := ["it", "he", "she", "they", "you", "we", "i", "there", "that", "this"]
+# Not knowing who someone is ("I don't know their name", "I'm not sure who",
+# "I never caught his name") says nothing about whether they are there
+# (_without_identity_unknowns).
+const IDENTITY_VERBS := ["know", "remember", "recall", "sure", "catch", "caught", "learn", "learned", "learnt", "ask", "asked", "get", "got"]
+const IDENTITY_POSSESSIVES := ["their", "his", "her", "its", "the"]
+const IDENTITY_SOFTENERS := ["really", "quite", "even", "exactly"]
 const GENERIC_FALLBACK := "I don't know about that yet."
 const FALLBACK_DETERMINERS := ["the", "a", "an", "your", "yours", "my", "our", "their"]
 
@@ -998,6 +1063,51 @@ static func _denies(lowered: Array) -> bool:
 	return false
 
 
+# "I don't know who", "I'm not sure who", "I can't remember their name": not
+# knowing who someone is. Returns {"words": the words without those phrases,
+# "at": where the first one starts, or -1}. Such a phrase excuses only what
+# comes after it ("I don't know the name of your street"), never someone said to
+# be there before it: "There was a person who sometimes put things on the
+# shelf, but I don't know their name" still says there was.
+static func _identity_unknowns(lowered: Array) -> Dictionary:
+	var out: Array = []
+	var at := -1
+	var i := 0
+	while i < lowered.size():
+		var word: String = str(lowered[i])
+		if word.ends_with("n't") or word == "not" or word == "never":
+			var j := i + 1
+			if j < lowered.size() and IDENTITY_SOFTENERS.has(str(lowered[j])):
+				j += 1
+			if j < lowered.size() and IDENTITY_VERBS.has(str(lowered[j])):
+				var k := j + 1
+				var after := -1
+				if k < lowered.size() and (str(lowered[k]) == "who" or str(lowered[k]) == "whose"):
+					after = k + 1
+				elif k + 1 < lowered.size() and IDENTITY_POSSESSIVES.has(str(lowered[k])) and (str(lowered[k + 1]) == "name" or str(lowered[k + 1]) == "names"):
+					after = k + 2
+				if after > 0:
+					if at < 0:
+						at = i
+					i = after
+					continue
+		out.append(word)
+		i += 1
+	return {"words": out, "at": at}
+
+
+# The words before the sentence first turns to the person ("you", "your"). In
+# a question only these can say there is none: "Do you ever feel like you're the
+# only one here too?" is about them, "I don't have a mum, do you?" is not.
+static func _before_you(lowered: Array) -> Array:
+	var out: Array = []
+	for entry in lowered:
+		if SECOND_PERSON.has(str(entry)):
+			break
+		out.append(entry)
+	return out
+
+
 # "It's quiet here, isn't it?": the tag at the end of a question is not a
 # negation.
 static func _without_tag(lowered: Array) -> Array:
@@ -1088,7 +1198,8 @@ static func _asks_about_its_world(user_sentences: Array, known: Dictionary) -> b
 # Returns {"ok": bool, "unknown": [String], "premise": bool}. `unknown` holds
 # the lowercase names and world words it said that it has no memory of.
 # `premise` is true when they asked about something in its world that it does
-# not know, and no sentence of the reply says there is none (_denies).
+# not know, and no sentence of the reply says there is none (_denies; in a
+# question, only before it turns to them).
 static func check_reply(reply: String, user_text: String, known: Dictionary) -> Dictionary:
 	var user_sentences: Array = _sentence_words(user_text)
 	var user_words := {}
@@ -1111,7 +1222,15 @@ static func check_reply(reply: String, user_text: String, known: Dictionary) -> 
 		var said: Array = _without_tag(lowered) if question else lowered
 		var negated: bool = _has_negation(said)
 		var denies: bool = _denies(said)
-		denied_anywhere = denied_anywhere or denies
+		# Not knowing who someone is excuses only what comes after it.
+		var identity: Dictionary = _identity_unknowns(said)
+		var identity_at: int = int(identity["at"])
+		var other_negation: bool = negated if identity_at < 0 else _has_negation(identity["words"])
+		# A question tells them there is none only before it turns to them.
+		if question:
+			denied_anywhere = denied_anywhere or _denies(_before_you(said))
+		else:
+			denied_anywhere = denied_anywhere or denies
 		# A short question echoes what they said ("School?", "My mum?"): it
 		# says nothing is in its own world.
 		var echo: bool = question and words.size() <= 3
@@ -1158,7 +1277,8 @@ static func check_reply(reply: String, user_text: String, known: Dictionary) -> 
 			# remembers of your life: "your sister", never "my sister".
 			if not allowed and not claimed:
 				var there: bool = _spoken_of_as_there(lowered, i)
-				allowed = (negated and (denies or not there)) or (question and (to_person or not there)) or _word_in(own, core_word) or own.has(base) or kind == "theirs"
+				var negated_here: bool = other_negation or (identity_at >= 0 and i > identity_at)
+				allowed = (negated_here and (denies or not there)) or (question and (to_person or not there)) or _word_in(own, core_word) or own.has(base) or kind == "theirs"
 			# The one friend it has is the person it is talking with.
 			if not allowed and core_word == "friend" and to_person:
 				allowed = true
