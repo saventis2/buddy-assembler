@@ -777,7 +777,10 @@ const LAND := {
 			"opens": 6, "closes": 21, "distance": 2, "residents": [],
 			"discover": {
 				"from": ["patch"],
-				"sign": "Past the overgrown patch the grass gets taller than I am. It moved as if something was walking in it.",
+				"sign": {
+					"patch": "Past the overgrown patch the grass gets taller than I am. It moved as if something was walking in it.",
+					"": "Not far off, the grass gets taller than I am. It moved as if something was walking in it.",
+				},
 				"chance": 0.5,
 				"blocked": [
 					"I went a little way into the tall grass and lost sight of the house. I backed out the way I came.",
@@ -841,6 +844,7 @@ const LAND := {
 				"sign": {
 					"long_grass": "From the bottom of the long grass I could hear water somewhere, low and steady, like the glowing box but wetter.",
 					"high_ground": "From the high ground there is a line of shine across the low end of the land. It moves. I think it is water.",
+					"": "Somewhere further off I could hear water, low and steady, like the glowing box but wetter.",
 				},
 				"chance": 0.25,
 				"blocked": [
@@ -914,6 +918,7 @@ const LAND := {
 				"sign": {
 					"water": "Further up, the water gets louder and the banks turn from earth to stone.",
 					"high_ground": "From the high ground there is a pale grey patch off to one side, where nothing seems to grow.",
+					"": "Off to one side the land turns pale grey, where nothing seems to grow.",
 				},
 				"chance": 0.35,
 				"blocked": [
@@ -972,7 +977,10 @@ const LAND := {
 			"opens": 6, "closes": 21, "distance": 3, "residents": [],
 			"discover": {
 				"from": ["water"],
-				"sign": "A little way down the water, the bank is a different colour: grey, and smooth, as if it had been cut with something.",
+				"sign": {
+					"water": "A little way down the water, the bank is a different colour: grey, and smooth, as if it had been cut with something.",
+					"": "Not far off, a bank is a different colour from the rest: grey, and smooth, as if it had been cut with something.",
+				},
 				"chance": 0.4,
 				"blocked": [
 					"I went down the water toward the grey place and the bank ran out. I didn't feel like swimming yet.",
@@ -1027,6 +1035,7 @@ const LAND := {
 				"sign": {
 					"grey_bank": "Just past the grey bank the water turns a corner and goes quiet. There is something pale on the inside of the corner.",
 					"water": "Further down, the water turns a corner and goes quiet. There is something pale on the inside of the corner.",
+					"": "Off where the land runs down there is something pale and flat, like a patch of sky lying on the ground.",
 				},
 				"chance": 0.4,
 				"blocked": [
@@ -1086,6 +1095,7 @@ const LAND := {
 				"sign": {
 					"long_grass": "Beyond the long grass there is taller grass still, with brown tops. It whispers even when I can't feel any wind.",
 					"sandy_bend": "Past the sandy bend the water spreads out among tall thin stems with brown tops. They whisper to each other the whole time.",
+					"": "Further off the grass grows taller still, with brown tops. It whispers even when I can't feel any wind.",
 				},
 				"chance": 0.3,
 				"blocked": [
@@ -1148,6 +1158,7 @@ const LAND := {
 				"sign": {
 					"high_ground": "From the high ground there is a dark line along the far edge of everything. Trees, I think, standing very close together.",
 					"stony_ground": "Past the stony ground the land goes dark. It is trees, a great many of them, with no light between.",
+					"": "Along the far edge of everything there is a dark line. Trees, I think, standing very close together.",
 				},
 				"chance": 0.05,
 				"blocked": [

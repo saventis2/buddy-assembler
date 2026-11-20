@@ -115,9 +115,15 @@ const LAND_SIGN_PULL := 0.2
 # at most once a day after a failure.
 const LAND_TRY_BONUS := 0.05
 const LAND_SIGHT_CHANCE := 0.12
+# With free exploration (2026-11-21) it spreads its attention over the whole
+# land; a creature's first sight is this much likelier to be the one noticed,
+# so it still meets and names a neighbour in its first week.
+const LAND_CREATURE_SIGHT_WEIGHT := 3.0
 # When it has nothing new to notice, how often it meets a thing that lives here
 # again, and which meeting gives the thing its own name (the sight is meeting 1).
-const LAND_MEET_CHANCE := 0.3
+# Raised from 0.3 with free exploration (2026-11-21): roaming wider, it met its
+# neighbours too seldom to name one in its first week.
+const LAND_MEET_CHANCE := 0.4
 const LAND_NAME_AFTER := 3
 const LAND_WONDER_CHANCE := 0.5
 const LAND_GOOD_TAIL_CHANCE := 0.4
@@ -128,6 +134,15 @@ const LAND_BAD_LINE_BELOW := -0.15
 const LAND_MAX_LINE_CHARS := 240
 const LAND_DEFAULT_MINUTES := 20
 const LAND_TRAVEL_MINUTES := 5
+# Free exploration (owner, 2026-11-21): there are no paths. A try for a place
+# it has not found starts from the nearest place it knows (or home) within
+# LAND_REACH on the land's map (1 across, about 64 m), in any direction; a walk
+# takes LAND_TRAVEL_MINUTES for every LAND_HOP of the straight way there; and
+# of two places that would do, the nearer to home (as the crow flies) is
+# likelier. A land with no map (the old town, test lands) keeps its "from"
+# lists and hops.
+const LAND_REACH := 0.28
+const LAND_HOP := 0.15
 # It thinks less and does more here than in the old town.
 const LAND_REFLECT_SCALE := 0.6
 # A slot is one decision interval (10 minutes). A day awake tires it by about
@@ -820,7 +835,7 @@ func _decide(
 			place = (DEFAULT_TOWN_PLACES[0] as Dictionary).duplicate(true)
 		activity = {"id": "think", "label": "sat and thought", "satisfies": "reflection"}
 	else:
-		var chosen := _pick_candidate(candidates, mind["feelings"], rng)
+		var chosen := _pick_candidate(candidates, mind["feelings"], rng, _place_by_id(all_places, home_id))
 		place = chosen["place"]
 		activity = chosen["activity"]
 
@@ -857,7 +872,7 @@ func _decide(
 
 	var slots := 1
 	if small:
-		slots = _land_slots(activity, place, came_from, decision_unix, rng)
+		slots = _land_slots(activity, place, came_from, decision_unix, rng, all_places)
 		_apply_land_needs(mods, activity, slots, valence, str(edge.get("kind", "")))
 	else:
 		_apply_drive_effects(mods, intent)
@@ -1546,8 +1561,42 @@ func known_town(profile: Dictionary, land: Dictionary) -> Dictionary:
 	return known
 
 
-# The first place a try can start from: one it has found, that is open now.
-func _edge_origin(discover: Dictionary, all_places: Array, known: Dictionary, home_id: String, hour: int) -> Dictionary:
+# Where a place sits on the land's map, or null when the land has no map.
+static func _map_of(place: Dictionary) -> Variant:
+	var map_variant = place.get("map", null)
+	if typeof(map_variant) == TYPE_ARRAY and (map_variant as Array).size() == 2:
+		return Vector2(float(map_variant[0]), float(map_variant[1]))
+	return null
+
+
+# The place a try can start from. On a mapped land: the nearest place it has
+# found (or home), open now, within LAND_REACH of the target, in any direction.
+# Without a map: the first of the target's "from" places it has found that is
+# open now.
+func _edge_origin(discover: Dictionary, all_places: Array, known: Dictionary, home_id: String, hour: int,
+		target: Dictionary = {}) -> Dictionary:
+	var target_map = _map_of(target)
+	if target_map != null:
+		# It steps out of the door first: from inside the house only the place
+		# nearest it (the doorstep) can be reached; everything else starts outside.
+		var doorstep := _doorstep_id(all_places, home_id)
+		var nearest: Dictionary = {}
+		var nearest_d := INF
+		for place_variant in all_places:
+			var place: Dictionary = place_variant
+			var place_id := str(place.get("id", ""))
+			if place_id != home_id and _place_stage(known, place_id) != "found":
+				continue
+			if place_id == home_id and str(target.get("id", "")) != doorstep:
+				continue
+			var place_map = _map_of(place)
+			if place_map == null or not _place_is_open(place, hour):
+				continue
+			var d := (place_map as Vector2).distance_to(target_map)
+			if d <= LAND_REACH and d < nearest_d:
+				nearest_d = d
+				nearest = place
+		return nearest
 	var from_variant = discover.get("from", null)
 	if typeof(from_variant) != TYPE_ARRAY:
 		return {}
@@ -1562,7 +1611,30 @@ func _edge_origin(discover: Dictionary, all_places: Array, known: Dictionary, ho
 	return {}
 
 
-# A string, or one string per place the try started from.
+# The mapped place nearest home: the yard, outside the door.
+func _doorstep_id(all_places: Array, home_id: String) -> String:
+	var home_map = _map_of(_place_by_id(all_places, home_id))
+	if home_map == null:
+		return ""
+	var best := ""
+	var best_d := INF
+	for place_variant in all_places:
+		var place: Dictionary = place_variant
+		var place_id := str(place.get("id", ""))
+		var place_map = _map_of(place)
+		if place_id == home_id or place_map == null:
+			continue
+		var d := (place_map as Vector2).distance_to(home_map)
+		if d < best_d:
+			best_d = d
+			best = place_id
+	return best
+
+
+# A string, or one string per place the try started from. With free
+# exploration a try can start from a place the lines were not written for: then
+# the "" line, which names no other place, so it is never untrue about where
+# it was or names a place it has not found.
 func _edge_text(value: Variant, origin_id: String) -> String:
 	if typeof(value) == TYPE_STRING:
 		return str(value)
@@ -1570,6 +1642,8 @@ func _edge_text(value: Variant, origin_id: String) -> String:
 		var by_origin: Dictionary = value
 		if by_origin.has(origin_id):
 			return str(by_origin[origin_id])
+		if by_origin.has(""):
+			return str(by_origin[""])
 		for key in by_origin.keys():
 			return str(by_origin[key])
 	return ""
@@ -1599,7 +1673,7 @@ func _try_the_edge(
 		var discover_variant = target.get("discover", null)
 		if typeof(discover_variant) != TYPE_DICTIONARY:
 			continue
-		var origin := _edge_origin(discover_variant as Dictionary, all_places, known, home_id, hour)
+		var origin := _edge_origin(discover_variant as Dictionary, all_places, known, home_id, hour, target)
 		if origin.is_empty():
 			continue
 		reach.append({"place": target, "origin": origin, "stage": stage})
@@ -1655,8 +1729,10 @@ func _try_the_edge(
 
 # How many decision slots this takes: its minutes (a little more or less each
 # time), or until its hour next comes round (it sleeps until morning), plus the
-# walk there.
-func _land_slots(activity: Dictionary, place: Dictionary, came_from: String, decision_unix: int, rng: RandomNumberGenerator) -> int:
+# walk there: the straight way from where it was on a mapped land, otherwise
+# the place's hops from home.
+func _land_slots(activity: Dictionary, place: Dictionary, came_from: String, decision_unix: int, rng: RandomNumberGenerator,
+		all_places: Array = []) -> int:
 	var minutes := float(activity.get("minutes", LAND_DEFAULT_MINUTES)) * rng.randf_range(0.85, 1.15)
 	if activity.has("until_hour"):
 		# Give or take, and never less than an hour.
@@ -1665,8 +1741,25 @@ func _land_slots(activity: Dictionary, place: Dictionary, came_from: String, dec
 		var left := (int(activity["until_hour"]) * 60 - now_minutes + 1440) % 1440
 		minutes = maxf(60.0, float(left) + rng.randf_range(0.0, 40.0))
 	if str(place.get("id", "")) != came_from:
-		minutes += float(LAND_TRAVEL_MINUTES) * float(place.get("distance", 0))
+		minutes += float(LAND_TRAVEL_MINUTES) * _hops_between(_place_by_id(all_places, came_from), place)
 	return maxi(1, int(round(minutes * 60.0 / float(DECISION_INTERVAL_SECONDS))))
+
+
+func _place_by_id(all_places: Array, place_id: String) -> Dictionary:
+	for place_variant in all_places:
+		if typeof(place_variant) == TYPE_DICTIONARY and str((place_variant as Dictionary).get("id", "")) == place_id:
+			return place_variant
+	return {}
+
+
+# How far apart two places are, in old path hops: the straight way on a mapped
+# land; otherwise the destination's hops from home.
+func _hops_between(from_place: Dictionary, to_place: Dictionary) -> float:
+	var from_map = _map_of(from_place)
+	var to_map = _map_of(to_place)
+	if from_map != null and to_map != null:
+		return (from_map as Vector2).distance_to(to_map) / LAND_HOP
+	return float(to_place.get("distance", 0))
 
 
 # In the land, needs move with time and with what it does: being awake tires
@@ -1819,7 +1912,21 @@ func _land_afterthought(
 			unseen.append(sight)
 	if unseen.is_empty() or rng.randf() >= LAND_SIGHT_CHANCE:
 		return _land_meet(entry, place, hour, mind, town, decision_unix, rng, personality_seed, room)
-	var noticed: Dictionary = unseen[rng.randi_range(0, unseen.size() - 1)]
+	# Something alive catches the eye before something still: a creature's
+	# first sight weighs LAND_CREATURE_SIGHT_WEIGHT against 1 for any other.
+	var creature_sights := {}
+	for thing_variant in _land_things(town):
+		creature_sights[str((thing_variant as Dictionary).get("sight", ""))] = true
+	var weight_total := 0.0
+	for sight in unseen:
+		weight_total += LAND_CREATURE_SIGHT_WEIGHT if creature_sights.has(str((sight as Dictionary).get("id", ""))) else 1.0
+	var pick := rng.randf() * weight_total
+	var noticed: Dictionary = unseen[unseen.size() - 1]
+	for sight in unseen:
+		pick -= LAND_CREATURE_SIGHT_WEIGHT if creature_sights.has(str((sight as Dictionary).get("id", ""))) else 1.0
+		if pick <= 0.0:
+			noticed = sight
+			break
 	entry["text"] = str(entry["text"]) + " " + str(noticed.get("line", ""))
 	entry["sight"] = str(noticed.get("id", ""))
 	seen[str(noticed.get("id", ""))] = decision_unix
@@ -1934,7 +2041,10 @@ func _candidates_for_need(open_places: Array, need: String, hour: int = -1) -> A
 	return rows
 
 
-func _pick_candidate(candidates: Array, feelings: Dictionary, rng: RandomNumberGenerator) -> Dictionary:
+# Weighted by feelings, and by how far it is from from_place (home: the land
+# around home is where it lives; on a land with no map, the place's hops from
+# home).
+func _pick_candidate(candidates: Array, feelings: Dictionary, rng: RandomNumberGenerator, from_place: Dictionary = {}) -> Dictionary:
 	var total := 0.0
 	var weights: Array = []
 	for row in candidates:
@@ -1943,7 +2053,7 @@ func _pick_candidate(candidates: Array, feelings: Dictionary, rng: RandomNumberG
 		var place_feeling := float(feelings.get("place:%s" % str(place.get("id", "")), 0.0))
 		var activity_feeling := float(feelings.get("activity:%s" % str(activity.get("id", "")), 0.0))
 		var raw := maxf(0.15, 1.0 + place_feeling * 0.7 + activity_feeling * 0.5)
-		var weight := raw / (1.0 + 0.25 * float(place.get("distance", 0)))
+		var weight := raw / (1.0 + 0.25 * _hops_between(from_place, place))
 		weights.append(weight)
 		total += weight
 	var roll := rng.randf() * total

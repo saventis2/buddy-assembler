@@ -59,6 +59,10 @@ const USER_FACT_BONUS := 0.25
 # Plan 14 step 2b-2: telling a land memory in chat makes it a little stronger.
 const RECALL_BOOST := 0.05
 # Words that make a land memory relevant to what was said, by relation (recall_land).
+# Added to a naming line's relevance when the question touches it (see recall_land).
+const NAME_ANSWER_BONUS := 0.5
+# A land memory matched on its own words, against 1.0 for a word for its kind.
+const OWN_WORDS_RELEVANCE := 1.5
 const LAND_TAGS := {
 	"believes": ["people", "person", "anyone", "anybody", "someone", "somebody", "everyone", "neighbour", "neighbours", "neighbor", "neighbors", "friend", "friends", "family", "mum", "mom", "dad", "mother", "father", "brother", "sister", "folks", "town", "village", "city", "alone", "lonely", "live", "lives", "visit", "play", "met", "meet"],
 	"found": ["place", "places", "where", "home", "land", "found", "near", "far", "around"],
@@ -593,6 +597,9 @@ func _sign_line(land: Dictionary, place_id: String) -> String:
 		return ""
 	var sign_variant = (discover as Dictionary).get("sign", "")
 	if typeof(sign_variant) == TYPE_DICTIONARY:
+		# Where the try started is not known here: the line that names no place.
+		if (sign_variant as Dictionary).has(""):
+			return str((sign_variant as Dictionary)[""])
 		for key in (sign_variant as Dictionary).keys():
 			return str((sign_variant as Dictionary)[key])
 		return ""
@@ -853,7 +860,9 @@ func recall_land(profile: Dictionary, text: String, now_unix: int, limit: int = 
 		var relevant := 0.0
 		for key in _land_edge_keys(edge):
 			if words.has(key):
-				relevant = 1.0
+				# Its own words (what it is, what it is called) say more than
+				# a word for its kind of memory, below.
+				relevant = OWN_WORDS_RELEVANCE
 				break
 		if relevant <= 0.0:
 			# Tags are matched on the plain words too: "do", "did", "today",
@@ -862,6 +871,11 @@ func recall_land(profile: Dictionary, text: String, now_unix: int, limit: int = 
 				if plain.has(str(tag)) or plain.has(_stem(str(tag))):
 					relevant = 1.0
 					break
+		# A question about names gets its names first. "What do you call..."
+		# also matches every "did" and "liked" line through "do", and those
+		# are many and often renewed, so a naming line could drop out.
+		if relevant > 0.0 and str(edge.get("r", "")) == "calls":
+			relevant += NAME_ANSWER_BONUS
 		var seen: int = int(edge.get("seen", 0))
 		var score: float = relevant + _recency(seen, now_unix) + float(edge.get("importance", 0.0)) + 0.25 * eff
 		scored.append({"score": score, "seen": seen, "id": int(edge.get("id", 0)), "line": line})
