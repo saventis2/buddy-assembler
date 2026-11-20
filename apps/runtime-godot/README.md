@@ -137,6 +137,17 @@ fast-forward tool) never takes the app's role and never starts a host.
 - The host is the same program run as `--headless -- --world-host`. To stop
   it, turn the setting off: it notices within ten seconds and quits.
 
+### The 3D view
+
+Menu > Town opens a small 3D diorama of the buddy's land (D-009): the buddy
+stands in it as its own 2D character on a card and walks between places when it
+moves, the light follows your local time of day, the world's weather shows as
+cloud shadows and rain, and mist lies over land it has not found yet. Drag to
+turn the view, scroll to zoom, click a place to read about it. `"landView3d"`
+(Menu > Settings > Look and place > Town view) switches back to the flat map.
+The view only draws while its window is open, at most 30 frames a second, and
+has no shadows.
+
 ## Letters
 
 On the land, the main menu has a Letters window: write to your buddy and it

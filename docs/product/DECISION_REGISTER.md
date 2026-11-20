@@ -54,6 +54,19 @@ Recorded on: 2026-11-17 (owner direction of 2026-11-16, Plan 14)
   develop over time, not to start in a town full of people. See
   `PLAN14_SMALL_BEGINNINGS.md`.
 
+## D-009: The 2.5D world
+
+Recorded on: 2026-11-20 (owner direction of 2026-11-16, Plan 14)
+
+- Decision: the buddy's world is shown as a small low-poly 3D diorama of its
+  land, with the buddy as its existing 2D character on a card that faces the
+  camera; a modelled, rigged 3D buddy is its own later plan, and the world is
+  built so the card can be swapped for one. The desktop Town window is this
+  view (2026-11-20); the website gets the same scene in step 5.
+- Status: locked
+- Why: the owner wants to watch its world in 3D and keep the character and
+  animations it already has.
+
 ## D-010: The world host
 
 Recorded on: 2026-11-18 (owner direction of 2026-11-16 and 2026-11-18, Plan 14)

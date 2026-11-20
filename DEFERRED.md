@@ -24,6 +24,8 @@ unless the V1 exit criteria in `PR_PLAN.md` are signed off.
   checked against its own memory; from 2026-11-19 (step 2c-1) letters you write
   arrive and are read at its console, and from step 2c-2 (2026-11-19) it writes
   back.
+- A fully modelled 3D buddy (D-009, 2026-11-20): the 3D view shows the
+  existing 2D character on a card; a rigged 3D character is its own later plan.
 - Cross-platform parity (macOS, Linux, mobile).
 - Marketplace or user-submitted content hosting.
 

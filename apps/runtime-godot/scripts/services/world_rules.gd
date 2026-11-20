@@ -825,3 +825,57 @@ static func judge(design: Dictionary) -> Dictionary:
 static func _add_reason(reasons: Array, reason: String) -> void:
 	if not reasons.has(reason):
 		reasons.append(reason)
+
+
+# --- weather ----------------------------------------------------------------
+
+# The weather (Plan 14 step 4). Each local day has a character, picked from its
+# date and the buddy's seed, and each three-hour stretch of the day follows it.
+# The same seed and time always give the same weather, so the world host, the 3D
+# view and later the website agree. Nothing in the buddy's life reads it yet.
+const WEATHER_STRETCH_SECONDS := 10800
+const WEATHER_DAYS := [
+	{"id": "fair", "weight": 45, "clear": 80, "cloudy": 20, "rain": 0},
+	{"id": "grey", "weight": 25, "clear": 20, "cloudy": 70, "rain": 10},
+	{"id": "showery", "weight": 20, "clear": 20, "cloudy": 45, "rain": 35},
+	{"id": "wet", "weight": 10, "clear": 0, "cloudy": 25, "rain": 75},
+]
+
+
+# {"kind": "clear" | "cloudy" | "rain", "day": the day's character, "cover" and
+# "rain" 0..1, "from" and "until": the unix bounds of this three-hour stretch}.
+static func weather(personality_seed: int, unix: int, tz_bias_minutes: int) -> Dictionary:
+	var local: int = unix + tz_bias_minutes * 60
+	var day: int = floori(local / 86400.0)
+	var in_day: int = posmod(local, 86400)
+	var stretch: int = int(in_day / WEATHER_STRETCH_SECONDS)
+	var h: int = absi(hash("%d|weather|%d" % [personality_seed, day])) % 100
+	var character: Dictionary = WEATHER_DAYS[WEATHER_DAYS.size() - 1]
+	var running := 0
+	for row_variant in WEATHER_DAYS:
+		var row: Dictionary = row_variant
+		running += int(row["weight"])
+		if h < running:
+			character = row
+			break
+	var k: int = absi(hash("%d|weather|%d|%d" % [personality_seed, day, stretch]))
+	var roll: int = k % 100
+	var kind := "rain"
+	if roll < int(character["clear"]):
+		kind = "clear"
+	elif roll < int(character["clear"]) + int(character["cloudy"]):
+		kind = "cloudy"
+	var f: float = float(int(k / 100) % 1000) / 1000.0
+	var cover := 0.0
+	var rain := 0.0
+	match kind:
+		"clear":
+			cover = 0.2 * f
+		"cloudy":
+			cover = 0.55 + 0.4 * f
+		_:
+			cover = 0.85 + 0.15 * f
+			rain = 0.4 + 0.6 * f
+	var from: int = unix - in_day % WEATHER_STRETCH_SECONDS
+	return {"kind": kind, "day": str(character["id"]), "cover": snappedf(cover, 0.01),
+		"rain": snappedf(rain, 0.01), "from": from, "until": from + WEATHER_STRETCH_SECONDS}

@@ -14,6 +14,8 @@ world runs in a background world host, on by default; the desktop app is the
 buddy visiting you. Since 2026-11-18 (D-012) it is told nothing about its
 world: it knows what is in its own memory, and what it says is checked against
 that memory before it goes out.
+Since 2026-11-20 (D-009) you can watch it there: Menu > Town shows its land as a
+small 3D diorama, with the buddy as its own 2D character on a card.
 
 ## Target User
 

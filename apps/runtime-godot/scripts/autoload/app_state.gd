@@ -1398,6 +1398,15 @@ func get_town_map() -> Dictionary:
     return layout if typeof(layout) == TYPE_DICTIONARY else {}
 
 
+# The whole land and where each place sits, for the 3D view (Plan 14 step 4):
+# every place, known or not (the view hides what it has not found under mist).
+# In the old town, the town itself.
+func get_land_layout() -> Dictionary:
+    var land: Dictionary = _land() if small_beginnings() else get_town()
+    var layout = _call_service_with_fallback("world", "town_map", [land], {})
+    return {"land": land, "layout": layout if typeof(layout) == TYPE_DICTIONARY else {}}
+
+
 func mind_day_plan() -> Dictionary:
     var plan = _call_service_with_fallback("mind", "get_day_plan", [profile], {})
     return plan if typeof(plan) == TYPE_DICTIONARY else {}
@@ -2154,6 +2163,7 @@ func _default_settings() -> Dictionary:
         "autonomyEnabled": true,
         "smallBeginnings": true,
         "worldHost": true,
+        "landView3d": true,
         "inventoryCompact": false,
         "mindModelEnabled": true,
         "mindModelUrl": "http://127.0.0.1:11434",

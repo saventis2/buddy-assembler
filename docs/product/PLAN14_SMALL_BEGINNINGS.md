@@ -972,6 +972,100 @@ What it still gets wrong:
 - **One gemma3:4b letter made up something you had said** ("like when you
   said"), as in the letters evaluation.
 
+### Step 4, the 3D view: built 2026-11-20
+
+Menu > Town now opens a small 3D diorama of the buddy's land (D-009,
+`land_view.gd`). The buddy stands in it as its own 2D character on a card that
+faces the camera, and walks between places when it moves. The light follows your
+local time of day, the world's weather shows as cloud shadows and rain, and mist
+lies over land it has not found. You can turn the view around the land and zoom,
+and click a place to read about it. Everything is built from Godot's own shapes
+in code: no models, no new asset files. Nothing in the buddy's life changed: the
+fast-forward run for seed 21 over 30 days gives the same 819 decisions as
+before.
+
+The owner's three answers of 2026-11-20:
+
+1. **Weather is the world's.** It is worked out from the buddy's seed and the
+   date (`world_rules.weather`) and shown in the view only. The buddy's life does
+   not read it yet: no journal lines, no change to its decisions.
+2. **The Town button opens the 3D view by default.** The setting `landView3d`
+   (Menu > Settings > Look and place > Town view) brings back the flat map (A2),
+   which stays as it was until the owner has watched the 3D view.
+3. **Everything is built from primitive shapes in code.**
+
+The weather. Each local day has a character picked from its date and the seed;
+each three-hour stretch of the day follows it:
+
+| Day | Share | Clear | Cloudy | Rain |
+|---|---|---|---|---|
+| fair | 45% | 80% | 20% | 0% |
+| grey | 25% | 20% | 70% | 10% |
+| showery | 20% | 20% | 45% | 35% |
+| wet | 10% | 0% | 25% | 75% |
+
+Measured over 365 days (2,920 stretches) in `world_rules_test`: seed 21 has rain
+in 20.1% of stretches and clear in 42.9%; seed 7, 13.9% and 44.2%; seed 3, 19.8%
+and 42.4%. Seeds 21 and 7 differ on most stretches.
+
+The mist. Every spot of land belongs to its nearest place, so finding a place
+clears the land round it: a spot is clear when its nearest place is found (or
+it is within 7 m of a found place, or 3 m of a path between two found places),
+thin when its nearest place is one it has only seen a sign of, and dense
+otherwise. Land more than 14 m from every place is beyond the land and always
+in mist, with a ring of it at the edge. With the whole land found, only that
+outer mist is left. When a place is found, the mist round it shrinks away over
+four seconds. The mist is soft flat sheets, two to a spot, that fade from the
+middle to nothing at the rim, coloured for the time of day (white, warm at the
+golden hours, dim blue at night). The first build used spheres with the
+nearest-found-place rule left out; in the renders they looked like balloons,
+and mist stayed between places that had all been found.
+
+The card is the buddy's own assembled character, with the frames the desktop
+uses (standing, walking, sitting, lying down, looking about); without an
+assembled character it falls back to the pack's pictures. It is 2 m tall, measured
+from the character's own pixels rather than its frame, and the camera starts
+26 m away, so it reads at a glance. The cottage door fits it.
+
+How movement is shown. The view is given a snapshot of the save every two
+seconds. When the newest journal line has a different place from the one before
+it, the buddy walks the shortest route over found paths at 1.6 m a second. The
+walk starts when the view sees the decision, so you watch the whole walk even
+though the desktop only refreshes its copy of the host's state every ten
+seconds. If you open the view in the middle of a decision's time, it is
+mid-walk; open it later and it has arrived. When it tried to reach a place it
+only saw a sign of, it goes five metres toward it and stops. At home, with
+nothing walking, the roof comes off so you can see it inside. The view's clock
+runs on between snapshots and is only put right when it is more than two
+seconds out, so a refresh never pulls a walk back. The walk is the view's own:
+in the world it still crosses its land in one move, with the walk counted in
+minutes (step 1b).
+
+The cost limits. The view is created when the window opens and freed when it
+closes, so it costs nothing while shut. It renders at most 30 frames a second,
+with no shadows (a dark disc under the card instead). Meshes counted by
+`mesh_count()`, most of them mist sheets: 334 on day 1 (only the house found),
+369 with the house, yard, wood heap, big tree and patch found, 415 by about day
+7, and 481 with the whole land found.
+
+Tests: `land_view_test` (9 cases) and `world_rules_test` (8 cases, the new one
+is the weather). Headless, Godot 4.2's dummy renderer prints
+`Parameter "m" is null` once for each shape and label; it is the engine's, not
+a failure.
+
+Looked at by eye, because the tests cannot see pixels:
+
+- Renders at noon, 19:30 under cloud, 23:00, and 15:00 in rain, from above and
+  from low down, on day 3, about day 7 and with everything found.
+- The real Town button, in a throwaway save: the overlay built the assembled
+  character (stand 3 frames, walk 4, sit 1, lie down 1, look about 3), the
+  window opened on a new buddy at home with "Afternoon, light rain", a click on
+  the house showed its details, closing freed the view, it opened again, and
+  with the setting off the button opened the flat map.
+
+Not done yet: the buddy noticing the weather (with the roof work), seasons,
+creatures in the view, removing the 2D map, and the website (step 5).
+
 ## Direction (owner, 2026-11-16)
 
 The buddy starts out knowing very little. It does not start in a town full of
@@ -1610,7 +1704,7 @@ exactly. The world host's data folder comes with step 2a.
 | **People are read in three other places** | `AppState._world_npcs()`, the npcs list built in `AppState.tick_mind`, and `buddy_overlay._town_npcs()` read `world.npcs` directly. With no townspeople for now, all three return nothing. The six characters, quests and encounters are archived and switched off. |
 | `AppState` and the save | The world host becomes the only writer of the save. The desktop app reads its state and sends requests (chat, gifts, suggestions, calling it over). |
 | Catch-up (capped at 8 decisions) | Only needed while GGPC is the host and is switched off. |
-| A2 Town window (`world_service.town_map`, #97) | Replaced by the 3D view; its data feeds the diorama. |
+| A2 Town window (`world_service.town_map`, #97) | Replaced by the 3D view (step 4, 2026-11-20); the flat map stays behind the `landView3d` setting until the owner has watched the 3D view, then goes. Its data feeds the diorama. |
 | Mind (`mind_service.gd`) | Explore goes to the edge of its land; visits to people stop; projects (gather, make, try, build, read) and visiting you join its choices. |
 | Chat (`mind_thinker.gd`, the `town` field) | On the land it sends the memory wording and `your_memories`, checked against its memory (step 2b-2, 2026-11-18; the land wording is gone). Becomes letters (step 2c), written from recalled memories in its own words and checked against its memory before they go (see Memory). It says it doesn't know anything outside that. |
 | B2 memory graph | Becomes the "you" part of long-term memory (step 2b). Things, materials and beliefs become memories with stage, its own name and source; things you teach it are stored with source "you" and never published. |
@@ -1638,7 +1732,7 @@ met.
 | 2b | Memory: it is told nothing; short-term memory, the nightly pass that keeps what matters, long-term memory with sources and strength, recall, and the check on everything it says; D-012 | The done-gate in Memory: no made-up people, places or things on days 1, 7 and 30, and every memory traces to its source |
 | 2c | Letters through the console, like a pen pal: it learns to use the console, reads your letters there and writes back in its own time, from recalled memories, checked before they are sent | A letter sent on day 1 is answered from what it remembers, with the desktop app closed |
 | 3 | The world's rules and the things on the land: materials and properties, ways of working, building needs, outcomes with reasons; noticing and naming | First own names appear in week 1 in fast-forward; the basics check passes |
-| 4 | The 3D view on the desktop: land diorama, the buddy as a card, time of day and weather, mist over unexplored land; D-009 | You can open it and watch the buddy move around its land |
+| 4 | The 3D view on the desktop (built 2026-11-20): land diorama, the buddy as a card, time of day and weather, mist over unexplored land; D-009 | You can open it and watch the buddy move around its land |
 | 5 | Hardlight: the publish step with the privacy filter, snapshot push to Stratos, the web export of the 3D view; D-011 | Anyone can watch its land on Hardlight; the planted-fact test finds nothing about you |
 | 6 | Learning by trying: beliefs in the fixed form, study time by difficulty, tries with outcomes and reasons, adjusting, skills; learning from you | A failed try changes the belief and a later try succeeds, in simulation |
 | 7 | Tools and making things; workbench | First tool lands in its band in simulation |

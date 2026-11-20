@@ -36,6 +36,7 @@ func _run_all() -> void:
 	_case("buildings_are_judged", func(): return _test_buildings())
 	_case("the_basics_check", func(): return _test_basics())
 	_case("nothing_is_changed_in_place", func(): return _test_no_change())
+	_case("weather_is_the_worlds", func(): return _test_weather())
 
 
 func _case(name: String, body: Callable) -> void:
@@ -529,4 +530,86 @@ func _test_no_change() -> Variant:
 	(raw_a["props"] as Dictionary)["hard"] = 0
 	if int((_r("stone")["props"] as Dictionary)["hard"]) != 3:
 		return "raw() hands out the table itself"
+	return ""
+
+
+# The weather: the same for the same seed and time, in step with the local
+# clock, fair more often than wet.
+func _test_weather() -> Variant:
+	var start := 1800000000
+	var first: Dictionary = WorldRules.weather(21, start, 780)
+	if var_to_str(first) != var_to_str(WorldRules.weather(21, start, 780)):
+		return "the same input gave a different weather"
+	for key in ["kind", "day", "cover", "rain", "from", "until"]:
+		if not first.has(key):
+			return "the weather has no %s: %s" % [key, str(first)]
+	var kinds := ["clear", "cloudy", "rain"]
+	var day_ids: Array = []
+	for row in WorldRules.WEATHER_DAYS:
+		day_ids.append(str((row as Dictionary)["id"]))
+	var shares := {}
+	var by_seed := {}
+	for personality_seed in [21, 7, 3]:
+		var rain_count := 0
+		var clear_count := 0
+		var total := 0
+		var kinds_by_stretch: Array = []
+		for day in range(365):
+			for stretch in range(8):
+				var unix: int = start + day * 86400 + stretch * WorldRules.WEATHER_STRETCH_SECONDS + 1234
+				var w: Dictionary = WorldRules.weather(personality_seed, unix, 0)
+				if not kinds.has(str(w["kind"])) or not day_ids.has(str(w["day"])):
+					return "an unknown kind or day: %s" % str(w)
+				var cover: float = w["cover"]
+				var rain: float = w["rain"]
+				if cover < 0.0 or cover > 1.0 or rain < 0.0 or rain > 1.0:
+					return "cover or rain out of range: %s" % str(w)
+				if str(w["kind"]) == "rain" and rain < 0.4:
+					return "a rain stretch should rain at least 0.4: %s" % str(w)
+				if str(w["kind"]) != "rain" and rain != 0.0:
+					return "no rain expected: %s" % str(w)
+				if int(w["until"]) - int(w["from"]) != WorldRules.WEATHER_STRETCH_SECONDS:
+					return "a stretch is three hours: %s" % str(w)
+				if unix < int(w["from"]) or unix >= int(w["until"]):
+					return "the time is outside its own stretch: %s" % str(w)
+				total += 1
+				if str(w["kind"]) == "rain":
+					rain_count += 1
+				elif str(w["kind"]) == "clear":
+					clear_count += 1
+				kinds_by_stretch.append(str(w["kind"]))
+		var rain_share := float(rain_count) / float(total)
+		var clear_share := float(clear_count) / float(total)
+		shares[personality_seed] = [rain_share, clear_share]
+		by_seed[personality_seed] = kinds_by_stretch
+		if rain_share < 0.10 or rain_share > 0.25:
+			return "seed %d: rain in %.1f%% of stretches, expected 10 to 25" % [personality_seed, rain_share * 100.0]
+		if clear_share < 0.35 or clear_share > 0.55:
+			return "seed %d: clear in %.1f%% of stretches, expected 35 to 55" % [personality_seed, clear_share * 100.0]
+	print("world_rules_test: weather shares (rain, clear) %s" % str(shares))
+	var differ := 0
+	var a: Array = by_seed[21]
+	var b: Array = by_seed[7]
+	for i in range(a.size()):
+		if a[i] != b[i]:
+			differ += 1
+	if differ < 100:
+		return "seeds 21 and 7 differ on only %d of %d stretches" % [differ, a.size()]
+	# One weather through the whole stretch, sampled every ten minutes.
+	var probe: Dictionary = WorldRules.weather(21, start + 5000, 0)
+	var at: int = int(probe["from"])
+	while at < int(probe["until"]):
+		if var_to_str(WorldRules.weather(21, at, 0)) != var_to_str(probe):
+			return "the weather changed inside its stretch at +%d s" % (at - int(probe["from"]))
+		at += 600
+	# The day turns over by the local clock, not by UTC.
+	var u := start + 17000
+	var biased: Dictionary = WorldRules.weather(21, u, 780)
+	var moved: Dictionary = WorldRules.weather(21, u + 780 * 60, 0)
+	# The stretch bounds are unix times, so they differ by the shift itself.
+	for key in ["kind", "day", "cover", "rain"]:
+		if biased[key] != moved[key]:
+			return "a bias of 780 should be the same as moving the clock on 780 minutes (%s)" % key
+	if int(moved["from"]) - int(biased["from"]) != 780 * 60 or int(moved["until"]) - int(biased["until"]) != 780 * 60:
+		return "the stretch bounds should move with the clock: %s against %s" % [str(biased), str(moved)]
 	return ""

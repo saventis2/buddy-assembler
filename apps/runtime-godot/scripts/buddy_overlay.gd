@@ -35,6 +35,12 @@ const MAPLE_LAYOUT_TOWN := {
     "offset": Vector2i(72, 40),
     "margins": [12, 10, 12, 10],
 }
+const MAPLE_LAYOUT_LAND_VIEW := {
+    "base_size": Vector2i(780, 620),
+    "min_size": Vector2i(520, 440),
+    "offset": Vector2i(72, 40),
+    "margins": [12, 10, 12, 10],
+}
 # Tile colours on the town map, by kind of place.
 const TOWN_TILE_COLOURS := {
     "home": Color(0.55, 0.36, 0.22),
@@ -341,6 +347,7 @@ const MapleTheme = preload("res://scripts/ui/maple_theme.gd")
 const VisitController = preload("res://scripts/visit_controller.gd")
 const LetterService = preload("res://scripts/services/letter_service.gd")
 const LetterWriter = preload("res://scripts/letter_writer.gd")
+const LandView = preload("res://scripts/land_view.gd")
 const PORTABLE_FALLBACK_TEXTURE := preload("res://content/core_pack/character/idle.png")
 
 @onready var tick_timer: Timer = $TickTimer
@@ -568,6 +575,17 @@ var _town_heading: Label = null
 var _town_info: Label = null
 var _town_selected := ""
 var _town_tiles: Dictionary = {}
+# The 3D view of the land (Plan 14 step 4). It exists only while its window is open.
+var _land_view_window: Window = null
+var _land_view: LandView = null
+var _land_view_heading: Label = null
+var _land_view_info: Label = null
+var _land_view_box: VBoxContainer = null
+var _land_view_timer: Timer = null
+var _land_view_selected := ""
+# The assembled character the card was last given; new frames go to an open view.
+var _land_view_frames_key := ""
+var _settings_btn_land_view: Button = null
 var _chat_unread_prompt_count := 0
 var _chat_cmd_latency_last_ms := 0
 var _chat_cmd_latency_total_ms := 0
@@ -1116,7 +1134,16 @@ func _build_settings_sections() -> void:
     ])
     _add_settings_section(sections, "Do not disturb", [settings_btn_dnd_15, settings_btn_dnd_30, settings_btn_dnd_off], 3)
     _add_settings_section(sections, "Its own mind", [_settings_btn_autonomy, _settings_btn_model, _settings_btn_chat_model, _settings_btn_memory, _settings_btn_world_host])
-    _add_settings_section(sections, "Look and place", [settings_btn_mode, settings_btn_pack])
+    _settings_btn_land_view = Button.new()
+    _settings_btn_land_view.tooltip_text = "3D: Menu > Town shows your buddy's land in 3D, with the time of day, the weather and mist over what it has not found yet. Map: the flat map from before."
+    _settings_btn_land_view.pressed.connect(func() -> void:
+        _toggle_bool_setting("landView3d")
+        # Whichever town window is open is the one that was just switched off.
+        _close_land_view()
+        if _town_window != null and _town_window.visible:
+            _town_window.hide()
+    )
+    _add_settings_section(sections, "Look and place", [settings_btn_mode, settings_btn_pack, _settings_btn_land_view])
 
     _settings_btn_debug_toggle = Button.new()
     _settings_btn_debug_toggle.flat = false
@@ -3575,6 +3602,9 @@ func _refresh_letters_window() -> void:
 # buddy's marker where it is now, who is about at each open place, and a
 # darker map at night. Click a place to read about it.
 func _toggle_town_window() -> void:
+    if bool(AppState.settings.get("landView3d", true)):
+        _toggle_land_view_window()
+        return
     _ensure_town_window()
     var opening := not _town_window.visible
     if opening:
@@ -3670,6 +3700,8 @@ func _buddy_location() -> String:
 
 func _where_is_it_now_line() -> String:
     var place_id := _buddy_location()
+    if place_id == "visiting":
+        return "%s is with you." % _speaker_name()
     var place_name := _place_display_name(place_id)
     if place_id == "home" or place_name == "":
         return "%s is at home." % _speaker_name()
@@ -3805,6 +3837,150 @@ func _town_place_details(place_id: String) -> String:
     if last_text != "":
         lines.append("Last time: \"%s\"" % last_text)
     return " ".join(lines)
+
+
+# --- Land view (Plan 14 step 4) ---------------------------------------------
+# The Town window as a small 3D diorama of the buddy's land (D-009). The view is
+# built when the window opens and freed when it closes, so it costs nothing
+# while shut. It is fed a snapshot every two seconds; it never reads AppState.
+func _ensure_land_view_window() -> void:
+    if _land_view_window != null:
+        return
+    var window := Window.new()
+    window.name = "LandViewWindow"
+    window.title = "Town"
+    window.visible = false
+    window.always_on_top = true
+    window.wrap_controls = true
+    add_child(window)
+    _land_view_window = window
+    window.close_requested.connect(_close_land_view)
+    _ensure_maple_window_background(window)
+    var margin := MarginContainer.new()
+    margin.name = "MarginContainer"
+    margin.anchor_right = 1.0
+    margin.anchor_bottom = 1.0
+    window.add_child(margin)
+    _land_view_box = VBoxContainer.new()
+    _land_view_box.add_theme_constant_override("separation", 8)
+    margin.add_child(_land_view_box)
+    _land_view_heading = MapleTheme.heading("")
+    _land_view_box.add_child(_land_view_heading)
+    _land_view_info = Label.new()
+    _land_view_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    _land_view_info.custom_minimum_size = Vector2(300, 84)
+    _land_view_box.add_child(_land_view_info)
+
+
+func _toggle_land_view_window() -> void:
+    _ensure_land_view_window()
+    if _land_view_window.visible:
+        _close_land_view()
+        return
+    _land_view_selected = ""
+    _land_view = LandView.new()
+    _land_view.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    _land_view.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    _land_view.custom_minimum_size = Vector2(480, 320)
+    _land_view_box.add_child(_land_view)
+    _land_view_box.move_child(_land_view, 1)
+    _land_view.place_clicked.connect(func(place_id: String) -> void:
+        _land_view_selected = place_id
+        _refresh_land_view_window()
+    )
+    _land_view.set_card_frames(_land_view_frames())
+    _land_view_frames_key = _assembler_active_key
+    _land_view.set_snapshot(_land_view_snapshot())
+    _refresh_land_view_window()
+    _land_view_timer = Timer.new()
+    _land_view_timer.wait_time = 2.0
+    _land_view_timer.one_shot = false
+    _land_view_timer.timeout.connect(_refresh_land_view_window)
+    _land_view_window.add_child(_land_view_timer)
+    _land_view_timer.start()
+    _layout_popup_window(_land_view_window, true, MAPLE_LAYOUT_LAND_VIEW)
+
+
+func _close_land_view() -> void:
+    if _land_view_timer != null:
+        _land_view_timer.stop()
+        _land_view_timer.queue_free()
+        _land_view_timer = null
+    if _land_view != null:
+        _land_view.queue_free()
+        _land_view = null
+    if _land_view_window != null:
+        _land_view_window.hide()
+
+
+func _refresh_land_view_window() -> void:
+    if _land_view_window == null or _land_view == null:
+        return
+    var snapshot := _land_view_snapshot()
+    _land_view_window.title = "%s's land" % _speaker_name()
+    _land_view_heading.text = _where_is_it_now_line()
+    if _assembler_active_key != _land_view_frames_key:
+        # The character was assembled (or changed) since the window opened.
+        _land_view.set_card_frames(_land_view_frames())
+        _land_view_frames_key = _assembler_active_key
+    _land_view.set_snapshot(snapshot)
+    if _land_view_selected != "":
+        _land_view_info.text = _town_place_details(_land_view_selected)
+    else:
+        _land_view_info.text = "%s. Drag to turn, scroll to zoom, click a place to read about it." % _land_view_sky_line(snapshot.get("weather", {}))
+
+
+func _land_view_snapshot() -> Dictionary:
+    var data := AppState.get_land_layout()
+    return LandView.snapshot_from(
+        AppState.profile, data.get("land", {}), data.get("layout", {}), AppState.small_beginnings(),
+        int(Time.get_unix_time_from_system()), int(Time.get_time_zone_from_system().get("bias", 0)), _speaker_name()
+    )
+
+
+# The frames the card shows: the assembled character when there is one, else the
+# plain texture of each state; the same picture the overlay itself would draw.
+func _land_view_frames() -> Dictionary:
+    var out := {}
+    for state_variant in ["idle", "wander", "sit", "sleep", "happy"]:
+        var state := str(state_variant)
+        var override_variant = _assembled_state_texture_overrides.get(state, null)
+        if typeof(override_variant) == TYPE_DICTIONARY and not ((override_variant as Dictionary).get("frames", []) as Array).is_empty():
+            var entry: Dictionary = override_variant
+            var action := str(entry.get("action", ""))
+            out[state] = {
+                "frames": entry.get("frames", []),
+                "pivots": entry.get("pivots", []),
+                "seconds": float(ASSEMBLER_ACTION_FRAME_SECONDS.get(action, 0.5)),
+                "ping_pong": ASSEMBLER_PING_PONG_ACTIONS.has(action),
+            }
+        elif _action_textures.get(state, null) is Texture2D:
+            out[state] = {"frames": [_action_textures[state]], "pivots": [NO_PIVOT], "seconds": 0.5, "ping_pong": false}
+    if not out.has("idle"):
+        var fallback := _presentation_texture()
+        if fallback != null:
+            out["idle"] = {"frames": [fallback], "pivots": [NO_PIVOT], "seconds": 0.5, "ping_pong": false}
+    return out
+
+
+# "Afternoon, cloudy": the local time of day and the world's weather.
+func _land_view_sky_line(weather: Dictionary) -> String:
+    var hour := _town_hour()
+    var time_words := "Night"
+    if hour >= 5 and hour < 8:
+        time_words = "Early morning"
+    elif hour >= 8 and hour < 12:
+        time_words = "Morning"
+    elif hour >= 12 and hour < 17:
+        time_words = "Afternoon"
+    elif hour >= 17 and hour < 21:
+        time_words = "Evening"
+    var weather_words := "clear"
+    if str(weather.get("kind", "clear")) == "cloudy":
+        weather_words = "cloudy"
+    elif str(weather.get("kind", "clear")) == "rain":
+        weather_words = "light rain" if float(weather.get("rain", 0.0)) < 0.6 else "rain"
+    return "%s, %s" % [time_words, weather_words]
 
 
 func _build_wants_summary() -> String:
@@ -4709,6 +4885,8 @@ func _refresh_settings_menu() -> void:
         _settings_btn_autonomy.text = "Acts on its own: %s" % ("on" if bool(AppState.settings.get("autonomyEnabled", true)) else "off")
     if _settings_btn_world_host != null:
         _settings_btn_world_host.text = "World host: %s" % ("on" if bool(AppState.settings.get("worldHost", true)) else "off")
+    if _settings_btn_land_view != null:
+        _settings_btn_land_view.text = "Town view: %s" % ("3D" if bool(AppState.settings.get("landView3d", true)) else "map")
     _refresh_visit_menu()
     if _settings_btn_model != null:
         _settings_btn_model.text = "Thinking model: %s" % ("on" if bool(AppState.settings.get("mindModelEnabled", true)) else "off")

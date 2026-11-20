@@ -287,7 +287,7 @@ Status: `in_progress` (see `PLAN14_SMALL_BEGINNINGS.md`)
 - [x] 3a The world's rules: materials, ways of working, tools, building needs, outcomes with reasons, the basics check (`world_rules.gd`, `WorldRulesTest`, 2026-11-19)
 - [x] 3b-1 Things it meets and its own names: 15 things, named on the third meeting from the land data by its own seed (`land_data.gd` things, `mind.things`, 2026-11-19)
 - [x] 3b-2 Real names held back: the check catches the real names of land things it has not learned (2026-11-19)
-- [ ] 4 2.5D view on the desktop
+- [x] 4 2.5D view on the desktop: the land in 3D, the buddy as a card, time of day, weather, mist (`land_view.gd`, `LandViewTest`, D-009, 2026-11-20)
 - [ ] 5 Public world on Hardlight, nothing about you published
 - [ ] 6 Learning by trying, study time by difficulty
 - [ ] 7 Tools and making things
