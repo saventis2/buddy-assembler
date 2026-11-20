@@ -24,7 +24,7 @@
     {"id": "land-life", "scene": "res://tests/LandLifeTest.tscn", "pass_marker": "land_life_test: PASS (21 cases)"},
     {"id": "fresh-start", "scene": "res://tests/FreshStartTest.tscn", "pass_marker": "fresh_start_test: PASS (9 cases)"},
     {"id": "no-save-start", "scene": "res://tests/NoSaveStartTest.tscn", "args": ["--", "--no-save"], "pass_marker": "no_save_start_test: PASS (4 cases)"},
-    {"id": "world-host", "scene": "res://tests/WorldHostTest.tscn", "pass_marker": "world_host_test: PASS (28 cases)"},
+    {"id": "world-host", "scene": "res://tests/WorldHostTest.tscn", "pass_marker": "world_host_test: PASS (29 cases)"},
     {"id": "letters", "scene": "res://tests/LetterTest.tscn", "pass_marker": "letter_test: PASS (15 cases)"},
     {"id": "letter-writer", "scene": "res://tests/LetterWriterTest.tscn", "pass_marker": "letter_writer_test: PASS (12 cases)"},
     {"id": "world-rules", "scene": "res://tests/WorldRulesTest.tscn", "pass_marker": "world_rules_test: PASS (8 cases)"},

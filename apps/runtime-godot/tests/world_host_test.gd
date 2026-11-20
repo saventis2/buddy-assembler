@@ -84,6 +84,7 @@ func _run_all() -> void:
 	# Last: it puts this process into simulation and the desktop role aside.
 	_case("a_simulation_is_solo", func(): return _test_a_simulation_is_solo())
 	_case("a_visit_that_ends_drops_model_work", func(): return _test_visit_end_drops_model_work())
+	_case("the_panel_stays_put_at_home", func(): return _test_the_panel_stays_put_at_home())
 	_case("a_visit_answers_a_waiting_call", func(): return _test_hand_over_clears_pending())
 	Whereabouts.process_check = Callable()
 	_wipe(ROOT)
@@ -308,6 +309,41 @@ func _test_visit_end_drops_model_work() -> Variant:
 		if not (overlay._chat_turns as Array).is_empty() or not (overlay._chat_pending as Dictionary).is_empty():
 			err = "an answer that came after the buddy went home was used"
 	http.free()
+	visit.free()
+	overlay.free()
+	return null if err == "" else err
+
+
+# Gone home mid-walk: nothing here changes the state while the buddy is away,
+# so the away panel must not walk the desktop on that state, and a drag in
+# progress ends with the visit (at home the panel takes the mouse, so its
+# release never reaches the drag code). A roaming step always turns the buddy
+# or its direction, whatever size the screen is; the floor lock never does.
+func _test_the_panel_stays_put_at_home() -> Variant:
+	var overlay = BuddyOverlayScript.new()
+	var visit := StubVisit.new()
+	overlay._visit = visit
+	var err := ""
+	for here in [true, false]:
+		visit.here = here
+		overlay._state = "wander"
+		overlay._dragging = false
+		overlay._roam_direction = 1
+		overlay._facing_sign = -1
+		overlay._update_window_roam(0.5)
+		var moved: bool = overlay._roam_direction != 1 or overlay._facing_sign != -1
+		if here and not moved:
+			err = "a wandering buddy that is here should walk; the check cannot see a step"
+		elif not here and moved:
+			err = "the away panel walked while the buddy is at home"
+		if err != "":
+			break
+	if err == "":
+		visit.here = true
+		overlay._dragging = true
+		overlay._on_visit_left("lost")
+		if overlay._dragging:
+			err = "a drag in progress should end with the visit"
 	visit.free()
 	overlay.free()
 	return null if err == "" else err

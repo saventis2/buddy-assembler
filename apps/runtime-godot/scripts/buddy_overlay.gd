@@ -4187,7 +4187,9 @@ func _update_window_roam(delta: float) -> void:
     if _dragging:
         return
 
-    var roam_state := _state == "wander" or _state == "visitor"
+    # At home the away panel stays where it is: nothing here changes the state
+    # while the buddy is away, so a visit that ended mid-walk would walk it on.
+    var roam_state := (_state == "wander" or _state == "visitor") and not _is_away()
     var current_screen := _normalize_screen_index(DisplayServer.window_get_current_screen())
     var screen_rect := _screen_rect(current_screen)
     var window_size := DisplayServer.window_get_size()
@@ -7286,6 +7288,9 @@ func _drop_model_work() -> void:
 
 func _on_visit_left(reason: String) -> void:
     _drop_model_work()
+    # A drag in progress ends with the visit: at home only the away panel takes
+    # the mouse, so the button's release would never reach the drag code.
+    _dragging = false
     var lines := {
         "bedtime": "I'm getting sleepy. I'm going home to bed. Goodnight!",
         "quiet": "It's gone quiet, so I'll go home and see to my things. Call me over if you want me.",
