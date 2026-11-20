@@ -2139,6 +2139,18 @@ func _item_model(item: Dictionary, place_id: String) -> Node3D:
 			root.position = Vector3(-1.0, 0.05, 0.0)
 			root.set_meta("placed", true)
 
+	_item_detail(root, id)
+	if root.has_meta("placed"):
+		var low := 0.0
+		for child in root.get_children():
+			if child is MeshInstance3D:
+				var bounds: AABB = child.transform * child.get_aabb()
+				low = minf(low, bounds.position.y)
+		if low < 0:
+			for child in root.get_children():
+				child.position.y -= low
+			root.position += root.basis * Vector3(0, low, 0)
+	_merge_item_parts(root)
 	if place_id == "gate" and id in ["post_coat", "bead_net", "two_dents", "far_shut"]:
 		var toward := _neighbour_dir("gate")
 		var side := Vector3(-toward.z, 0, toward.x)
@@ -2153,6 +2165,523 @@ func _item_model(item: Dictionary, place_id: String) -> Node3D:
 	if root.has_meta("placed") and not root.has_meta("in_house") and place_id == "high_ground" and id not in ["cloud_shadow", "wind_line", "blue_edge", "deer"]:
 		root.position.y += ground_height(_points, _points.get(place_id, Vector3.ZERO) + root.position)
 	return root
+
+
+# Opaque primitive parts become one vertex-coloured surface. Special materials
+# are grouped separately; the root retains placement and animation metadata.
+func _merge_item_parts(root: Node3D) -> void:
+	if DisplayServer.get_name() == "headless":
+		return
+	var groups := {}
+	for child in root.get_children():
+		if not child is MeshInstance3D:
+			continue
+		var mat := child.material_override as StandardMaterial3D
+		var special := mat.transparency != BaseMaterial3D.TRANSPARENCY_DISABLED or mat.emission_enabled or mat.shading_mode == BaseMaterial3D.SHADING_MODE_UNSHADED
+		var key := str(mat.get_instance_id()) if special else "opaque"
+		if not groups.has(key):
+			groups[key] = []
+		groups[key].append(child)
+	for key in groups:
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		for part in groups[key]:
+			var arrays: Array = part.mesh.surface_get_arrays(0)
+			var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+			var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+			var indices = arrays[Mesh.ARRAY_INDEX]
+			var normal_basis: Basis = part.transform.basis.inverse().transposed()
+			var count: int = indices.size() if indices != null and indices.size() > 0 else vertices.size()
+			for i in range(count):
+				var index: int = indices[i] if indices != null and indices.size() > 0 else i
+				# _mat has applied _tone exactly once, including the texture lift.
+				st.set_color(part.material_override.albedo_color if key == "opaque" else Color.WHITE)
+				st.set_normal((normal_basis * normals[index]).normalized())
+				st.add_vertex(part.transform * vertices[index])
+		var merged := MeshInstance3D.new()
+		merged.name = "ItemSurface" if key == "opaque" else "ItemSpecial"
+		merged.mesh = st.commit()
+		if key == "opaque":
+			var cache_key := "item_vertices|" + _style()
+			if not _mat_cache.has(cache_key):
+				var material := StandardMaterial3D.new()
+				material.vertex_color_use_as_albedo = true
+				material.roughness = 1.0
+				if _style() == "textured":
+					material.albedo_texture = _detail_texture()
+					material.uv1_triplanar = true
+					material.uv1_world_triplanar = true
+					material.uv1_scale = Vector3.ONE * 0.7
+				_mat_cache[cache_key] = material
+			merged.material_override = _mat_cache[cache_key]
+		else:
+			merged.material_override = groups[key][0].material_override
+		root.add_child(merged)
+		for part in groups[key]:
+			root.remove_child(part)
+			part.free()
+
+
+func _item_clear_parts(root: Node3D) -> void:
+	for child in root.get_children():
+		root.remove_child(child)
+		child.free()
+
+
+func _item_form(root: Node3D, at: Vector3, size: Vector3, color: Color) -> MeshInstance3D:
+	return _add(root, _sphere_mesh(1, 16, 8), color, at, Vector3.ZERO, size)
+
+
+# Details are built in the original local frame, before baking the surfaces.
+func _item_detail(root: Node3D, id: String) -> void:
+	if id in ["bee", "clear_wings", "blue_needle"]:
+		for k in range(1, 5):
+			root.get_child(k).material_override = _mat(Color("c6e1df"), 0.65)
+	var dark := Color("302d28")
+	var bark := Color("795235")
+	var cream := Color("d9cbb0")
+	match id:
+		"deer":
+			_item_clear_parts(root)
+			_item_form(root, Vector3(0, 1, 0), Vector3(0.25, 0.32, 0.56), Color("9d7955"))
+			_item_form(root, Vector3(0, 1.35, 0.43), Vector3(0.16, 0.4, 0.19), Color("a5835c"))
+			_item_form(root, Vector3(0, 1.72, 0.62), Vector3(0.13, 0.16, 0.22), Color("b49369"))
+			_item_form(root, Vector3(0, 1.66, 0.82), Vector3(0.09, 0.08, 0.16), cream)
+			_item_form(root, Vector3(0, 1.69, 0.96), Vector3(0.065, 0.04, 0.035), dark)
+			_item_form(root, Vector3(0, 1.08, -0.56), Vector3(0.09, 0.08, 0.16), cream)
+			for side in [-1, 1]:
+				_item_form(root, Vector3(side * 0.2, 1.87, 0.57), Vector3(0.16, 0.065, 0.08), Color("aa8a61"))
+				_item_form(root, Vector3(side * 0.21, 1.9, 0.59), Vector3(0.1, 0.025, 0.045), cream)
+				_item_form(root, Vector3(side * 0.12, 1.77, 0.73), Vector3.ONE * 0.022, dark)
+				for z in [-0.36, 0.36]:
+					_item_segment(root, Vector3(side * 0.18, 0.95, z), Vector3(side * 0.2, 0.46, z - 0.06), 0.055, bark)
+					_item_segment(root, Vector3(side * 0.2, 0.46, z - 0.06), Vector3(side * 0.21, 0.06, z + 0.04), 0.027, Color("b08c66"))
+					_add(root, _box_mesh(Vector3(0.07, 0.09, 0.12)), dark, Vector3(side * 0.21, 0.045, z + 0.065))
+				_item_segment(root, Vector3(side * 0.07, 1.83, 0.53), Vector3(side * 0.16, 2.1, 0.45), 0.022, cream)
+				_item_segment(root, Vector3(side * 0.13, 2.02, 0.48), Vector3(side * 0.24, 2.09, 0.56), 0.015, cream)
+		"heron":
+			_item_clear_parts(root)
+			_item_form(root, Vector3(0, 0.94, 0), Vector3(0.19, 0.22, 0.34), Color("929da6"))
+			var neck := [Vector3(0, 1.02, 0.18), Vector3(0, 1.18, 0.05), Vector3(0, 1.4, 0.18), Vector3(0, 1.49, 0.32)]
+			for i in range(3):
+				_item_segment(root, neck[i], neck[i + 1], 0.048, Color("ced0c8"))
+			_item_form(root, Vector3(0, 1.51, 0.33), Vector3(0.075, 0.075, 0.12), cream)
+			_item_segment(root, Vector3(0, 1.54, 0.28), Vector3(0, 1.48, 0.08), 0.022, dark)
+			_add(root, _cyl_mesh(0, 0.028, 0.3, 6), Color("ccaa50"), Vector3(0, 1.5, 0.55), Vector3(90, 0, 0))
+			for side in [-1, 1]:
+				_item_form(root, Vector3(side * 0.15, 0.97, -0.04), Vector3(0.05, 0.16, 0.28), Color("6f7e8c"))
+				_item_form(root, Vector3(side * 0.065, 1.53, 0.38), Vector3.ONE * 0.012, dark)
+				_item_segment(root, Vector3(side * 0.065, 0.85, 0), Vector3(side * 0.075, 0.04, 0.025), 0.014, Color("938557"))
+				for toe in [-1, 0, 1]:
+					_item_segment(root, Vector3(side * 0.075, 0.04, 0.025), Vector3(side * 0.075 + toe * 0.055, 0.025, 0.16), 0.009, Color("938557"))
+		"wren", "woodpecker", "blue_flash", "two_notes", "wide_wings", "hanging_bird":
+			for side in [-1, 1]:
+				_item_form(root, Vector3(side * 0.13, 0.21, -0.025), Vector3(0.055, 0.115, 0.19), Color("166e98") if id == "blue_flash" else Color("4e4234"))
+				_item_form(root, Vector3(side * 0.105, 0.385, 0.25), Vector3(0.038, 0.006, 0.035), cream)
+				_item_form(root, Vector3(side * 0.113, 0.36, 0.265), Vector3.ONE * 0.018, dark)
+				_item_segment(root, Vector3(side * 0.07, 0.12, 0.03), Vector3(side * 0.07, 0.015, 0.1), 0.012, bark)
+				for toe in [-1, 0, 1]:
+					_item_segment(root, Vector3(side * 0.07, 0.015, 0.1), Vector3(side * 0.07 + toe * 0.035, 0.012, 0.18), 0.008, bark)
+				for k in range(4):
+					_item_segment(root, Vector3(side * 0.16, 0.25 - k * 0.025, 0.02), Vector3(side * 0.17, 0.23 - k * 0.025, -0.13), 0.008, cream)
+				if id in ["wide_wings", "hanging_bird"]:
+					for k in range(5):
+						_item_form(root, Vector3(side * (0.53 + k * 0.055), 0.22, -0.08 - k * 0.035), Vector3(0.1, 0.022, 0.16), dark)
+			if id == "wren":
+				_item_segment(root, Vector3(0, 0.19, -0.2), Vector3(0, 0.48, -0.4), 0.045, bark)
+			if id == "woodpecker":
+				_item_segment(root, Vector3(0, 0.1, -0.1), Vector3(0, -0.06, -0.3), 0.045, dark)
+				_item_form(root, Vector3(0, 0.425, 0.18), Vector3(0.08, 0.025, 0.1), Color("c23832"))
+		"squirrel", "hare":
+			for side in [-1, 1]:
+				_item_form(root, Vector3(side * 0.13, 0.055, 0.18), Vector3(0.065, 0.05, 0.14), Color("9c8d78"))
+				_item_segment(root, Vector3(side * 0.12, 0.28, 0.11), Vector3(side * 0.09, 0.19, 0.26), 0.04, Color("8f806d"))
+				_item_form(root, Vector3(side * 0.105, 0.53, 0.24 if id == "squirrel" else 0.33), Vector3.ONE * 0.022, dark)
+				if id == "hare":
+					_item_form(root, Vector3(side * 0.085, 0.8, 0.28), Vector3(0.026, 0.18, 0.018), Color("ba9b87"))
+					_item_form(root, Vector3(side * 0.085, 0.97, 0.23), Vector3(0.045, 0.045, 0.055), dark)
+			_item_form(root, Vector3(0, 0.29, 0.145), Vector3(0.11, 0.15, 0.04), cream)
+			_item_form(root, Vector3(0, 0.48, 0.27 if id == "squirrel" else 0.4), Vector3(0.055, 0.045, 0.045), dark)
+			if id == "squirrel":
+				_item_form(root, Vector3(0, 0.72, -0.17), Vector3(0.18, 0.17, 0.14), Color("a49e91"))
+				_item_form(root, Vector3(0, 0.69, -0.04), Vector3(0.11, 0.1, 0.13), Color("a49e91"))
+			else:
+				_item_form(root, Vector3(0, 0.22, -0.36), Vector3.ONE * 0.09, cream)
+		"frog":
+			_item_form(root, Vector3(0, 0.15, 0.17), Vector3(0.2, 0.07, 0.11), Color("7d9650"))
+			_item_segment(root, Vector3(-0.16, 0.13, 0.24), Vector3(0.16, 0.13, 0.24), 0.008, dark)
+			for side in [-1, 1]:
+				_item_segment(root, Vector3(side * 0.13, 0.13, 0.13), Vector3(side * 0.23, 0.025, 0.27), 0.025, Color("6b8243"))
+				_item_segment(root, Vector3(side * 0.27, 0.08, -0.2), Vector3(side * 0.32, 0.025, 0.03), 0.026, Color("779147"))
+				for k in range(3):
+					_item_segment(root, Vector3(side * 0.23, 0.025, 0.27), Vector3(side * (0.19 + k * 0.045), 0.018, 0.34), 0.009, cream)
+		"duck":
+			for side in [-1, 1]:
+				_item_form(root, Vector3(side * 0.19, 0.23, -0.03), Vector3(0.08, 0.13, 0.28), bark)
+				for k in range(6):
+					_item_form(root, Vector3(side * 0.245, 0.2 + (k % 2) * 0.07, -0.2 + (k / 2) * 0.13), Vector3(0.012, 0.026, 0.05), cream)
+			_item_form(root, Vector3(0, 0.25, -0.36), Vector3(0.16, 0.045, 0.19), bark)
+			for at in [Vector3(-0.2, 0, -0.6), Vector3(0.1, 0, -0.95), Vector3(-0.1, 0, -1.3)]:
+				_item_form(root, at + Vector3(0, 0.24, 0.1), Vector3(0.07, 0.07, 0.075), Color("dbc57c"))
+				_add(root, _box_mesh(Vector3(0.08, 0.025, 0.09)), Color("b58a45"), at + Vector3(0, 0.23, 0.18))
+				for side in [-1, 1]:
+					_item_form(root, at + Vector3(side * 0.055, 0.26, 0.13), Vector3.ONE * 0.012, dark)
+		"spider", "ant":
+			_item_clear_parts(root)
+			for n in range(3 if id == "ant" else 1):
+				var at := Vector3(n * 0.19, 0, -n * 0.48)
+				_item_form(root, at + Vector3(0, 0.07, -0.1), Vector3(0.055, 0.05, 0.09) if id == "ant" else Vector3(0.095, 0.075, 0.13), dark)
+				_item_form(root, at + Vector3(0, 0.07, 0.09), Vector3(0.055, 0.05, 0.07), bark)
+				if id == "ant":
+					_item_form(root, at + Vector3(0, 0.07, 0), Vector3(0.035, 0.035, 0.04), dark)
+				for side in [-1, 1]:
+					for k in range(3 if id == "ant" else 4):
+						var z := -0.12 + k * 0.075
+						var knee := at + Vector3(side * 0.16, 0.14, z)
+						_item_segment(root, at + Vector3(side * 0.04, 0.07, 0.04), knee, 0.009, dark)
+						_item_segment(root, knee, at + Vector3(side * 0.25, 0.01, z * 1.7), 0.007, dark)
+					_item_segment(root, at + Vector3(side * 0.025, 0.09, 0.13), at + Vector3(side * 0.065, 0.13, 0.2), 0.006, dark)
+		"bat":
+			_item_clear_parts(root)
+			_item_form(root, Vector3.ZERO, Vector3(0.09, 0.08, 0.2), Color("493a3d"))
+			_item_form(root, Vector3(0, 0.025, 0.17), Vector3(0.085, 0.075, 0.075), Color("554047"))
+			for side in [-1, 1]:
+				for k in range(4):
+					var x: float = side * (0.13 + k * 0.13)
+					_item_form(root, Vector3(x, -0.005, -0.02 - k * 0.025), Vector3(0.15, 0.012, 0.17 - k * 0.025), Color("68505e"))
+				for tip in [Vector3(side * 0.67, 0, 0.05), Vector3(side * 0.48, 0, -0.23), Vector3(side * 0.27, 0, -0.25)]:
+					_item_segment(root, Vector3(side * 0.09, 0.02, 0.13), tip, 0.009, Color("b3989f"))
+				_add(root, _cyl_mesh(0, 0.04, 0.15, 6), Color("68505e"), Vector3(side * 0.055, 0.12, 0.17))
+				_item_form(root, Vector3(side * 0.045, 0.06, 0.225), Vector3.ONE * 0.013, dark)
+
+		"bee", "moth", "blue_needle", "clear_wings":
+			_item_form(root, Vector3(0, 0.025, 0.18 if id in ["bee", "moth"] else 0.31), Vector3(0.035, 0.03, 0.04), dark)
+			for side in [-1, 1]:
+				_item_segment(root, Vector3(side * 0.025, 0.03, 0.18), Vector3(side * 0.075, 0.07, 0.29), 0.007, dark)
+				for k in range(3):
+					_item_segment(root, Vector3(side * 0.025, -0.02, -0.04 + k * 0.05), Vector3(side * 0.11, -0.07, k * 0.06), 0.007, dark)
+				if id == "moth":
+					for z in [-0.1, 0.1]:
+						_item_form(root, Vector3(side * 0.21, 0.025, z), Vector3(0.055, 0.009, 0.047), bark)
+						_item_form(root, Vector3(side * 0.21, 0.033, z), Vector3(0.025, 0.008, 0.025), cream)
+			if id in ["blue_needle", "clear_wings"]:
+				for k in range(7):
+					_item_ring(root, Vector3(0, 0, -0.25 + k * 0.07), 0.025, 0.004, dark, Vector3(90, 0, 0))
+		"snail":
+			root.get_child(2).free()
+			for side in [-1, 1]:
+				_item_form(root, Vector3(side * 0.06, 0.24, 0.3), Vector3.ONE * 0.022, dark)
+				for k in range(22):
+					var a := k * 0.42
+					var b := (k + 1) * 0.42
+					var r := 0.012 + k * 0.006
+					_item_segment(root, Vector3(side * sqrt(maxf(0.001, 0.18 * 0.18 - r * r)), 0.22 + sin(a) * r, -0.08 + cos(a) * r), Vector3(side * sqrt(maxf(0.001, 0.18 * 0.18 - (r + 0.006) * (r + 0.006))), 0.22 + sin(b) * (r + 0.006), -0.08 + cos(b) * (r + 0.006)), 0.009, bark)
+		"moon":
+			_item_clear_parts(root)
+			var disc := _item_form(root, Vector3.ZERO, Vector3(1.5, 1.5, 0.16), cream)
+			disc.material_override = _mat(Color("e2dfbd"), 1, false, 0.35)
+			for crater in [Vector3(-0.5, 0.5, 0.36), Vector3(0.3, 0.7, 0.25), Vector3(-0.65, -0.3, 0.24), Vector3(0.25, -0.25, 0.42), Vector3(0.65, 0.25, 0.18)]:
+				_item_form(root, Vector3(crater.x, crater.y, 0.15), Vector3(crater.z, crater.z * 0.8, 0.025), Color("999e8d"))
+				_item_form(root, Vector3(crater.x + crater.z * 0.45, crater.y - crater.z * 0.25, 0.158), Vector3(crater.z * 0.65, crater.z * 0.6, 0.018), Color("a8ab98"))
+			for at in [Vector3(0.85, -0.55, 0.12), Vector3(-0.9, 0.1, 0.08), Vector3(0.15, -1.05, 0.1)]:
+				_item_ring(root, Vector3(at.x, at.y, 0.14), at.z, 0.012, cream, Vector3(90, 0, 0))
+
+		"iron_box_smell":
+			# A shallow soot-black firebox insert fits the existing stove front.
+			for side in [-1, 1]:
+				_add(root, _box_mesh(Vector3(0.035, 0.38, 0.09)), Color("545354"), Vector3(side * 0.22, 0, 0.03))
+			for y in [-0.19, 0.19]:
+				_add(root, _box_mesh(Vector3(0.47, 0.035, 0.09)), Color("545354"), Vector3(0, y, 0.03))
+			for k in range(5):
+				_item_segment(root, Vector3(-0.16 + k * 0.08, -0.13, 0.03), Vector3(-0.16 + k * 0.08, -0.13, 0.09), 0.009, cream)
+				_item_form(root, Vector3(-0.13 + k * 0.06, -0.15, 0.055), Vector3(0.035, 0.018, 0.025), Color("77736c"))
+			_item_segment(root, Vector3(-0.13, -0.09, 0.045), Vector3(0.1, -0.04, 0.055), 0.023, dark)
+			_item_ring(root, Vector3(0.18, 0, 0.09), 0.025, 0.007, cream, Vector3(90, 0, 0))
+		"roof_tick":
+			for side in [-1, 1]:
+				_item_segment(root, Vector3(side * 0.24, 0, 0), Vector3(0, 0.16, 0), 0.028, bark)
+				_item_form(root, Vector3(side * 0.16, -0.025, 0.055), Vector3(0.018, 0.012, 0.018), dark)
+			for k in range(4):
+				_item_segment(root, Vector3(-0.23, 0.025, -0.05 + k * 0.03), Vector3(0.2, 0.025, -0.04 + k * 0.03), 0.003, Color("b58a5b"))
+		"log", "green_log", "log_ear", "sticky_wood", "wood_tunnels", "smooth_wood":
+			var length := 2.4 if id == "log" else (1.5 if id == "green_log" else 0.9)
+			var radius := 0.26 if id == "log" else (0.25 if id == "green_log" else 0.2)
+			if id == "smooth_wood":
+				radius = 0.08
+			for side in [-1, 1]:
+				_add(root, _cyl_mesh(radius * 0.87, radius * 0.87, 0.012, 12), cream, Vector3(side * (length / 2 + 0.008), radius, 0), Vector3(0, 0, 90))
+				for k in range(3):
+					_item_ring(root, Vector3(side * (length / 2 + 0.016), radius, 0), radius * (0.23 + k * 0.23), 0.005, bark, Vector3(0, 0, 90))
+			for k in range(7):
+				var a := k * PI / 6
+				_item_segment(root, Vector3(-length * 0.45, radius + sin(a) * radius, cos(a) * radius), Vector3(length * 0.45, radius + sin(a) * radius, cos(a) * radius), 0.008, Color("a18a65") if id == "smooth_wood" else dark)
+			if id == "green_log":
+				for k in range(10):
+					_item_form(root, Vector3(-0.6 + k * 0.13, 0.46, sin(k * 2) * 0.13), Vector3(0.1, 0.045, 0.09), Color("78914d"))
+			if id == "log_ear":
+				for k in range(5):
+					_item_segment(root, Vector3(0, 0.34, 0.21), Vector3(-0.16 + k * 0.08, 0.32, 0.34), 0.005, bark)
+			if id == "sticky_wood":
+				_item_form(root, Vector3(0.1, 0.22, 0.19), Vector3(0.04, 0.1, 0.025), Color("c58c27"))
+			if id == "wood_tunnels":
+				for x in [-0.25, 0, 0.23]:
+					_item_ring(root, Vector3(x, 0.3, 0.155), 0.035, 0.008, cream, Vector3(90, 0, 0))
+		"stick", "reaching_root", "root_door":
+			for k in range(3):
+				var at := Vector3(k * 0.14, 0.08, 0.12)
+				if id == "reaching_root":
+					at = Vector3(0.45 + k * 0.1, 0.36 - k * 0.08, 0.4)
+				elif id == "root_door":
+					at = Vector3(-0.2 + k * 0.2, 0.22, -0.2)
+				_item_segment(root, at, at + Vector3(0.12, 0.02, 0.2), 0.018, bark)
+				_item_segment(root, at + Vector3(0.08, 0.015, 0.13), at + Vector3(0.2, 0.01, 0.14), 0.009, bark)
+				_item_form(root, at + Vector3(0.12, 0.02, 0.2), Vector3.ONE * 0.016, cream)
+		"stone", "flint", "earth", "clay", "sand":
+			if id == "earth":
+				_item_form(root, Vector3(0, 0.016, 0.38), Vector3(0.23, 0.012, 0.19), Color("332d22"))
+			for k in range(9):
+				var a := k * 2.4
+				var at := Vector3(cos(a) * 0.32, 0.22, sin(a) * 0.22)
+				match id:
+					"stone":
+						_item_form(root, at, Vector3(0.07, 0.035, 0.06), Color("858b81").lerp(cream, k / 12.0))
+					"flint":
+						_item_form(root, at, Vector3(0.075, 0.018, 0.055), Color("c6c2af"))
+					"earth":
+						_item_form(root, at, Vector3(0.09, 0.06, 0.075), Color("4e3c2c"))
+					"clay":
+						_item_form(root, Vector3(0.85 + (k / 3) * 0.25, 0.19, (k / 3) * 0.2 + (k % 3) * 0.045), Vector3(0.06, 0.008, 0.012), Color("626a70"))
+					"sand":
+						_item_segment(root, Vector3(-0.27, 0.12, -0.3 + k * 0.075), Vector3(0.26, 0.12, -0.27 + k * 0.075), 0.009, Color("b9a16b"))
+		"reed", "grass", "seed":
+			for k in range(7):
+				var x := -0.02 + k * 0.045
+				_item_segment(root, Vector3(x, 0.1, -0.45), Vector3(x + 0.05, 0.12, 0.43), 0.012, Color("b3aa6c"))
+				if id != "grass":
+					_item_form(root, Vector3(x + 0.05, 0.12, 0.4), Vector3(0.025, 0.025, 0.1), bark if id == "reed" else Color("c4ac65"))
+				else:
+					_item_segment(root, Vector3(x, 0.1, 0), Vector3(x + 0.13, 0.14, 0.55), 0.015, Color("8d9d52"))
+			if id != "seed":
+				_item_ring(root, Vector3(0.12, 0.09, -0.13), 0.13, 0.012, bark, Vector3(90, 0, 0))
+		"nettle", "clean_smell":
+			_item_clear_parts(root)
+			_item_segment(root, Vector3.ZERO, Vector3(0, 0.65, 0), 0.016, Color("547138"))
+			for level in range(4):
+				for side in [-1, 1]:
+					var y := 0.15 + level * 0.13
+					var leaf := Vector3(side * 0.13, y, 0)
+					_item_form(root, leaf, Vector3(0.14, 0.018, 0.065), Color("376e35") if id == "nettle" else Color("719c66"))
+					_item_segment(root, Vector3(0, y, 0), Vector3(side * 0.25, y + 0.01, 0), 0.005, cream)
+					if id == "nettle":
+						for tooth in range(4):
+							_add(root, _prism_mesh(Vector3(0.05, 0.018, 0.15)), Color("376e35"), leaf + Vector3(side * (-0.07 + tooth * 0.045), 0, 0))
+		"water", "bubble_holes", "water_walkers":
+			for k in range(6):
+				var at := Vector3(cos(k * TAU / 6) * 0.6, 0.02, sin(k * TAU / 6) * 0.47)
+				if id == "water":
+					_item_form(root, at, Vector3(0.11, 0.06, 0.08), Color("898f83"))
+				elif id == "water_walkers":
+					_item_ring(root, Vector3(-0.3 if k < 3 else 0.3, 0.002, (k % 3 - 1) * 0.2), 0.045, 0.003, Color("a5c5cc"))
+				else:
+					_item_ring(root, Vector3(-0.2 + (k % 3) * 0.2, 0.008, 0), 0.045 + (k / 3) * 0.022, 0.003, cream)
+			if id == "water":
+				_item_ring(root, Vector3(0, 0.035, 0), 0.43, 0.008, Color("c4dde0"))
+		"floor_creak", "sun_square", "door_draught":
+			for k in range(4):
+				var x := -0.08 + k * 0.05
+				if id == "floor_creak":
+					_item_segment(root, Vector3(x, 0.022, -0.36), Vector3(x + 0.01, 0.025, 0.36), 0.003, bark)
+					_item_form(root, Vector3(x, 0.025, 0.32), Vector3.ONE * 0.006, dark)
+				elif id == "door_draught":
+					_item_form(root, Vector3(-0.2 + k * 0.13, 0.009, -0.07 - k * 0.025), Vector3(0.045, 0.006, 0.012), cream)
+				else:
+					_item_segment(root, Vector3(-0.3, 0.004, -0.3 + k * 0.2), Vector3(0.3, 0.004, -0.3 + k * 0.2), 0.002, Color("e6ce8d"))
+			if id == "sun_square":
+				_add(root, _box_mesh(Vector3(0.025, 0.003, 0.72)), Color("ae9c70"), Vector3(0, 0.005, 0))
+		"ceiling_stain":
+			for k in range(5):
+				_item_form(root, Vector3(-0.12 + k * 0.06, -0.003, 0.27 + sin(k) * 0.035), Vector3(0.025, 0.009, 0.05), Color("826047"))
+		"grey_feather", "hand_leaves":
+			for k in range(9):
+				var z := -0.18 + k * 0.04
+				for side in [-1, 1]:
+					_item_segment(root, Vector3(0, 0.015, z), Vector3(side * (0.055 if id == "grey_feather" else 0.16), 0.015, z + 0.05), 0.003, cream if id == "grey_feather" else bark)
+		"morning_wet":
+			for at in [Vector3(-0.4, 0, 0), Vector3(0, 0, 0.3), Vector3(0.3, 0, -0.2), Vector3(0.6, 0, 0.2)]:
+				_item_form(root, at + Vector3(0, 0.035, 0), Vector3(0.1, 0.012, 0.045), Color("658349"))
+				_item_form(root, at + Vector3(-0.012, 0.083, 0.018), Vector3.ONE * 0.009, Color("f0f4df"))
+		"night_tracks", "small_hands", "three_toes":
+			_item_clear_parts(root)
+			for k in range(6):
+				var at := Vector3((k % 2) * 0.2, 0.012, k * 0.16)
+				var turn := -1.0 if id == "three_toes" and k > 2 else 1.0
+				_item_form(root, at, Vector3(0.045, 0.007, 0.05), Color("514b3e"))
+				for toe in range(5 if id == "small_hands" else 3):
+					var x := (toe - (2 if id == "small_hands" else 1)) * 0.032
+					_item_segment(root, at, at + Vector3(x, 0, turn * (0.1 - absf(x) * 0.4)), 0.008, Color("514b3e"))
+		"bead_net":
+			for k in range(4):
+				_item_ring(root, Vector3.ZERO, 0.06 + k * 0.05, 0.003, Color("b7c7c3"), Vector3(90, 0, 0))
+			for k in range(12):
+				var tip := Vector3(cos(k * TAU / 12), sin(k * TAU / 12), 0) * 0.29
+				_item_segment(root, Vector3.ZERO, tip, 0.003, cream)
+				_item_form(root, tip * 0.7, Vector3.ONE * 0.009, Color("e3eeec"))
+		"roll_ups":
+			for n in range(3):
+				for k in range(5):
+					_item_ring(root, Vector3(n * 0.16, 0.075, -0.065 + k * 0.03), 0.064 - absf(k - 2) * 0.008, 0.004, dark, Vector3(90, 0, 0))
+		"tail_basker":
+			_item_clear_parts(root)
+			_item_form(root, Vector3(0, 0.09, 0), Vector3(0.085, 0.055, 0.22), Color("78815a"))
+			_item_form(root, Vector3(0, 0.1, 0.23), Vector3(0.065, 0.045, 0.1), Color("8c9469"))
+			for side in [-1, 1]:
+				_item_form(root, Vector3(side * 0.05, 0.126, 0.26), Vector3.ONE * 0.012, dark)
+				for z in [-0.12, 0.12]:
+					_item_segment(root, Vector3(side * 0.065, 0.09, z), Vector3(side * 0.16, 0.04, z - 0.06), 0.018, Color("78815a"))
+					_item_segment(root, Vector3(side * 0.16, 0.04, z - 0.06), Vector3(side * 0.19, 0.018, z + 0.035), 0.012, Color("78815a"))
+					for toe in range(3):
+						_item_segment(root, Vector3(side * 0.19, 0.018, z + 0.035), Vector3(side * (0.18 + toe * 0.025), 0.012, z + 0.09), 0.004, cream)
+			for k in range(8):
+				_item_segment(root, Vector3(sin(k * 0.3) * 0.12, 0.06 - k * 0.005, -0.18 - k * 0.06), Vector3(sin((k + 1) * 0.3) * 0.12, 0.055 - k * 0.005, -0.24 - k * 0.06), 0.033 - k * 0.0038, Color("78815a"))
+			_item_segment(root, Vector3(0, 0.146, -0.17), Vector3(0, 0.146, 0.18), 0.006, cream)
+		"upside_shiny", "green_jumper":
+			var y := 0.22 if id == "upside_shiny" else 0.15
+			_item_form(root, Vector3(0, y, 0.22), Vector3(0.065, 0.05, 0.075), dark if id == "upside_shiny" else Color("6c8544"))
+			for side in [-1, 1]:
+				_item_form(root, Vector3(side * 0.05, y + 0.025, 0.25), Vector3.ONE * 0.013, dark)
+				for k in range(3 if id != "tail_basker" else 2):
+					var z := -0.13 + k * 0.13
+					_item_segment(root, Vector3(side * 0.08, y, z), Vector3(side * 0.19, y + 0.05, z - 0.06), 0.012, bark)
+					_item_segment(root, Vector3(side * 0.19, y + 0.05, z - 0.06), Vector3(side * 0.22, 0.02 if id != "upside_shiny" else 0.32, z + 0.07), 0.009, bark)
+		"pink_wriggler", "pouring_thing":
+			_item_clear_parts(root)
+			for k in range(22):
+				var a := Vector3(k * 0.035, 0.045, sin(k * 0.3) * 0.09)
+				var b := Vector3((k + 1) * 0.035, 0.045, sin((k + 1) * 0.3) * 0.09)
+				_item_segment(root, a, b, 0.027 if id == "pink_wriggler" else 0.04, Color("c28b83") if id == "pink_wriggler" else Color("6f7652"))
+				if k % 2 == 0:
+					_item_ring(root, a, 0.028 if id == "pink_wriggler" else 0.041, 0.003, Color("9a7068") if id == "pink_wriggler" else Color("4e553e"), Vector3(0, 0, 90))
+			if id == "pouring_thing":
+				_item_form(root, Vector3(0.8, 0.05, 0.025), Vector3(0.08, 0.04, 0.05), Color("78815a"))
+				_item_form(root, Vector3(0.82, 0.075, 0.065), Vector3.ONE * 0.009, dark)
+		"stick_bundle", "grass_ball", "stem_cup":
+			var centre := Vector3(0, 0.9, 0) if id != "stick_bundle" else Vector3.ZERO
+			for k in range(12):
+				var a := k * TAU / 12
+				var b := a + 1.5
+				_item_segment(root, centre + Vector3(cos(a) * 0.23, sin(k * 2) * 0.08, sin(a) * 0.23), centre + Vector3(cos(b) * 0.23, sin(k * 2 + 1) * 0.08, sin(b) * 0.23), 0.009, cream if k % 2 == 0 else bark)
+		"red_round":
+			_item_form(root, Vector3(0.09, 0.27, 0), Vector3(0.1, 0.015, 0.04), Color("658443"))
+			_item_form(root, Vector3(-0.04, 0.07, 0.14), Vector3(0.025, 0.055, 0.012), Color("df7960"))
+			_item_form(root, Vector3(0, -0.17, 0), Vector3(0.025, 0.009, 0.025), dark)
+		"sleeping_yellow":
+			for k in range(7):
+				var a := k * TAU / 7
+				_item_segment(root, Vector3(cos(a) * 0.18, 0.17 + sin(a) * 0.13, -0.4), Vector3(cos(a) * 0.18, 0.17 + sin(a) * 0.13, 0.4), 0.009, Color("b19436"))
+			_item_segment(root, Vector3(-0.3, 0.46, -0.3), Vector3(0.3, 0.46, -0.3), 0.008, cream)
+		"petal_wings":
+			for n in range(2):
+				var at := Vector3(n * 0.55, n * 0.2, n * 0.15)
+				for side in [-1, 1]:
+					_item_form(root, at + Vector3(side * 0.17, 0.065, 0.06), Vector3(0.022, 0.008, 0.025), dark)
+					_item_segment(root, at + Vector3(0, 0.02, 0.12), at + Vector3(side * 0.05, 0.07, 0.23), 0.004, dark)
+		"hook_seeds":
+			for n in range(3):
+				for k in range(8):
+					var tip := Vector3(cos(k * TAU / 8) * 0.09, 0.045, sin(k * TAU / 8) * 0.09)
+					var at := Vector3(-0.2 + n * 0.2, 0, 0)
+					_item_segment(root, at + tip * 0.6, at + tip, 0.004, bark)
+					_item_segment(root, at + tip, at + tip + Vector3(0.015, 0.015, -0.01), 0.003, bark)
+		"froth_sitter":
+			for k in range(14):
+				_item_form(root, Vector3(cos(k * 2.4) * 0.08, 0.4 + k * 0.014, 0.08 + sin(k * 2.4) * 0.04), Vector3.ONE * 0.035, Color("f0efe0"))
+		"quick_shadows":
+			for at in [Vector3(-0.4, 0, 0), Vector3(0, 0, 0.2), Vector3(0.3, 0, -0.15)]:
+				for side in [-1, 1]:
+					_item_form(root, at + Vector3(side * 0.055, 0, -0.29), Vector3(0.06, 0.012, 0.075), Color("385660"))
+				_item_form(root, at + Vector3(0.055, 0.018, 0.17), Vector3.ONE * 0.012, dark)
+		"curled_stone":
+			root.get_child(2).free()
+			root.get_child(1).free()
+			for k in range(24):
+				var a := k * 0.4
+				var b := a + 0.4
+				var r := 0.01 + k * 0.006
+				_item_segment(root, Vector3(cos(a) * r, 0.26, sin(a) * r), Vector3(cos(b) * (r + 0.006), 0.26, sin(b) * (r + 0.006)), 0.006, bark)
+		"ringed_stone", "spark_stone", "stone_coats":
+			for k in range(9):
+				var at := Vector3(cos(k * 2.4) * 0.2, 0.25, sin(k * 2.4) * 0.13)
+				if id == "spark_stone":
+					_add(root, _cyl_mesh(0, 0.025, 0.09, 5), cream, at)
+				elif id == "stone_coats":
+					_item_form(root, at, Vector3(0.055, 0.012, 0.04), Color("ca9650") if k % 2 else Color("c1c4ac"))
+				else:
+					_item_form(root, at * 0.65, Vector3(0.018, 0.006, 0.016), Color("737b7c"))
+		"cupped_shiner":
+			_item_clear_parts(root)
+			# A mussel half: dark tapered exterior and a pearly concave interior.
+			_item_form(root, Vector3(0, 0.038, 0), Vector3(0.23, 0.038, 0.145), Color("404a48"))
+			_item_form(root, Vector3(0, 0.062, 0), Vector3(0.205, 0.018, 0.125), Color("afbfc0"))
+			for k in range(12):
+				var a := k * TAU / 12
+				var edge := Vector3(cos(a) * 0.22, 0.085, sin(a) * 0.14)
+				_item_segment(root, Vector3(-0.17, 0.015, 0), edge, 0.026, Color("404a48"))
+				_item_segment(root, Vector3(-0.16, 0.036, 0), edge + Vector3(0, 0.002, 0), 0.005, Color("afbfc0").lerp(Color("d6c5cf"), (k % 3) * 0.3))
+				var b := (k + 1) * TAU / 12
+				_item_segment(root, edge, Vector3(cos(b) * 0.22, 0.085, sin(b) * 0.14), 0.012, dark)
+
+		"dotted_wobble":
+			for k in range(12):
+				var at := Vector3(cos(k * 2.4) * 0.23, 0.13, sin(k * 2.4) * 0.17)
+				_item_ring(root, at, 0.035, 0.005, Color("b8d4c7"))
+				_item_form(root, at, Vector3.ONE * 0.016, dark)
+		"pale_ring":
+			for at in [Vector3(-0.35, 0.25, 0), Vector3(0, 0.25, 0.35), Vector3(0.35, 0.25, 0), Vector3(0, 0.25, -0.35)]:
+				_item_ring(root, at - Vector3(0, 0.045, 0), 0.13, 0.008, Color("b6a98c"))
+				for k in range(4):
+					_item_segment(root, at, at + Vector3(cos(k * PI / 2) * 0.12, -0.04, sin(k * PI / 2) * 0.12), 0.004, bark)
+		"tree_knock", "trunk_hole", "bank_holes", "bank_stripes", "post_coat":
+			if id == "bank_holes":
+				_add(root, _box_mesh(Vector3(1.2, 0.38, 0.055)), Color("9b9788"), Vector3(0, 0, -0.05))
+			elif id == "post_coat":
+				_add(root, _box_mesh(Vector3(0.16, 0.9, 0.035)), bark, Vector3(0, 0, -0.035))
+			for k in range(9):
+				var x := -0.12 + (k % 3) * 0.12
+				var y := -0.15 + (k / 3) * 0.12
+				if id == "post_coat":
+					_item_form(root, Vector3(x * 0.4, y * 1.7, 0.023), Vector3(0.035, 0.055, 0.012), Color("6e874b"))
+				elif id == "bank_holes":
+					_item_ring(root, Vector3(-0.4 + (k % 3) * 0.4, 0, -0.005), 0.12 + (k / 3) * 0.01, 0.008, Color("979284"), Vector3(90, 0, 0))
+				elif id == "bank_stripes":
+					_item_form(root, Vector3(x * 3, y + 0.16, 0.065), Vector3(0.045, 0.018, 0.012), Color("b0a18a"))
+				else:
+					_item_segment(root, Vector3(x * 0.7, y, -0.02), Vector3(x * 0.7 + 0.012, y + 0.06, -0.015), 0.008, bark)
+		"deep_breath", "wind_line":
+			for k in range(9):
+				var x := -0.35 + k * 0.09
+				_item_segment(root, Vector3(x, 0, 0.08), Vector3(x - 0.34, 0.36, 0.08), 0.012, Color("728744"))
+				_item_form(root, Vector3(x - 0.34, 0.41, 0.08), Vector3(0.025, 0.08, 0.025), bark if id == "deep_breath" else Color("ada46d"))
+		"two_dents", "far_shut":
+			for side in [-1, 1]:
+				for k in range(5):
+					_item_form(root, Vector3(side * 0.45, 0.012, -0.8 + k * 0.4), Vector3(0.08, 0.012, 0.14), Color("9e8a68"))
+		"far_smoke":
+			for k in range(7):
+				_item_form(root, Vector3(sin(k) * 0.06, k * 0.24, 0), Vector3(0.1 + k * 0.015, 0.2, 0.12), Color("bac0bc"))
+		"cloud_shadow":
+			for k in range(5):
+				_item_form(root, Vector3(-0.9 + k * 0.45, 0, sin(k) * 0.6), Vector3(0.65, 0.004, 0.5), Color("4b6141"))
+		"blue_edge":
+			for k in range(4):
+				_add(root, _prism_mesh(Vector3(0.8, 0.6 + (k % 2) * 0.3, 0.6)), Color("829aaa"), Vector3(-1 + k * 0.6, 0.25, 0.4))
+		"first_light":
+			for k in range(4):
+				var ray := _item_form(root, Vector3.ZERO, Vector3(0.012, 0.18, 0.012), cream)
+				ray.rotation_degrees.z = k * 45
+				ray.material_override = _mat(Color("fff1c7"), 1, false, 1.5)
+		"hanging_colours":
+			for k in range(12):
+				_item_form(root, Vector3(sin(k * 2.4) * 0.25, 0.05 + k * 0.015, 0.32), Vector3.ONE * 0.018, Color("c6e2e4"))
 
 
 # Spread gathered materials and small ground life outside existing prop bounds.
