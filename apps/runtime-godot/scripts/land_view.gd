@@ -1376,6 +1376,9 @@ func _build_items() -> void:
 		if node.has_meta("in_house") and place.get_node_or_null("House") != null:
 			parent = place.get_node("House") as Node3D
 		parent.add_child(node)
+		var habitat := node.get_node_or_null("Habitat")
+		if habitat != null:
+			habitat.reparent(parent, true)
 		_item_nodes.append({"node": node, "hours": item.get("hours", []), "base": node.position,
 			"phase": float(_item_nodes.size()) * 1.37})
 
@@ -1401,22 +1404,97 @@ func _show_items_for(hour: int) -> void:
 		(entry["node"] as Node3D).visible = shown
 
 
-# Motion for creatures, by meta on the item's root: "bob" (metres up and down),
-# "fly" (Vector2: circle radius in metres, turn speed in radians a second).
+# Deterministic species cycles: always derive from the saved rest transform, never
+# accumulate frame deltas. Hidden items also retain the current clock pose.
 func _animate_items() -> void:
 	for entry in _item_nodes:
 		var node: Node3D = entry["node"]
-		if not node.visible or not (node.has_meta("bob") or node.has_meta("fly")):
-			continue
+		var id := str(node.get_meta("species", ""))
 		var at: Vector3 = entry["base"]
-		var phase: float = entry["phase"]
-		if node.has_meta("fly"):
-			var fly: Vector2 = node.get_meta("fly")
-			var angle := _clock * fly.y + phase
-			at += Vector3(cos(angle) * fly.x, sin(_clock * 1.7 + phase) * 0.2, sin(angle) * fly.x)
-			node.rotation.y = -angle - signf(fly.y) * PI * 0.5
-		if node.has_meta("bob"):
-			at.y += sin(_clock * 2.0 + phase) * float(node.get_meta("bob"))
+		var t: float = _clock + entry["phase"]
+		var rest: Vector3 = node.get_meta("rest_rotation", node.rotation)
+		node.rotation = rest
+		var head := node.get_node_or_null("Head") as Node3D
+		var angle := 0.0
+		match id:
+			"wren":
+				var hop := fposmod(t, 3.6)
+				at.x += 0.45 * sin(t * 0.8)
+				at.y += absf(sin(hop * PI * 2)) * 0.22 if hop < 1.0 else 0.0
+				angle = maxf(0, sin(t * 5)) * 0.65 if hop > 1.5 else 0.0
+			"woodpecker":
+				angle = maxf(0, sin(t * 24)) * 0.55 if fposmod(t, 3.7) < 1.4 else -0.12
+			"deer":
+				angle = 1.65 * smoothstep(-0.5, 0.6, sin(t * 0.48))
+			"heron":
+				angle = 0.95 * pow(maxf(0, sin(t * 0.38)), 3)
+			"frog", "green_jumper":
+				var jump := fposmod(t, 6.0)
+				var travel := clampf((jump - 3.8) / 0.8, 0, 1)
+				var direction := 1.0 if int(floor(t / 6.0)) % 2 == 0 else -1.0
+				at.z += (travel if direction > 0 else 1.0 - travel) * 0.85
+				at.y += sin(travel * PI) * 0.65
+				node.rotation.y += 0 if direction > 0 else PI
+			"hare":
+				var run := fposmod(t, 12.0)
+				var travel := clampf((run - 3.0) / 3.0, 0, 1) - clampf((run - 8.0) / 3.0, 0, 1)
+				at.z += travel * 2.4
+				if (run > 3 and run < 6) or (run > 8 and run < 11):
+					at.y += absf(sin(t * 7)) * 0.35
+					node.rotation.x = -0.22 + sin(t * 7) * 0.12
+				node.rotation.y += PI if run >= 7 else 0.0
+			"duck":
+				var a := t * 0.24
+				at += Vector3(cos(a), sin(t * 2) * 0.015, sin(a)) * 0.65
+				node.rotation.y = -a
+				var chicks := node.get_node_or_null("Ducklings") as Node3D
+				if chicks != null:
+					chicks.rotation.y = 0.25 + sin(t * 0.6) * 0.10
+					chicks.position.y = sin(t * 2 - 0.8) * 0.012
+			"squirrel":
+				at.y += (0.5 - 0.5 * cos(t * 0.95)) * float(node.get_meta("climb", 1.7))
+				node.rotation.z += sin(t * 9) * 0.045
+			"snail":
+				at.z += sin(t * 0.025) * 0.65
+			"ant":
+				at.z += sin(t * 0.4) * 0.7
+				node.rotation.y += PI if cos(t * 0.4) < 0 else 0
+				at.y += absf(sin(t * 18)) * 0.012
+			"pink_wriggler", "pouring_thing":
+				at.x += sin(t * 0.6) * 0.15
+				node.rotation.y += sin(t * 2) * 0.08
+			"tail_basker":
+				at.z += smoothstep(0.7, 1.0, sin(t * 0.4)) * 0.3
+			"upside_shiny":
+				node.rotation.z += sin(t * 9) * 0.12
+			"spider":
+				at.x += smoothstep(0.6, 0.9, sin(t * 0.7)) * 0.12
+			"bee", "moth", "bat", "petal_wings", "clear_wings", "blue_needle", "blue_flash", "wide_wings", "hanging_bird":
+				var speed := 1.7 if id == "bat" else (0.4 if id == "wide_wings" else 0.9)
+				var radius := 1.6 if id == "bat" else (1.2 if id == "wide_wings" else 0.28)
+				if id == "moth":
+					radius = 0.10
+				var a := t * speed
+				at += Vector3(cos(a) * radius, sin(t * 2.3) * 0.12, sin(a) * radius)
+				node.rotation.y = -a
+				node.rotation.z = sin(t * 1.3) * 0.16
+				var frequency := 38.0 if id in ["bee", "clear_wings", "blue_needle"] else (12.0 if id == "bat" else 8.0)
+				for wing_name in ["WingLeft", "WingRight"]:
+					var wing := node.get_node_or_null(wing_name) as Node3D
+					if wing != null:
+						wing.rotation.z = sin(t * frequency) * 0.7 * (-1 if wing_name == "WingLeft" else 1)
+			_:
+				if node.has_meta("fly"):
+					var fly: Vector2 = node.get_meta("fly")
+					at += Vector3(cos(t * fly.y), 0, sin(t * fly.y)) * fly.x
+				if node.has_meta("bob"):
+					at.y += sin(t * 2) * float(node.get_meta("bob"))
+		if head != null:
+			head.rotation.x = angle
+		# Ground travellers follow the mound, including their jump clearance.
+		if id in ["wren", "hare", "ant", "snail"]:
+			var parent_at: Vector3 = node.get_parent().position
+			at.y += ground_height(_points, parent_at + at) - ground_height(_points, parent_at + entry["base"])
 		node.position = at
 
 
@@ -1981,7 +2059,7 @@ func _item_model(item: Dictionary, place_id: String) -> Node3D:
 			root.position = Vector3(0.65, 2.25, 1.48)
 			root.set_meta("placed", true)
 			root.set_meta("in_house", true)
-			root.rotation_degrees.x = 70
+			root.rotation_degrees.x = -90
 			root.set_meta("bob", 0.01)
 		"ant":
 			_add(root, _sphere_mesh(1.0, 12, 6), Color("302c25"), Vector3(0.0, 0.06, -0.13), Vector3.ZERO, Vector3(0.045, 0.05, 0.07))
@@ -2150,7 +2228,9 @@ func _item_model(item: Dictionary, place_id: String) -> Node3D:
 			for child in root.get_children():
 				child.position.y -= low
 			root.position += root.basis * Vector3(0, low, 0)
+	_item_readability(root, id, place_id, str(item.get("kind", "")))
 	_merge_item_parts(root)
+	root.set_meta("rest_rotation", root.rotation)
 	if place_id == "gate" and id in ["post_coat", "bead_net", "two_dents", "far_shut"]:
 		var toward := _neighbour_dir("gate")
 		var side := Vector3(-toward.z, 0, toward.x)
@@ -2162,9 +2242,115 @@ func _item_model(item: Dictionary, place_id: String) -> Node3D:
 		for child in root.get_children():
 			if child is MeshInstance3D:
 				child.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	if root.has_meta("placed") and not root.has_meta("in_house") and place_id == "high_ground" and id not in ["cloud_shadow", "wind_line", "blue_edge", "deer"]:
+	if root.has_meta("placed") and not root.has_meta("in_house") and place_id == "high_ground" and id not in ["cloud_shadow", "wind_line", "blue_edge", "deer", "hare"]:
 		root.position.y += ground_height(_points, _points.get(place_id, Vector3.ZERO) + root.position)
 	return root
+
+
+# Keep detail legible at 26 m, with attachment-specific limits inside the house.
+# Each moving group is baked separately: body plus at most two wing/head draws.
+func _item_readability(root: Node3D, id: String, place_id: String, kind: String) -> void:
+	root.set_meta("species", id)
+	var sizes := {"wren": 2.5, "woodpecker": 2.3, "squirrel": 2.0, "snail": 3.0,
+		"ant": 2.8, "bee": 3.0, "moth": 2.2, "bat": 2.0, "frog": 2.8,
+		"hare": 1.7, "deer": 1.25, "heron": 1.5, "duck": 1.65, "spider": 1.5,
+		"petal_wings": 2.2, "clear_wings": 2.6, "blue_needle": 2.6, "blue_flash": 2.0,
+		"green_jumper": 2.5, "upside_shiny": 2.4, "tail_basker": 2.2, "pink_wriggler": 2.0}
+	var factor: float = sizes.get(id, 1.4 if kind == "material" else 1.0)
+	if id in ["grey_feather", "hand_leaves", "red_round", "cupped_shiner", "curled_stone", "spark_stone", "roll_ups", "seed"]:
+		factor = 1.8
+	root.scale *= factor
+	if id in ["wren", "ant", "snail", "hare"]:
+		root.position = _item_clear_ground(id, place_id)
+	if id in ["squirrel", "woodpecker"]:
+		var trunk := _outward(_points.get(place_id, Vector3.ZERO)) * 1.6
+		var radius := 0.45
+		if place_id == "dark_trees":
+			var place := place_node(place_id)
+			if place != null:
+				for child in place.get_children():
+					if child is MeshInstance3D:
+						var bounds: AABB = child.transform * child.get_aabb()
+						if bounds.size.y > 0.9 and bounds.size.y < 1.1 and bounds.size.x < 0.6:
+							trunk = Vector3(child.position.x, 0, child.position.z)
+							break
+			radius = 0.25
+			root.set_meta("climb", 0.45)
+		var offset := Vector3(0.8, 0, 0.6).normalized() * (radius + 0.5) if id == "squirrel" else Vector3(-0.6, 0, 1.0).normalized() * (radius + 1.0)
+		root.position = trunk + offset + Vector3(0, 0.1 if id == "squirrel" else (1.5 if place_id == "big_tree" else 0.1), 0)
+		root.rotation.y = atan2(-offset.x, -offset.z)
+	if id in ["frog", "duck"] and place_id == "tall_reeds":
+		var habitat := Node3D.new()
+		habitat.name = "Habitat"
+		root.add_child(habitat)
+		for child in root.get_children():
+			if child is MeshInstance3D:
+				var bounds: AABB = child.transform * child.get_aabb()
+				if bounds.size.x > 1.2 and bounds.size.y < 0.025:
+					root.remove_child(child)
+					habitat.add_child(child)
+					child.scale *= 2.2 if id == "duck" else 1.5
+		_merge_item_parts(habitat)
+	if id == "moth" and place_id == "home":
+		root.position.x = 2.65
+	# Pale throat and large dark spots preserve the frog outline against grass.
+	if id == "frog":
+		_item_form(root, Vector3(0, 0.12, 0.23), Vector3(0.16, 0.055, 0.035), Color("e1d896"))
+		for k in range(7):
+			_item_form(root, Vector3(sin(k * 2.4) * 0.13, 0.225, -0.12 + k * 0.035), Vector3(0.025, 0.012, 0.035), Color("263d28"))
+	if id == "ant":
+		for k in range(3):
+			_item_form(root, Vector3(k * 0.19, 0.16, 0.2 - k * 0.48), Vector3(0.075, 0.025, 0.1), Color("d4bd78"))
+	if id in ["hare", "squirrel"]:
+		for side in [-1, 1]:
+			for k in range(3):
+				_item_segment(root, Vector3(side * 0.035, 0.48, 0.29 if id == "squirrel" else 0.41), Vector3(side * 0.22, 0.46 + k * 0.02, 0.32 if id == "squirrel" else 0.44), 0.005, Color("e6ddc6"))
+	if id == "petal_wings":
+		_item_clear_parts(root)
+		for n in range(2):
+			var at := Vector3(0, 0, n * 0.5)
+			_item_form(root, at, Vector3(0.025, 0.03, 0.14), Color("363027"))
+			for side in [-1, 1]:
+				_item_form(root, at + Vector3(side * 0.18, 0, 0), Vector3(0.20, 0.016, 0.19), Color("f7edcc"))
+				_item_form(root, at + Vector3(side * 0.23, 0.02, 0.06), Vector3(0.025, 0.01, 0.03), Color("524331"))
+	if id == "duck":
+		var chicks := Node3D.new()
+		chicks.name = "Ducklings"
+		root.add_child(chicks)
+		for part in root.get_children():
+			if part is MeshInstance3D and part.position.z < -0.5:
+				root.remove_child(part)
+				chicks.add_child(part)
+		_merge_item_parts(chicks)
+	var wings := id in ["petal_wings", "bat", "bee", "moth", "clear_wings", "blue_needle", "hanging_bird", "blue_flash"]
+	var headed := id in ["deer", "heron", "woodpecker", "wren"]
+	if not wings and not headed:
+		return
+	var parts := root.get_children()
+	for group_name in (["WingLeft", "WingRight"] if wings else ["Head"]):
+		var group := Node3D.new()
+		group.name = group_name
+		var pivot := Vector3.ZERO
+		if headed:
+			pivot = Vector3(0, 1.04, 0.25) if id in ["deer", "heron"] else Vector3(0, 0.27, 0.15)
+		group.position = pivot
+		root.add_child(group)
+		for part in parts:
+			if not is_instance_valid(part) or not part is MeshInstance3D or part.get_parent() != root:
+				continue
+			var at: Vector3 = part.position
+			var selected := false
+			if wings:
+				var bounds: AABB = part.transform * part.get_aabb()
+				selected = absf(at.x) > 0.12 and bounds.size.y < 0.12
+				selected = selected and ((at.x < 0) == (group_name == "WingLeft"))
+			else:
+				selected = at.y > (1.08 if id == "heron" else (1.2 if id == "deer" else 0.30)) and at.z > (0.0 if id in ["wren", "woodpecker"] else -1.0)
+			if selected:
+				root.remove_child(part)
+				group.add_child(part)
+				part.position -= pivot
+		_merge_item_parts(group)
 
 
 # Opaque primitive parts become one vertex-coloured surface. Special materials
