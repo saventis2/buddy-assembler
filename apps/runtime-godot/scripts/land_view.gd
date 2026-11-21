@@ -126,8 +126,10 @@ var _window_mat: StandardMaterial3D = null
 var _window_light: OmniLight3D = null
 var _roof: MeshInstance3D = null
 var _home_point := Vector3.ZERO
-# Prototype: where the buddy lies when it sleeps at home (on the bed).
+# Prototype: where the buddy lies when it sleeps at home (on the bed), and
+# where it stands at home when free roaming (beside it).
 var _bed_point := Vector3.ZERO
+var _bedside_point := Vector3.ZERO
 var _bed_set := false
 # Texture instance id -> the row below its lowest drawn pixel (its feet).
 var _feet_rows := {}
@@ -1008,6 +1010,7 @@ func _rebuild_places() -> void:
 		strip.rotation.y = atan2(b.x - a.x, b.z - a.z)
 	_style_labels()
 	_build_grass()
+	_build_obstacles()
 	_build_items()
 
 
@@ -1231,6 +1234,8 @@ func _build_furniture(house: Node3D) -> void:
 	_add(house, _box_mesh(Vector3(0.7, 0.12, 0.36)), Color(0.96, 0.95, 0.92), Vector3(-1.35, 0.55, -1.18))
 	_add(house, _box_mesh(Vector3(0.96, 0.07, 1.2)), Color(0.36, 0.48, 0.62), Vector3(-1.35, 0.52, 0.02))
 	_bed_point = _home_point + Vector3(-1.35, 0.5, -0.45).rotated(Vector3.UP, house.rotation.y)
+	# Free roaming, home is beside the bed, so lying down is one step over.
+	_bedside_point = _home_point + Vector3(-0.45, 0.0, -0.2).rotated(Vector3.UP, house.rotation.y)
 	_bed_set = true
 	# The table with four legs, and a stool.
 	_add(house, _box_mesh(Vector3(1.0, 0.06, 0.7)), wood, Vector3(0.35, 0.75, -0.75))
@@ -1301,46 +1306,135 @@ func _free_on() -> bool:
 	return bool(_snapshot.get("prototype_free", false))
 
 
-# A walk with no paths: a gentle curve from a to b, bowed to one side.
+# A walk with no paths: straight from a to b when nothing is in the way, else
+# round what is (the route grid keeps the buddy's width clear of every obstacle
+# and every creature's ground), with the grid's zigzags pulled straight.
 func _free_walk(a: Vector3, b: Vector3) -> Array:
-	var flat := Vector3(b.x - a.x, 0.0, b.z - a.z)
-	var length := flat.length()
-	if length < 0.01:
+	if _route_grid == null:
 		return [a, b]
-	var side := Vector3(-flat.z, 0.0, flat.x) / length
-	var bow := length * 0.12 * (1.0 if hash("%s|%s" % [a, b]) % 2 == 0 else -1.0)
-	var mid := (a + b) * 0.5 + side * bow
-	var points: Array = []
-	for i in range(9):
-		var t := float(i) / 8.0
-		points.append(a.lerp(mid, t).lerp(mid.lerp(b, t), t))
-	return points
+	a = _safe_card_point(a)
+	b = _safe_card_point(b)
+	if _line_clear(a, b, 0.31, CARD_CLEAR_TOP):
+		return [a, b]
+	var cells := _route_grid.get_id_path(_free_cell(_grid_cell(a)), _free_cell(_grid_cell(b)))
+	if cells.is_empty():
+		return [a, a]
+	var result: Array = [a]
+	for cell in cells:
+		result.append(Vector3(cell.x * 0.25, 0, cell.y * 0.25))
+	result.append(b)
+	return _smooth_route(result)
 
 
-# Where an amble about `stand` has got to: it rests a while after arriving,
-# then every AMBLE_PERIOD seconds strolls to another spot near it.
+# The nearest open cell of the route grid (a clear spot can sit in a cell whose
+# centre is too close to something).
+func _free_cell(cell: Vector2i) -> Vector2i:
+	if not _route_grid.is_in_boundsv(cell) or not _route_grid.is_point_solid(cell):
+		return cell
+	for ring in range(1, 8):
+		for x in range(-ring, ring + 1):
+			for z in range(-ring, ring + 1):
+				if maxi(absi(x), absi(z)) != ring:
+					continue
+				var near := cell + Vector2i(x, z)
+				if _route_grid.is_in_boundsv(near) and not _route_grid.is_point_solid(near):
+					return near
+	return cell
+
+
+# Each point skips ahead to the farthest one it can see across open cells.
+func _smooth_route(points: Array) -> Array:
+	var result: Array = [points[0]]
+	var i := 0
+	while i < points.size() - 1:
+		var j := i + 1
+		while j + 1 < points.size() and _grid_clear(points[i], points[j + 1]):
+			j += 1
+		result.append(points[j])
+		i = j
+	return result
+
+
+# A straight line is clear when every grid square it crosses has all four
+# corners open (an open corner is clear by the buddy's width, so the whole
+# square is, near enough).
+func _grid_clear(a: Vector3, b: Vector3) -> bool:
+	var ends := [_grid_cell(a), _grid_cell(b)]
+	var steps := maxi(1, ceili(a.distance_to(b) / 0.12))
+	for i in range(steps + 1):
+		var at := a.lerp(b, float(i) / steps)
+		var x0 := floori(at.x * 4.0)
+		var z0 := floori(at.z * 4.0)
+		for corner in [Vector2i(x0, z0), Vector2i(x0 + 1, z0), Vector2i(x0, z0 + 1), Vector2i(x0 + 1, z0 + 1)]:
+			if corner in ends:
+				continue
+			if _route_grid.is_in_boundsv(corner) and _route_grid.is_point_solid(corner):
+				return false
+	return true
+
+
+# Where an amble about `stand` has got to. It begins (at _amble_anchor) where
+# the buddy is (_amble_start) and rests; then it strolls to another spot near
+# `stand`, rests again, and so on: stroll k walks from spot k-1 to spot k and
+# then rests. Each spot and each rest comes from a hash of the amble and the
+# stroll's number, so the strolls never fall into a beat, and the stroll under
+# way is found from `now` (the last one found is remembered).
 func _amble_at(stand: Vector3, now: float) -> Dictionary:
-	var since := now - _walk_end
+	var since := now - _amble_anchor
 	if since < 0.0:
-		return {"pos": stand, "walking": false, "dir": Vector3.ZERO}
-	var k := int(floor(since / AMBLE_PERIOD))
-	var a := _amble_point(stand, k - 1)
-	var b := _amble_point(stand, k)
-	var length := a.distance_to(b)
-	var t := since - float(k) * AMBLE_PERIOD
-	if length < 0.01 or t >= length / AMBLE_SPEED:
-		return {"pos": b, "walking": false, "dir": Vector3.ZERO}
-	return {"pos": a.lerp(b, t * AMBLE_SPEED / length), "walking": true, "dir": (b - a) / length}
+		return {"pos": _amble_start, "walking": false, "dir": Vector3.ZERO}
+	var key := "%s|%.3f" % [stand, _amble_anchor]
+	if key != _amble_key or since < _amble_from:
+		_amble_key = key
+		_amble_k = 0
+		_amble_from = 0.0
+	while since >= _amble_from + _amble_length(stand, _amble_k):
+		_amble_from += _amble_length(stand, _amble_k)
+		_amble_k += 1
+	if _amble_k == 0:
+		return {"pos": _amble_point(stand, 0), "walking": false, "dir": Vector3.ZERO}
+	var route := _amble_points(_amble_point(stand, _amble_k - 1), _amble_point(stand, _amble_k))
+	return walk_at(route, 0, (since - _amble_from) * AMBLE_SPEED / WALK_SPEED)
 
 
-func _amble_point(stand: Vector3, k: int) -> Vector3:
-	if k <= 0:
-		return stand
+# Stroll k's whole length in seconds: its walk, then a rest of 3 to 12 s (the
+# first, before any walk, 2 to 8 s).
+func _amble_length(stand: Vector3, k: int) -> float:
+	var key := "length|%s|%.3f|%d" % [stand, _amble_anchor, k]
+	if _amble_cache.has(key):
+		return _amble_cache[key]
 	var rng := RandomNumberGenerator.new()
-	rng.seed = hash("%s|%d|%d" % [str(_snapshot.get("where", "")), _last_t, k])
-	var angle := rng.randf() * TAU
-	var radius := rng.randf_range(0.8, AMBLE_RADIUS)
-	return stand + Vector3(cos(angle) * radius, 0.0, sin(angle) * radius)
+	rng.seed = hash("%s|%.3f|%d|rest" % [stand, _amble_anchor, k])
+	var seconds := rng.randf_range(2.0, 8.0) if k == 0 else rng.randf_range(3.0, 12.0)
+	if k > 0:
+		var route := _amble_points(_amble_point(stand, k - 1), _amble_point(stand, k))
+		for i in range(route.size() - 1):
+			seconds += (route[i] as Vector3).distance_to(route[i + 1]) / AMBLE_SPEED
+	_amble_cache[key] = seconds
+	return seconds
+
+
+# Spot k of the amble (spot 0 is where it began): clear of everything, and one
+# it can walk to from there (else it stays put).
+func _amble_point(stand: Vector3, k: int) -> Vector3:
+	var key := "point|%s|%.3f|%d" % [stand, _amble_anchor, k]
+	if _amble_cache.has(key):
+		return _amble_cache[key]
+	var home := _safe_card_point(_amble_start)
+	var spot := home
+	if k > 0:
+		var rng := RandomNumberGenerator.new()
+		rng.seed = hash("%s|%.3f|%d" % [stand, _amble_anchor, k])
+		var angle := rng.randf() * TAU
+		var radius := rng.randf_range(0.8, AMBLE_RADIUS)
+		spot = _safe_card_point(stand + Vector3(cos(angle) * radius, 0.0, sin(angle) * radius))
+		var route := _amble_points(home, spot)
+		if route.size() == 2 and (route[0] as Vector3).is_equal_approx(route[1]) and not home.is_equal_approx(spot):
+			spot = home
+	if _amble_cache.size() > 2000:
+		_amble_cache.clear()
+	_amble_cache[key] = spot
+	return spot
 
 
 # --- prototype: the land's items -------------------------------------------------
@@ -1373,14 +1467,23 @@ func _build_items() -> void:
 		if not node.has_meta("placed"):
 			node.position = _item_ring_spot(item, index, place.position)
 		var parent: Node3D = place
-		if node.has_meta("in_house") and place.get_node_or_null("House") != null:
-			parent = place.get_node("House") as Node3D
+		# In the house: its own place's, or home's for a thing found elsewhere
+		# and brought home (the ringed stone, on the shelf).
+		var house_place := place if place.get_node_or_null("House") != null else place_node("home")
+		if node.has_meta("in_house") and house_place != null and house_place.get_node_or_null("House") != null:
+			parent = house_place.get_node("House") as Node3D
 		parent.add_child(node)
 		var habitat := node.get_node_or_null("Habitat")
 		if habitat != null:
 			habitat.reparent(parent, true)
-		_item_nodes.append({"node": node, "hours": item.get("hours", []), "base": node.position,
-			"phase": float(_item_nodes.size()) * 1.37})
+		var entry := {"node": node, "hours": item.get("hours", []), "base": node.position,
+			"phase": float(_item_nodes.size()) * 1.37, "id": str(item.get("id", "")), "place": place_id, "kind": str(item.get("kind", ""))}
+		_item_nodes.append(entry)
+	_place_statics()
+	for entry in _item_nodes:
+		_prepare_motion(entry)
+	_creature_ranges()
+	_build_route_grid()
 
 
 # A spot for an item with none of its own: spread round the place on a ring,
@@ -1406,96 +1509,99 @@ func _show_items_for(hour: int) -> void:
 
 # Deterministic species cycles: always derive from the saved rest transform, never
 # accumulate frame deltas. Hidden items also retain the current clock pose.
+# A phase is regenerated from its index, never from the frame delta.
 func _animate_items() -> void:
 	for entry in _item_nodes:
-		var node: Node3D = entry["node"]
-		var id := str(node.get_meta("species", ""))
-		var at: Vector3 = entry["base"]
-		var t: float = _clock + entry["phase"]
-		var rest: Vector3 = node.get_meta("rest_rotation", node.rotation)
-		node.rotation = rest
+		if not entry.has("motion"):
+			continue
+		var node: Node3D = entry.node
+		var state: Dictionary = entry.motion
+		if _clock < float(state.start):
+			state.start = _motion_epoch
+			state.index = -1
+			state.to = state.origin
+			state.duration = 0.0
+		while _clock >= float(state.start) + float(state.duration):
+			state.start += float(state.duration)
+			state.index += 1
+			var rng := RandomNumberGenerator.new()
+			rng.seed = hash("%s:%s:%d" % [entry.id, entry.place, state.index])
+			var previous: Vector3 = state.to - state.from
+			if previous.length() > 0.001:
+				state.yaw = atan2(previous.x, previous.z)
+			state.from = state.to
+			var from: Vector3 = state.from
+			# The kestrel, down in the grass after a drop, only stays a moment.
+			var landed: bool = entry.id == "hanging_bird" and from.y < (state.origin as Vector3).y - 1.0
+			state.rest = rng.randf() < float(state.get("rest_chance", 0.65))
+			state.duration = rng.randf_range(state.rest_min, state.rest_max) if state.rest else rng.randf_range(1.5, 6.0)
+			if landed and state.rest:
+				state.duration = rng.randf_range(0.8, 2.0)
+			# Hovering, it sometimes drops like a stone to the grass below.
+			state.stoop = entry.id == "hanging_bird" and not landed and not state.rest and rng.randf() < 0.3
+			state.to = state.from
+			if not state.rest:
+				for attempt in range(30):
+					var target: Vector3 = state.origin
+					var reach: float = state.reach
+					target += Vector3(rng.randf_range(-reach, reach), 0, rng.randf_range(-reach, reach))
+					if state.habitat == "air":
+						target.y += rng.randf_range(-0.2, 0.6)
+						if state.stoop:
+							target = from + Vector3(rng.randf_range(-0.4, 0.4), 0, rng.randf_range(-0.4, 0.4))
+							target.y = _surface_height(target) + 0.17 - float(state.low)
+					elif state.habitat == "trunk":
+						target = state.origin + Vector3(0, rng.randf_range(0, float(state.get("climb", 0.45))), 0)
+					elif state.habitat == "web":
+						target = state.origin + Vector3(rng.randf_range(-0.01, 0.01), 0, 0)
+					if _motion_clear(state.from, target, state, bool(state.stoop)):
+						state.to = target
+						var pace := rng.randf_range(state.speed * 0.5, state.speed)
+						if state.stoop:
+							pace = 6.0
+						elif landed:
+							pace = 1.6
+						state.duration = maxf(0.3, from.distance_to(target) / pace)
+						break
+				if state.stoop and (state.to as Vector3).is_equal_approx(from):
+					state.stoop = false
+		var u := clampf((_clock - float(state.start)) / float(state.duration), 0, 1)
+		# A drop gathers speed all the way down; everything else eases in and out.
+		var ease := u * u if bool(state.get("stoop", false)) else u * u * (3.0 - 2.0 * u)
+		var at: Vector3 = (state.from as Vector3).lerp(state.to, ease)
+		if state.habitat == "air":
+			if state.rest:
+				# Hovering is never a frozen hang: a slow bob, level at each end.
+				at.y += sin(u * PI) * sin((_clock - float(state.start)) * 2.3 + float(entry.phase)) * 0.03
+			at.y += _lift_over_card(at, state)
+		var jump := 0.0
+		if not state.rest and entry.id in ["frog", "green_jumper", "wren", "hare"]:
+			jump = sin(u * PI) * (0.12 if entry.id == "hare" else 0.04)
+		state.jump = jump
+		var direction: Vector3 = state.to - state.from
+		if direction.length() > 0.001 and state.habitat not in ["trunk", "web"]:
+			node.rotation.y = lerp_angle(float(state.yaw), atan2(direction.x, direction.z), smoothstep(0, 0.25, u))
+		var chicks := node.get_node_or_null("Ducklings") as Node3D
+		if chicks != null:
+			chicks.rotation.y = sin(u * PI) * 0.12 * (1 if int(state.index) % 2 == 0 else -1)
 		var head := node.get_node_or_null("Head") as Node3D
-		var angle := 0.0
-		match id:
-			"wren":
-				var hop := fposmod(t, 3.6)
-				at.x += 0.45 * sin(t * 0.8)
-				at.y += absf(sin(hop * PI * 2)) * 0.22 if hop < 1.0 else 0.0
-				angle = maxf(0, sin(t * 5)) * 0.65 if hop > 1.5 else 0.0
-			"woodpecker":
-				angle = maxf(0, sin(t * 24)) * 0.55 if fposmod(t, 3.7) < 1.4 else -0.12
-			"deer":
-				angle = 1.65 * smoothstep(-0.5, 0.6, sin(t * 0.48))
-			"heron":
-				angle = 0.95 * pow(maxf(0, sin(t * 0.38)), 3)
-			"frog", "green_jumper":
-				var jump := fposmod(t, 6.0)
-				var travel := clampf((jump - 3.8) / 0.8, 0, 1)
-				var direction := 1.0 if int(floor(t / 6.0)) % 2 == 0 else -1.0
-				at.z += (travel if direction > 0 else 1.0 - travel) * 0.85
-				at.y += sin(travel * PI) * 0.65
-				node.rotation.y += 0 if direction > 0 else PI
-			"hare":
-				var run := fposmod(t, 12.0)
-				var travel := clampf((run - 3.0) / 3.0, 0, 1) - clampf((run - 8.0) / 3.0, 0, 1)
-				at.z += travel * 2.4
-				if (run > 3 and run < 6) or (run > 8 and run < 11):
-					at.y += absf(sin(t * 7)) * 0.35
-					node.rotation.x = -0.22 + sin(t * 7) * 0.12
-				node.rotation.y += PI if run >= 7 else 0.0
-			"duck":
-				var a := t * 0.24
-				at += Vector3(cos(a), sin(t * 2) * 0.015, sin(a)) * 0.65
-				node.rotation.y = -a
-				var chicks := node.get_node_or_null("Ducklings") as Node3D
-				if chicks != null:
-					chicks.rotation.y = 0.25 + sin(t * 0.6) * 0.10
-					chicks.position.y = sin(t * 2 - 0.8) * 0.012
-			"squirrel":
-				at.y += (0.5 - 0.5 * cos(t * 0.95)) * float(node.get_meta("climb", 1.7))
-				node.rotation.z += sin(t * 9) * 0.045
-			"snail":
-				at.z += sin(t * 0.025) * 0.65
-			"ant":
-				at.z += sin(t * 0.4) * 0.7
-				node.rotation.y += PI if cos(t * 0.4) < 0 else 0
-				at.y += absf(sin(t * 18)) * 0.012
-			"pink_wriggler", "pouring_thing":
-				at.x += sin(t * 0.6) * 0.15
-				node.rotation.y += sin(t * 2) * 0.08
-			"tail_basker":
-				at.z += smoothstep(0.7, 1.0, sin(t * 0.4)) * 0.3
-			"upside_shiny":
-				node.rotation.z += sin(t * 9) * 0.12
-			"spider":
-				at.x += smoothstep(0.6, 0.9, sin(t * 0.7)) * 0.12
-			"bee", "moth", "bat", "petal_wings", "clear_wings", "blue_needle", "blue_flash", "wide_wings", "hanging_bird":
-				var speed := 1.7 if id == "bat" else (0.4 if id == "wide_wings" else 0.9)
-				var radius := 1.6 if id == "bat" else (1.2 if id == "wide_wings" else 0.28)
-				if id == "moth":
-					radius = 0.10
-				var a := t * speed
-				at += Vector3(cos(a) * radius, sin(t * 2.3) * 0.12, sin(a) * radius)
-				node.rotation.y = -a
-				node.rotation.z = sin(t * 1.3) * 0.16
-				var frequency := 38.0 if id in ["bee", "clear_wings", "blue_needle"] else (12.0 if id == "bat" else 8.0)
-				for wing_name in ["WingLeft", "WingRight"]:
-					var wing := node.get_node_or_null(wing_name) as Node3D
-					if wing != null:
-						wing.rotation.z = sin(t * frequency) * 0.7 * (-1 if wing_name == "WingLeft" else 1)
-			_:
-				if node.has_meta("fly"):
-					var fly: Vector2 = node.get_meta("fly")
-					at += Vector3(cos(t * fly.y), 0, sin(t * fly.y)) * fly.x
-				if node.has_meta("bob"):
-					at.y += sin(t * 2) * float(node.get_meta("bob"))
 		if head != null:
-			head.rotation.x = angle
-		# Ground travellers follow the mound, including their jump clearance.
-		if id in ["wren", "hare", "ant", "snail"]:
-			var parent_at: Vector3 = node.get_parent().position
-			at.y += ground_height(_points, parent_at + at) - ground_height(_points, parent_at + entry["base"])
-		node.position = at
+			head.rotation.x = sin(u * PI) * (0.16 if state.rest else 0.06)
+		for wing_name in ["WingLeft", "WingRight"]:
+			var wing := node.get_node_or_null(wing_name) as Node3D
+			if wing != null:
+				wing.rotation.z = (0.15 + 0.15 * sin((_clock - float(state.start)) * (31.0 + float(state.index % 7)))) * (-1 if wing_name == "WingLeft" else 1)
+		node.global_position = at
+		var bounds := _world_bounds(node)
+		if state.habitat == "trunk" and state.ignore != null:
+			var support := _trunk_x(state.ignore, bounds.get_center())
+			if is_finite(support):
+				node.global_position.x += support + 0.003 - bounds.position.x
+		if state.habitat == "ground":
+			node.global_position.y += _surface_height(bounds.get_center()) + 0.005 + jump - bounds.position.y
+		elif state.habitat == "water":
+			node.global_position.y += 0.06 - bounds.position.y
+
 
 
 # The model for one item, built from the same shapes and look as the rest. A
@@ -1572,11 +1678,20 @@ func _item_model(item: Dictionary, place_id: String) -> Node3D:
 			root.position = _neighbour_dir("yard") * 2.4 + Vector3(0, 0.27, 0)
 			root.set_meta("placed", true)
 		"morning_wet":
-			_add(root, _sphere_mesh(1.0, 12, 6), Color("b8dfdd"), Vector3(-0.4, 0.065, 0.0), Vector3.ZERO, Vector3(0.045, 0.025, 0.045))
-			_add(root, _sphere_mesh(1.0, 12, 6), Color("b8dfdd"), Vector3(0.0, 0.065, 0.3), Vector3.ZERO, Vector3(0.045, 0.025, 0.045))
-			_add(root, _sphere_mesh(1.0, 12, 6), Color("b8dfdd"), Vector3(0.3, 0.065, -0.2), Vector3.ZERO, Vector3(0.045, 0.025, 0.045))
-			_add(root, _sphere_mesh(1.0, 12, 6), Color("b8dfdd"), Vector3(0.6, 0.065, 0.2), Vector3.ZERO, Vector3(0.045, 0.025, 0.045))
-			root.position = Vector3(-1.0, 0.0, 1.0)
+			# Dew: the whole yard a shade darker with wet, and small drops (a
+			# few millimetres to a centimetre) all over it.
+			var damp := _add(root, _box_mesh(Vector3(5.8, 0.002, 4.8)), Color(0.22, 0.2, 0.16), Vector3(0.0, 0.006, 0.0))
+			damp.material_override = _mat(Color(0.22, 0.2, 0.16), 0.3)
+			var bench := _neighbour_dir("yard") * 2.4
+			var drops := RandomNumberGenerator.new()
+			drops.seed = 41
+			for k in range(48):
+				var at := Vector3(drops.randf_range(-2.7, 2.7), 0.0, drops.randf_range(-2.2, 2.2))
+				if Vector2(at.x - bench.x, at.z - bench.z).length() < 0.8:
+					continue
+				var size := drops.randf_range(0.003, 0.006)
+				_add(root, _sphere_mesh(1.0, 6, 3), Color("d6ecef"), at + Vector3(0.0, 0.007 + size * 0.6, 0.0), Vector3.ZERO, Vector3(size, size * 0.7, size))
+			root.position = Vector3(0.0, 0.04, 0.0)
 			root.set_meta("placed", true)
 		"upside_shiny":
 			_add(root, _sphere_mesh(1.0, 12, 6), Color("191d23"), Vector3(0.0, 0.09, 0.0), Vector3.ZERO, Vector3(0.13, 0.08, 0.2))
@@ -1626,8 +1741,11 @@ func _item_model(item: Dictionary, place_id: String) -> Node3D:
 			root.set_meta("placed", true)
 		"log_ear":
 			_add(root, _cyl_mesh(0.2, 0.2, 0.9, 8), Color("795235"), Vector3(0.0, 0.2, 0.0), Vector3(0.0, 0.0, 90.0))
-			_add(root, _sphere_mesh(1.0, 12, 6), Color("d1b5a2"), Vector3(0.0, 0.29, 0.2), Vector3.ZERO, Vector3(0.22, 0.07, 0.17))
-			_add(root, _sphere_mesh(1.0, 12, 6), Color("986b55"), Vector3(0.0, 0.33, 0.22), Vector3.ZERO, Vector3(0.15, 0.02, 0.11))
+			# Three pale ears of fungus, each a few centimetres, out of the bark.
+			for k in range(3):
+				var ear := Vector3(-0.12 + k * 0.11, 0.25 + (k % 2) * 0.06, 0.19)
+				_add(root, _sphere_mesh(1.0, 10, 5), Color("d1b5a2"), ear, Vector3(70.0, 0.0, 0.0), Vector3(0.045 - k * 0.006, 0.012, 0.034 - k * 0.004))
+				_add(root, _sphere_mesh(1.0, 10, 5), Color("986b55"), ear + Vector3(0.0, 0.004, 0.008), Vector3(70.0, 0.0, 0.0), Vector3(0.03 - k * 0.004, 0.006, 0.022 - k * 0.003))
 			root.position = Vector3(1.2, 0.0, 1.5)
 			root.set_meta("placed", true)
 		"sticky_wood":
@@ -1637,9 +1755,6 @@ func _item_model(item: Dictionary, place_id: String) -> Node3D:
 			root.set_meta("placed", true)
 		"wood_tunnels":
 			_add(root, _cyl_mesh(0.2, 0.2, 0.9, 8), Color("795235"), Vector3(0.0, 0.2, 0.0), Vector3(0.0, 0.0, 90.0))
-			_add(root, _sphere_mesh(1.0, 12, 6), Color("2a241c"), Vector3(-0.25, 0.3, 0.15), Vector3.ZERO, Vector3(0.035, 0.035, 0.015))
-			_add(root, _sphere_mesh(1.0, 12, 6), Color("2a241c"), Vector3(0.0, 0.3, 0.15), Vector3.ZERO, Vector3(0.035, 0.035, 0.015))
-			_add(root, _sphere_mesh(1.0, 12, 6), Color("2a241c"), Vector3(0.23, 0.3, 0.15), Vector3.ZERO, Vector3(0.035, 0.035, 0.015))
 			root.position = Vector3(0.0, 0.0, 2.1)
 			root.set_meta("placed", true)
 		"red_round":
@@ -1776,20 +1891,40 @@ func _item_model(item: Dictionary, place_id: String) -> Node3D:
 			root.position = Vector3(0.0, 0.0, -4.0)
 			root.set_meta("placed", true)
 		"far_smoke":
-			_add(root, _sphere_mesh(1.0, 12, 6), Color("a4adb0"), Vector3(0.0, 0.0, 0.0), Vector3.ZERO, Vector3(0.12, 0.48, 0.13))
-			_add(root, _sphere_mesh(1.0, 12, 6), Color("a4adb0"), Vector3(0.0, 0.7, 0.0), Vector3.ZERO, Vector3(0.145, 0.48, 0.13))
-			_add(root, _sphere_mesh(1.0, 12, 6), Color("a4adb0"), Vector3(0.0, 1.4, 0.0), Vector3.ZERO, Vector3(0.16999999999999998, 0.48, 0.13))
-			root.position = Vector3(0.0, 5.0, -7.0)
+			# A thin line of smoke going straight up, very far off past the
+			# land: a metre wide at its foot, spreading and paling as it rises
+			# some fifty metres, 150 m out. Stacked tapers, so it is one line.
+			var drift := 0.0
+			for k in range(6):
+				var foot := 0.5 + k * 0.3
+				_add(root, _cyl_mesh(foot + 0.3, foot, 9.0, 10), Color("a9b0b3").lerp(Color("cdd2d4"), k / 6.0),
+					Vector3(drift, 4.5 + k * 9.0, 0.0))
+				drift += k * 0.12
+			_add(root, _sphere_mesh(1.0, 10, 6), Color("cdd2d4"), Vector3(drift + 0.4, 54.3, 0.0), Vector3.ZERO, Vector3(2.4, 1.2, 2.2))
+			var smoke_way := _outward(_points.get(place_id, Vector3.ZERO)).rotated(Vector3.UP, 0.6)
+			root.position = smoke_way * 150.0
 			root.set_meta("placed", true)
 		"cloud_shadow":
 			_add(root, _sphere_mesh(1.0, 12, 6), Color("4b6141"), Vector3(0.0, 0.0, 0.0), Vector3.ZERO, Vector3(1.9, 0.005, 1.1))
 			root.position = Vector3(-1.0, 1.61, 0.0)
 			root.set_meta("placed", true)
 		"blue_edge":
-			_add(root, _cyl_mesh(0.0, 0.77, 1.1, 8), Color("718ba0"), Vector3(-0.7, 0.55, 0.0), Vector3(0.0, 0.0, 0.0))
-			_add(root, _cyl_mesh(0.0, 1.1199999999999999, 1.6, 8), Color("718ba0"), Vector3(0.0, 0.8, 0.0), Vector3(0.0, 0.0, 0.0))
-			_add(root, _cyl_mesh(0.0, 0.7, 1.0, 8), Color("718ba0"), Vector3(0.8, 0.5, 0.0), Vector3(0.0, 0.0, 0.0))
-			root.position = Vector3(0, ground_height(_points, _points.get(place_id, Vector3.ZERO) + Vector3(0, 0, -7)), -7)
+			# Hills at the edge of sight: big, blue with distance, and far past
+			# the land (140 m and more out from the high ground), laid across
+			# the view in two ranks.
+			for k in range(7):
+				var w := 30.0 + float((k * 37) % 19)
+				var h := 16.0 + float((k * 53) % 21)
+				_add(root, _cyl_mesh(0.0, w * 0.5, h, 7), Color("9fb2c3").lerp(Color("8ea4b8"), float(k % 3) / 2.0),
+					Vector3(-78.0 + k * 26.0, h * 0.5 - 2.0, float((k * 29) % 17) - 8.0), Vector3(0.0, k * 23.0, 0.0))
+			for k in range(5):
+				var w := 44.0 + float((k * 41) % 23)
+				var h := 24.0 + float((k * 31) % 17)
+				_add(root, _cyl_mesh(0.0, w * 0.5, h, 7), Color("b4c3d0"),
+					Vector3(-92.0 + k * 46.0, h * 0.5 - 2.0, 34.0), Vector3(0.0, k * 31.0, 0.0))
+			var hills_way := _outward(_points.get(place_id, Vector3.ZERO))
+			root.position = hills_way * 140.0
+			root.rotation.y = atan2(hills_way.x, hills_way.z)
 			root.set_meta("placed", true)
 		"first_light":
 			_add(root, _sphere_mesh(1.0, 12, 6), Color("fff1c7"), Vector3(0.0, 0.0, 0.0), Vector3.ZERO, Vector3(0.09, 0.09, 0.09))
@@ -1841,9 +1976,11 @@ func _item_model(item: Dictionary, place_id: String) -> Node3D:
 			root.position = _item_clear_ground(id, place_id)
 			root.set_meta("placed", true)
 		"froth_sitter":
-			_add(root, _cyl_mesh(0.02, 0.02, 0.8, 8), Color("527637"), Vector3(0.0, 0.4, 0.0), Vector3(0.0, 0.0, 0.0))
-			_add(root, _sphere_mesh(1.0, 12, 6), Color("e9ead9"), Vector3(0.0, 0.5, 0.0), Vector3.ZERO, Vector3(0.12, 0.15, 0.12))
-			_add(root, _sphere_mesh(1.0, 12, 6), Color("739742"), Vector3(0.0, 0.5, 0.11), Vector3.ZERO, Vector3(0.035, 0.04, 0.04))
+			# A tall grass stem with a thumbnail-sized blob of froth at a leaf,
+			# and the tiny green maker sitting in it.
+			_add(root, _cyl_mesh(0.003, 0.005, 0.66, 5), Color("6f8f45"), Vector3(0.0, 0.33, 0.0))
+			_item_segment(root, Vector3(0.0, 0.3, 0.0), Vector3(0.1, 0.5, 0.02), 0.004, Color("7c9a4f"))
+			_item_segment(root, Vector3(0.0, 0.16, 0.0), Vector3(-0.08, 0.34, -0.03), 0.004, Color("7c9a4f"))
 			root.position = _item_clear_ground(id, place_id)
 			root.set_meta("placed", true)
 		"quick_shadows":
@@ -1863,10 +2000,12 @@ func _item_model(item: Dictionary, place_id: String) -> Node3D:
 			root.position = _outward(_points.get(place_id, Vector3.ZERO)) * 4.8 + Vector3(1, 0.07, 0)
 			root.set_meta("placed", true)
 		"ringed_stone":
+			# "It is on the shelf now": a pocket stone on the lower shelf at home.
 			_add(root, _sphere_mesh(1.0, 12, 6), Color("505358"), Vector3(0.0, 0.13, 0.0), Vector3.ZERO, Vector3(0.23, 0.13, 0.18))
 			_item_ring(root, Vector3(0.0, 0.13, 0.0), 0.185, 0.018, Color("e5e1cf"), Vector3(0.0, 0.0, 15.0))
-			root.position = Vector3(1.0, 0.0, 1.0)
+			root.position = Vector3(-0.35, 1.375, -1.33)
 			root.set_meta("placed", true)
+			root.set_meta("in_house", true)
 		"hanging_colours":
 			var colors := [Color("b97c70"), Color("c5a773"), Color("bdba7a"), Color("8eae8c"), Color("829fac"), Color("9992b1")]
 			for k in range(6):
@@ -1966,14 +2105,17 @@ func _item_model(item: Dictionary, place_id: String) -> Node3D:
 			root.position = Vector3(1.0, 0.0, -1.0)
 			root.set_meta("placed", true)
 		"pale_ring":
-			_add(root, _cyl_mesh(0.035, 0.035, 0.24, 8), Color("c5bba1"), Vector3(-0.35, 0.12, 0.0), Vector3(0.0, 0.0, 0.0))
-			_add(root, _cyl_mesh(0.04, 0.17, 0.13, 8), Color("e4d7b5"), Vector3(-0.35, 0.25, 0.0), Vector3(0.0, 0.0, 0.0))
-			_add(root, _cyl_mesh(0.035, 0.035, 0.24, 8), Color("c5bba1"), Vector3(0.0, 0.12, 0.35), Vector3(0.0, 0.0, 0.0))
-			_add(root, _cyl_mesh(0.04, 0.17, 0.13, 8), Color("e4d7b5"), Vector3(0.0, 0.25, 0.35), Vector3(0.0, 0.0, 0.0))
-			_add(root, _cyl_mesh(0.035, 0.035, 0.24, 8), Color("c5bba1"), Vector3(0.35, 0.12, 0.0), Vector3(0.0, 0.0, 0.0))
-			_add(root, _cyl_mesh(0.04, 0.17, 0.13, 8), Color("e4d7b5"), Vector3(0.35, 0.25, 0.0), Vector3(0.0, 0.0, 0.0))
-			_add(root, _cyl_mesh(0.035, 0.035, 0.24, 8), Color("c5bba1"), Vector3(0.0, 0.12, -0.35), Vector3(0.0, 0.0, 0.0))
-			_add(root, _cyl_mesh(0.04, 0.17, 0.13, 8), Color("e4d7b5"), Vector3(0.0, 0.25, -0.35), Vector3(0.0, 0.0, 0.0))
+			# A ring of small pale toadstools, each a few fingers high, with a
+			# little roof and darker gills under it.
+			for k in range(11):
+				var a := k * TAU / 11.0 + sin(k * 1.7) * 0.12
+				var r := 0.42 + sin(k * 2.3) * 0.04
+				var foot := Vector3(cos(a) * r, 0.0, sin(a) * r)
+				var tall := 0.05 + float((k * 7) % 5) * 0.008
+				var cap := 0.026 + float((k * 3) % 4) * 0.004
+				_add(root, _cyl_mesh(0.005, 0.007, tall, 6), Color("d8d0bb"), foot + Vector3(0.0, tall * 0.5, 0.0))
+				_add(root, _cyl_mesh(cap * 0.85, cap * 0.85, 0.004, 8), Color("a8987a"), foot + Vector3(0.0, tall - 0.004, 0.0))
+				_add(root, _cyl_mesh(0.006, cap, cap * 0.75, 8), Color("e8dcc0"), foot + Vector3(0.0, tall + cap * 0.3, 0.0))
 			root.position = _item_clear_ground(id, place_id)
 			root.set_meta("placed", true)
 		"green_log":
@@ -2123,8 +2265,6 @@ func _item_model(item: Dictionary, place_id: String) -> Node3D:
 			root.position = (_outward(_points.get(place_id, Vector3.ZERO)) * 2.5 + Vector3(1.5, 0.06, 2.6)) if place_id == "grey_bank" else Vector3(0, 0.07, 2)
 			root.set_meta("placed", true)
 			root.set_meta("bob", 0.01)
-			if place_id == "tall_reeds":
-				_add(root, _cyl_mesh(0.65, 0.65, 0.02, 12), Color("74999b"), Vector3(0, -0.03, -0.25))
 		"duck":
 			_add(root, _sphere_mesh(1.0, 12, 6), Color("8d6d48"), Vector3(0.0, 0.2, 0.0), Vector3.ZERO, Vector3(0.25, 0.18, 0.38))
 			_add(root, _sphere_mesh(1.0, 12, 6), Color("a1855b"), Vector3(0.0, 0.43, 0.28), Vector3.ZERO, Vector3(0.13, 0.14, 0.14))
@@ -2136,8 +2276,6 @@ func _item_model(item: Dictionary, place_id: String) -> Node3D:
 			root.position = _outward(_points.get(place_id, Vector3.ZERO)) * (4.8 if place_id == "water" else 0.8) + Vector3(0, 0.07, 0)
 			root.set_meta("placed", true)
 			root.set_meta("bob", 0.015)
-			if place_id == "tall_reeds":
-				_add(root, _cyl_mesh(0.65, 0.65, 0.02, 12), Color("74999b"), Vector3(0, -0.03, -0.25))
 		"deer":
 			_add(root, _sphere_mesh(1.0, 12, 6), Color("9d7955"), Vector3(0.0, 1.0, 0.0), Vector3.ZERO, Vector3(0.28, 0.36, 0.6))
 			_item_segment(root, Vector3(0.0, 1.0, 0.4), Vector3(0.0, 1.65, 0.62), 0.13, Color("a5835c"))
@@ -2230,6 +2368,7 @@ func _item_model(item: Dictionary, place_id: String) -> Node3D:
 			root.position += root.basis * Vector3(0, low, 0)
 	_item_readability(root, id, place_id, str(item.get("kind", "")))
 	_merge_item_parts(root)
+	_physical_size(root, id, str(item.get("kind", "")))
 	root.set_meta("rest_rotation", root.rotation)
 	if place_id == "gate" and id in ["post_coat", "bead_net", "two_dents", "far_shut"]:
 		var toward := _neighbour_dir("gate")
@@ -2247,19 +2386,10 @@ func _item_model(item: Dictionary, place_id: String) -> Node3D:
 	return root
 
 
-# Keep detail legible at 26 m, with attachment-specific limits inside the house.
+# Keep the detailed geometry and articulated groups; physical sizing is applied below.
 # Each moving group is baked separately: body plus at most two wing/head draws.
 func _item_readability(root: Node3D, id: String, place_id: String, kind: String) -> void:
 	root.set_meta("species", id)
-	var sizes := {"wren": 2.5, "woodpecker": 2.3, "squirrel": 2.0, "snail": 3.0,
-		"ant": 2.8, "bee": 3.0, "moth": 2.2, "bat": 2.0, "frog": 2.8,
-		"hare": 1.7, "deer": 1.25, "heron": 1.5, "duck": 1.65, "spider": 1.5,
-		"petal_wings": 2.2, "clear_wings": 2.6, "blue_needle": 2.6, "blue_flash": 2.0,
-		"green_jumper": 2.5, "upside_shiny": 2.4, "tail_basker": 2.2, "pink_wriggler": 2.0}
-	var factor: float = sizes.get(id, 1.4 if kind == "material" else 1.0)
-	if id in ["grey_feather", "hand_leaves", "red_round", "cupped_shiner", "curled_stone", "spark_stone", "roll_ups", "seed"]:
-		factor = 1.8
-	root.scale *= factor
 	if id in ["wren", "ant", "snail", "hare"]:
 		root.position = _item_clear_ground(id, place_id)
 	if id in ["squirrel", "woodpecker"]:
@@ -2279,18 +2409,6 @@ func _item_readability(root: Node3D, id: String, place_id: String, kind: String)
 		var offset := Vector3(0.8, 0, 0.6).normalized() * (radius + 0.5) if id == "squirrel" else Vector3(-0.6, 0, 1.0).normalized() * (radius + 1.0)
 		root.position = trunk + offset + Vector3(0, 0.1 if id == "squirrel" else (1.5 if place_id == "big_tree" else 0.1), 0)
 		root.rotation.y = atan2(-offset.x, -offset.z)
-	if id in ["frog", "duck"] and place_id == "tall_reeds":
-		var habitat := Node3D.new()
-		habitat.name = "Habitat"
-		root.add_child(habitat)
-		for child in root.get_children():
-			if child is MeshInstance3D:
-				var bounds: AABB = child.transform * child.get_aabb()
-				if bounds.size.x > 1.2 and bounds.size.y < 0.025:
-					root.remove_child(child)
-					habitat.add_child(child)
-					child.scale *= 2.2 if id == "duck" else 1.5
-		_merge_item_parts(habitat)
 	if id == "moth" and place_id == "home":
 		root.position.x = 2.65
 	# Pale throat and large dark spots preserve the frog outline against grass.
@@ -2323,7 +2441,7 @@ func _item_readability(root: Node3D, id: String, place_id: String, kind: String)
 				chicks.add_child(part)
 		_merge_item_parts(chicks)
 	var wings := id in ["petal_wings", "bat", "bee", "moth", "clear_wings", "blue_needle", "hanging_bird", "blue_flash"]
-	var headed := id in ["deer", "heron", "woodpecker", "wren"]
+	var headed := id in ["deer", "heron", "woodpecker", "wren", "duck"]
 	if not wings and not headed:
 		return
 	var parts := root.get_children()
@@ -2514,7 +2632,7 @@ func _item_detail(root: Node3D, id: String) -> void:
 					_item_form(root, at + Vector3(side * 0.055, 0.26, 0.13), Vector3.ONE * 0.012, dark)
 		"spider", "ant":
 			_item_clear_parts(root)
-			for n in range(3 if id == "ant" else 1):
+			for n in range(9 if id == "ant" else 1):
 				var at := Vector3(n * 0.19, 0, -n * 0.48)
 				_item_form(root, at + Vector3(0, 0.07, -0.1), Vector3(0.055, 0.05, 0.09) if id == "ant" else Vector3(0.095, 0.075, 0.13), dark)
 				_item_form(root, at + Vector3(0, 0.07, 0.09), Vector3(0.055, 0.05, 0.07), bark)
@@ -2604,14 +2722,15 @@ func _item_detail(root: Node3D, id: String) -> void:
 			if id == "green_log":
 				for k in range(10):
 					_item_form(root, Vector3(-0.6 + k * 0.13, 0.46, sin(k * 2) * 0.13), Vector3(0.1, 0.045, 0.09), Color("78914d"))
-			if id == "log_ear":
-				for k in range(5):
-					_item_segment(root, Vector3(0, 0.34, 0.21), Vector3(-0.16 + k * 0.08, 0.32, 0.34), 0.005, bark)
 			if id == "sticky_wood":
 				_item_form(root, Vector3(0.1, 0.22, 0.19), Vector3(0.04, 0.1, 0.025), Color("c58c27"))
 			if id == "wood_tunnels":
-				for x in [-0.25, 0, 0.23]:
-					_item_ring(root, Vector3(x, 0.3, 0.155), 0.035, 0.008, cream, Vector3(90, 0, 0))
+				# Small round holes, a finger across, in and out of the old wood.
+				for k in range(7):
+					var hole := Vector3(-0.3 + k * 0.1, 0.26 + sin(k * 2.1) * 0.06, 0.0)
+					hole.z = sqrt(maxf(0.0, 0.04 - pow(hole.y - 0.2, 2.0))) - 0.004
+					_add(root, _sphere_mesh(1.0, 8, 4), Color("2a241c"), hole, Vector3(90.0, 0.0, 0.0), Vector3(0.011, 0.005, 0.011))
+					_item_ring(root, hole + Vector3(0.0, 0.0, 0.003), 0.012, 0.003, cream, Vector3(90, 0, 0))
 		"stick", "reaching_root", "root_door":
 			for k in range(3):
 				var at := Vector3(k * 0.14, 0.08, 0.12)
@@ -2650,17 +2769,35 @@ func _item_detail(root: Node3D, id: String) -> void:
 			if id != "seed":
 				_item_ring(root, Vector3(0.12, 0.09, -0.13), 0.13, 0.012, bark, Vector3(90, 0, 0))
 		"nettle", "clean_smell":
+			# Real-sized: a nettle stem as high as a hip with hand-length leaves
+			# in pairs, each pair across the one below, and catkins hanging; a
+			# clump of mint with small leaves and pale lilac tips.
 			_item_clear_parts(root)
-			_item_segment(root, Vector3.ZERO, Vector3(0, 0.65, 0), 0.016, Color("547138"))
-			for level in range(4):
-				for side in [-1, 1]:
-					var y := 0.15 + level * 0.13
-					var leaf := Vector3(side * 0.13, y, 0)
-					_item_form(root, leaf, Vector3(0.14, 0.018, 0.065), Color("376e35") if id == "nettle" else Color("719c66"))
-					_item_segment(root, Vector3(0, y, 0), Vector3(side * 0.25, y + 0.01, 0), 0.005, cream)
-					if id == "nettle":
-						for tooth in range(4):
-							_add(root, _prism_mesh(Vector3(0.05, 0.018, 0.15)), Color("376e35"), leaf + Vector3(side * (-0.07 + tooth * 0.045), 0, 0))
+			var nettle := id == "nettle"
+			var leaf_color := Color("376e35") if nettle else Color("719c66")
+			var stems := [Vector3.ZERO] if nettle else [Vector3(-0.05, 0, 0.02), Vector3(0.045, 0, -0.03), Vector3(0.0, 0, 0.06)]
+			for s in range(stems.size()):
+				var base: Vector3 = stems[s]
+				var height := 0.8 if nettle else 0.34 + s * 0.05
+				var top: Vector3 = base + Vector3(base.x * 0.8, height, base.z * 0.8)
+				_item_segment(root, base, top, 0.006 if nettle else 0.004, Color("547138"))
+				var levels := 9 if nettle else 5
+				for level in range(levels):
+					var f := (level + 1.0) / (levels + 1.0)
+					var at: Vector3 = base.lerp(top, 0.12 + f * 0.82)
+					var turn := (PI / 2.0) * (level % 2) + s * 0.7
+					var size := (1.15 - f * 0.55) * (0.05 if nettle else 0.028)
+					for side in [-1, 1]:
+						var out: Vector3 = Vector3(cos(turn), 0.0, sin(turn)) * float(side)
+						_add(root, _sphere_mesh(1.0, 6, 3), leaf_color, at + out * size * 1.1 - Vector3(0, size * 0.25, 0),
+							Vector3(0.0, -rad_to_deg(turn), side * -12.0), Vector3(size, size * 0.12, size * 0.5))
+				if not nettle:
+					_add(root, _sphere_mesh(1.0, 6, 3), Color("b9a3c8"), top + Vector3(0, 0.02, 0), Vector3.ZERO, Vector3(0.008, 0.025, 0.008))
+			if nettle:
+				for k in range(4):
+					var y := 0.42 + k * 0.08
+					var side := 1.0 if k % 2 else -1.0
+					_item_segment(root, Vector3(0, y, 0), Vector3(side * 0.05, y - 0.07, side * 0.03), 0.003, Color("8a9a5a"))
 		"water", "bubble_holes", "water_walkers":
 			for k in range(6):
 				var at := Vector3(cos(k * TAU / 6) * 0.6, 0.02, sin(k * TAU / 6) * 0.47)
@@ -2692,10 +2829,6 @@ func _item_detail(root: Node3D, id: String) -> void:
 				var z := -0.18 + k * 0.04
 				for side in [-1, 1]:
 					_item_segment(root, Vector3(0, 0.015, z), Vector3(side * (0.055 if id == "grey_feather" else 0.16), 0.015, z + 0.05), 0.003, cream if id == "grey_feather" else bark)
-		"morning_wet":
-			for at in [Vector3(-0.4, 0, 0), Vector3(0, 0, 0.3), Vector3(0.3, 0, -0.2), Vector3(0.6, 0, 0.2)]:
-				_item_form(root, at + Vector3(0, 0.035, 0), Vector3(0.1, 0.012, 0.045), Color("658349"))
-				_item_form(root, at + Vector3(-0.012, 0.083, 0.018), Vector3.ONE * 0.009, Color("f0f4df"))
 		"night_tracks", "small_hands", "three_toes":
 			_item_clear_parts(root)
 			for k in range(6):
@@ -2779,8 +2912,9 @@ func _item_detail(root: Node3D, id: String) -> void:
 					_item_segment(root, at + tip * 0.6, at + tip, 0.004, bark)
 					_item_segment(root, at + tip, at + tip + Vector3(0.015, 0.015, -0.01), 0.003, bark)
 		"froth_sitter":
-			for k in range(14):
-				_item_form(root, Vector3(cos(k * 2.4) * 0.08, 0.4 + k * 0.014, 0.08 + sin(k * 2.4) * 0.04), Vector3.ONE * 0.035, Color("f0efe0"))
+			for k in range(12):
+				_add(root, _sphere_mesh(1.0, 6, 3), Color("f2f1e4"), Vector3(cos(k * 2.4) * 0.011, 0.305 + (k % 4) * 0.005, sin(k * 2.4) * 0.011), Vector3.ZERO, Vector3.ONE * (0.006 + (k % 3) * 0.002))
+			_add(root, _sphere_mesh(1.0, 6, 3), Color("7fae46"), Vector3(0.0, 0.31, 0.017), Vector3.ZERO, Vector3(0.004, 0.003, 0.005))
 		"quick_shadows":
 			for at in [Vector3(-0.4, 0, 0), Vector3(0, 0, 0.2), Vector3(0.3, 0, -0.15)]:
 				for side in [-1, 1]:
@@ -2821,11 +2955,6 @@ func _item_detail(root: Node3D, id: String) -> void:
 				var at := Vector3(cos(k * 2.4) * 0.23, 0.13, sin(k * 2.4) * 0.17)
 				_item_ring(root, at, 0.035, 0.005, Color("b8d4c7"))
 				_item_form(root, at, Vector3.ONE * 0.016, dark)
-		"pale_ring":
-			for at in [Vector3(-0.35, 0.25, 0), Vector3(0, 0.25, 0.35), Vector3(0.35, 0.25, 0), Vector3(0, 0.25, -0.35)]:
-				_item_ring(root, at - Vector3(0, 0.045, 0), 0.13, 0.008, Color("b6a98c"))
-				for k in range(4):
-					_item_segment(root, at, at + Vector3(cos(k * PI / 2) * 0.12, -0.04, sin(k * PI / 2) * 0.12), 0.004, bark)
 		"tree_knock", "trunk_hole", "bank_holes", "bank_stripes", "post_coat":
 			if id == "bank_holes":
 				_add(root, _box_mesh(Vector3(1.2, 0.38, 0.055)), Color("9b9788"), Vector3(0, 0, -0.05))
@@ -2851,15 +2980,9 @@ func _item_detail(root: Node3D, id: String) -> void:
 			for side in [-1, 1]:
 				for k in range(5):
 					_item_form(root, Vector3(side * 0.45, 0.012, -0.8 + k * 0.4), Vector3(0.08, 0.012, 0.14), Color("9e8a68"))
-		"far_smoke":
-			for k in range(7):
-				_item_form(root, Vector3(sin(k) * 0.06, k * 0.24, 0), Vector3(0.1 + k * 0.015, 0.2, 0.12), Color("bac0bc"))
 		"cloud_shadow":
 			for k in range(5):
 				_item_form(root, Vector3(-0.9 + k * 0.45, 0, sin(k) * 0.6), Vector3(0.65, 0.004, 0.5), Color("4b6141"))
-		"blue_edge":
-			for k in range(4):
-				_add(root, _prism_mesh(Vector3(0.8, 0.6 + (k % 2) * 0.3, 0.6)), Color("829aaa"), Vector3(-1 + k * 0.6, 0.25, 0.4))
 		"first_light":
 			for k in range(4):
 				var ray := _item_form(root, Vector3.ZERO, Vector3(0.012, 0.18, 0.012), cream)
@@ -3396,6 +3519,8 @@ func _apply_snapshot() -> void:
 	var snapshot_now := float(_to_int(_snapshot.get("now", 0)))
 	if first or absf(snapshot_now - _clock) > CLOCK_SLACK:
 		_clock = snapshot_now
+	if first:
+		_motion_epoch = _clock
 	_known = _dict(_snapshot.get("known", {}))
 	_all_points.clear()
 	_points.clear()
@@ -3460,20 +3585,28 @@ func _plan_movement(first: bool) -> void:
 			edge_point = origin + d.normalized() * EDGE_REACH
 			edge_try = true
 	_stand_point = edge_point
+	if _free_on() and where == home and _bed_set and not edge_try:
+		_stand_point = _bedside_point
 	_walk_points = []
-	if str(last.get("place_id", "")) == where and came_from != "" and came_from != where and _all_points.has(came_from):
+	var seen_t := _to_int(last.get("t", 0))
+	var moving := str(last.get("place_id", "")) == where and came_from != "" and came_from != where and _all_points.has(came_from)
+	if _free_on():
+		# Prototype: free roaming, no paths. A new decision is walked from
+		# wherever the buddy is (mid-walk or mid-stroll), so it never jumps back
+		# to the place it set out from, straight to where it is going (round
+		# whatever is in the way).
+		if first or seen_t != _last_t:
+			_walk_from = _card_pos if (not first and _card_placed) else _all_points.get(came_from, origin)
+		var far := not first and _card_placed and _walk_from.distance_to(_stand_point) > AMBLE_RADIUS + 1.5
+		if moving or edge_try or far:
+			_walk_points = _free_walk(_walk_from, _stand_point)
+			_amble_anchor = -1.0
+	elif moving:
 		var open := {}
 		for id in _known.keys():
 			if str(_known[id]) == "found":
 				open[id] = true
 		var ids := route(_arr(_snapshot.get("paths", [])), came_from, where, open)
-		if _free_on():
-			# Prototype: no paths, so it heads straight there, on a gentle curve.
-			ids = []
-			var points: Array = _free_walk(_all_points[came_from], origin)
-			if edge_try:
-				points.append(edge_point)
-			_walk_points = points
 		if not ids.is_empty():
 			var points: Array = []
 			for id in ids:
@@ -3481,10 +3614,9 @@ func _plan_movement(first: bool) -> void:
 			if edge_try:
 				points.append(edge_point)
 			_walk_points = points
-	if _walk_points.is_empty() and edge_try and (came_from == where or came_from == ""):
+	if not _free_on() and _walk_points.is_empty() and edge_try and (came_from == where or came_from == ""):
 		# A try from where it already was: it walks out to the edge and looks.
 		_walk_points = [origin, edge_point]
-	var seen_t := _to_int(last.get("t", 0))
 	if first:
 		_walk_start = float(seen_t)
 	elif seen_t != _last_t:
@@ -3563,16 +3695,31 @@ func _update_card(_delta: float) -> void:
 		walking = bool(walk["walking"])
 		_card_dir = walk["dir"]
 	# Prototype: free roaming ambles about the place once a walk is over, while
-	# it is idle or exploring (not sitting, sleeping or at home).
+	# it is idle or exploring (not sitting, sleeping or at home). An amble
+	# starts from wherever the buddy is; when it stops (to sit, say) the buddy
+	# stays where it is rather than going back to the place's spot.
 	if _free_on() and not walking and not visiting:
 		var still_pose := card_pose(_snapshot, _clock, false)
 		var at_home := Vector2(_stand_point.x - _home_point.x, _stand_point.z - _home_point.z).length() < 2.5
+		var near_stand := _card_placed and _card_pos.distance_to(_stand_point) < AMBLE_RADIUS + 1.5
 		if (still_pose == "idle" or still_pose == "happy") and not at_home:
+			if _amble_anchor < 0.0 or _clock < _amble_anchor:
+				_amble_anchor = _clock
+				_amble_start = _card_pos if near_stand else _stand_point
 			var amble := _amble_at(_stand_point, _clock)
 			pos = amble["pos"]
 			walking = bool(amble["walking"])
 			_card_dir = amble["dir"]
+		else:
+			_amble_anchor = -1.0
+			if near_stand:
+				pos = _card_pos
+	elif walking:
+		_amble_anchor = -1.0
+	if _free_on():
+		pos = _safe_card_point(pos)
 	_card_pos = pos
+	_card_placed = not visiting
 	_card_walking = walking
 	_card_pose = card_pose(_snapshot, _clock, walking)
 	_card.position = Vector3(pos.x, ground_height(_points, pos) + CARD_LIFT, pos.z)
@@ -3690,7 +3837,7 @@ func _keys_move_camera(delta: float) -> void:
 			_look_yaw -= turn * TURN_SPEED * delta
 			var forward := Vector3(-sin(_look_yaw), 0.0, -cos(_look_yaw))
 			var right := Vector3(cos(_look_yaw), 0.0, -sin(_look_yaw))
-			_eye = _within_land(_eye + (forward * move.y + right * move.x) * EYE_SPEED * delta)
+			_eye = _eye_step(_eye, (forward * move.y + right * move.x) * EYE_SPEED * delta)
 		"follow":
 			_follow_side += (move.x + turn) * TURN_SPEED * delta
 			_follow_back = clampf(_follow_back - move.y * 4.0 * delta, 2.5, 14.0)
@@ -3710,6 +3857,28 @@ func _within_land(at: Vector3) -> Vector3:
 	if flat.length() > EYE_REACH:
 		flat = flat.normalized() * EYE_REACH
 	return Vector3(flat.x, 0.0, flat.y)
+
+
+# Prototype: first person walks round things rather than through them (with
+# free roaming or the items on, when there are obstacles): it slides along a
+# wall or a trunk instead of stopping dead, and stays out of the pond. From
+# inside something (it never starts there on purpose) any step is allowed.
+func _eye_step(eye: Vector3, step: Vector3) -> Vector3:
+	var goal := _within_land(eye + step)
+	if _obstacles.is_empty() or _eye_blocked(eye) or not _eye_blocked(goal):
+		return goal
+	var along_x := _within_land(eye + Vector3(step.x, 0.0, 0.0))
+	if not _eye_blocked(along_x):
+		return along_x
+	var along_z := _within_land(eye + Vector3(0.0, 0.0, step.z))
+	if not _eye_blocked(along_z):
+		return along_z
+	return eye
+
+
+func _eye_blocked(at: Vector3) -> bool:
+	var floor_y := ground_height(_points, at)
+	return _blocked(at, 0.25, floor_y + 0.05, floor_y + EYE_HEIGHT + 0.1)
 
 
 # Prototype: low behind the buddy, turning with it as it walks. Standing, it
@@ -3971,3 +4140,637 @@ func _count_meshes(node: Node) -> int:
 	for child in node.get_children():
 		total += _count_meshes(child)
 	return total
+
+
+# Prototype geometry is shared by movement and diagnostics. Each obstacle keeps
+# its mesh-local box and world transform, so rotated walls retain the doorway.
+var _motion_epoch := 0.0
+var _obstacles: Array = []
+var _route_grid: AStarGrid2D
+# The buddy's amble: spots, routes and stroll lengths once worked out, and the
+# stroll last found (see _amble_at); when and where the amble under way began
+# (anchor -1: none); where a free walk set out from; and whether the card has
+# a place in the land yet (it has none before its first frame, or visiting).
+var _amble_cache := {}
+var _amble_key := ""
+var _amble_k := 0
+var _amble_from := 0.0
+var _amble_anchor := -1.0
+var _amble_start := Vector3.ZERO
+var _walk_from := Vector3.ZERO
+var _card_placed := false
+
+func _mesh_nodes(root: Node) -> Array:
+	var result: Array = []
+	for child in root.get_children():
+		if child is MeshInstance3D:
+			result.append(child)
+		result.append_array(_mesh_nodes(child))
+	return result
+
+func _world_bounds(root: Node3D) -> AABB:
+	var result := AABB()
+	var first := true
+	for mesh in (root.get_meta("audit_meshes") if root.has_meta("audit_meshes") else _mesh_nodes(root)):
+		var box: AABB = mesh.global_transform * mesh.get_aabb()
+		result = box if first else result.merge(box)
+		first = false
+	return result
+
+func _physical_size(root: Node3D, id: String, _kind: String) -> void:
+	# Axis and extent in metres. Ant extent includes three individuals and gaps.
+	var sizes := {"deer": Vector2(1, 1.7), "heron": Vector2(1, 0.95),
+		"duck": Vector2(1, 0.30), "hare": Vector2(1, 0.46),
+		"squirrel": Vector2(1, 0.40), "woodpecker": Vector2(2, 0.23),
+		"wren": Vector2(2, 0.10), "frog": Vector2(2, 0.08),
+		"snail": Vector2(1, 0.035), "spider": Vector2(0, 0.05),
+		"ant": Vector2(2, 0.105), "bee": Vector2(2, 0.02),
+		"moth": Vector2(0, 0.05), "bat": Vector2(0, 0.22),
+		"blue_needle": Vector2(2, 0.07), "clear_wings": Vector2(0, 0.09),
+		"petal_wings": Vector2(0, 0.05), "green_jumper": Vector2(2, 0.035),
+		"pink_wriggler": Vector2(0, 0.10), "tail_basker": Vector2(2, 0.18),
+		"upside_shiny": Vector2(2, 0.025), "blue_flash": Vector2(2, 0.17),
+		"two_notes": Vector2(2, 0.15), "hanging_bird": Vector2(0, 0.65),
+		"wide_wings": Vector2(0, 1.2), "pouring_thing": Vector2(0, 0.6),
+		"stick": Vector2(2, 0.9), "log": Vector2(0, 2.0),
+		"stone": Vector2(0, 0.65), "flint": Vector2(0, 0.23), "clay": Vector2(0, 0.35), "earth": Vector2(0, 0.6), "sand": Vector2(0, 0.8),
+		"reed": Vector2(2, 1.2), "grass": Vector2(2, 0.6),
+		"nettle": Vector2(1, 0.8), "seed": Vector2(2, 0.3), "water": Vector2(0, 0.6), "grey_feather": Vector2(2, 0.25),
+		# An apple with its stalk; a marrow as long as an arm, with its leaf; a
+		# stone to turn over in a hand; a stone small enough for the shelf.
+		"red_round": Vector2(1, 0.105), "sleeping_yellow": Vector2(2, 0.49),
+		"spark_stone": Vector2(0, 0.26), "ringed_stone": Vector2(0, 0.085),
+		"hand_leaves": Vector2(0, 0.2), "hook_seeds": Vector2(0, 0.08),
+		"roll_ups": Vector2(0, 0.07), "cupped_shiner": Vector2(0, 0.12),
+		"water_walkers": Vector2(0, 0.04), "quick_shadows": Vector2(0, 0.4)}
+	if not sizes.has(id):
+		return
+	var box := AABB()
+	var first := true
+	for mesh in _mesh_nodes(root):
+		var trans := root.transform.affine_inverse() * _relative_transform(mesh, root.get_parent()) if root.get_parent() != null else _relative_transform(mesh, root)
+		var part: AABB = trans * mesh.get_aabb()
+		box = part if first else box.merge(part)
+		first = false
+	var spec: Vector2 = sizes[id]
+	var extent: float = box.size[int(spec.x)]
+	if extent > 0.00001:
+		root.scale = Vector3.ONE * spec.y / extent
+		if id == "log":
+			root.scale.y = 0.35 / box.size.y
+			root.scale.z = 0.35 / box.size.z
+
+func _relative_transform(node: Node3D, ancestor: Node) -> Transform3D:
+	var trans := node.transform
+	var parent := node.get_parent()
+	while parent != ancestor and parent is Node3D:
+		trans = parent.transform * trans
+		parent = parent.get_parent()
+	return trans
+
+func _build_obstacles() -> void:
+	_obstacles.clear()
+	_obstacle_cells.clear()
+	_amble_cache.clear()
+	_amble_key = ""
+	_route_grid = null
+	if not _free_on() and not _items_on():
+		return
+	for mesh in _mesh_nodes(_places_root):
+		var box: AABB = mesh.global_transform * mesh.get_aabb()
+		# Flat ground coverings and the mound are habitat surfaces.
+		if box.size.y < 0.075 or (box.size.x > 15 and box.size.z > 15):
+			continue
+		_add_obstacle({"box": mesh.get_aabb(), "transform": mesh.global_transform,
+			"world": box, "owner": mesh, "kind": "prop"})
+	if _all_points.has("water"):
+		var pond: Vector3 = _all_points.water + _outward(_all_points.water) * 4.8
+		_add_obstacle({"world": AABB(pond - Vector3(4.9, 0, 4.9), Vector3(9.8, 0.1, 9.8)), "at": pond, "radius": 4.9, "kind": "pond"})
+	# With items on, _build_items finishes the obstacles and builds the grid.
+	if not _items_on():
+		_build_route_grid()
+
+
+# Obstacles are also filed by 4 m square, so a clearance test only looks at
+# the few near it.
+const OBSTACLE_CELL := 4.0
+# How high above the ground the buddy's clearance reaches: the card stands
+# CARD_LIFT up and is CARD_HEIGHT tall (it still fits under the lintel at 2.1).
+const CARD_CLEAR_TOP := CARD_LIFT + CARD_HEIGHT + 0.02
+var _obstacle_cells := {}
+
+func _add_obstacle(obstacle: Dictionary) -> void:
+	_obstacles.append(obstacle)
+	var rect := _obstacle_rect(obstacle)
+	for x in range(floori(rect.position.x / OBSTACLE_CELL), floori(rect.end.x / OBSTACLE_CELL) + 1):
+		for z in range(floori(rect.position.y / OBSTACLE_CELL), floori(rect.end.y / OBSTACLE_CELL) + 1):
+			var key := Vector2i(x, z)
+			if not _obstacle_cells.has(key):
+				_obstacle_cells[key] = []
+			_obstacle_cells[key].append(obstacle)
+
+
+# The ground an obstacle can block, as a rectangle (x, z).
+func _obstacle_rect(obstacle: Dictionary) -> Rect2:
+	var world: AABB = obstacle.world
+	if obstacle.kind == "pond" or obstacle.kind == "range":
+		var r := float(obstacle.radius)
+		return Rect2(obstacle.at.x - r, obstacle.at.z - r, r * 2.0, r * 2.0)
+	if obstacle.kind == "item":
+		var centre := world.get_center()
+		var r := Vector2(world.size.x, world.size.z).length() * 0.5
+		return Rect2(centre.x - r, centre.z - r, r * 2.0, r * 2.0)
+	return Rect2(world.position.x, world.position.z, world.size.x, world.size.z)
+
+
+func _build_route_grid() -> void:
+	_route_grid = AStarGrid2D.new()
+	_route_grid.region = Rect2i(-160, -160, 321, 321)
+	_route_grid.cell_size = Vector2(0.25, 0.25)
+	_route_grid.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_ONLY_IF_NO_OBSTACLES
+	_route_grid.update()
+	for obstacle in _obstacles:
+		var box: AABB = obstacle.world
+		if box.position.y > 2.0 or box.end.y < 0.08:
+			continue
+		var lo := _grid_cell(box.position - Vector3(0.5, 0, 0.5))
+		var hi := _grid_cell(box.end + Vector3(0.5, 0, 0.5))
+		for x in range(maxi(-160, lo.x), mini(160, hi.x) + 1):
+			for z in range(maxi(-160, lo.y), mini(160, hi.y) + 1):
+				var at := Vector3(x * 0.25, 0, z * 0.25)
+				if _hits(at, 0.32, ground_height(_points, at), ground_height(_points, at) + CARD_CLEAR_TOP, obstacle):
+					_route_grid.set_point_solid(Vector2i(x, z))
+	_flood_reach()
+
+func _grid_cell(at: Vector3) -> Vector2i:
+	return Vector2i(roundi(at.x * 4), roundi(at.z * 4))
+
+func _hits(at: Vector3, radius: float, bottom: float, top: float, obstacle: Dictionary) -> bool:
+	var world: AABB = obstacle.world
+	if top <= world.position.y or bottom >= world.end.y:
+		return false
+	if obstacle.kind == "pond" or obstacle.kind == "range":
+		return Vector2(at.x - obstacle.at.x, at.z - obstacle.at.z).length() < radius + float(obstacle.radius)
+	if obstacle.kind == "item":
+		var centre := world.get_center()
+		return Vector2(at.x - centre.x, at.z - centre.z).length() < radius + Vector2(world.size.x, world.size.z).length() * 0.5
+	# The world box holds the prop, so a circle clear of it is clear of the prop
+	# (this also bounds the local test below for props lying on their side).
+	if at.x + radius <= world.position.x or at.x - radius >= world.end.x \
+			or at.z + radius <= world.position.z or at.z - radius >= world.end.z:
+		return false
+	# Upright, the prop's footprint is the same at every height; on its side or
+	# tilted, it is tested at the bottom, middle and top of where the two meet in
+	# height (whatever height `at` was given at, so every caller agrees).
+	var trans: Transform3D = obstacle.transform
+	var inverse := trans.affine_inverse()
+	var box: AABB = obstacle.box
+	var scale: Vector3 = trans.basis.get_scale()
+	var low := maxf(bottom, world.position.y)
+	var high := minf(top, world.end.y)
+	var heights := [(low + high) * 0.5] if absf(trans.basis.y.normalized().y) > 0.999 else [low, (low + high) * 0.5, high]
+	for height in heights:
+		var local: Vector3 = inverse * Vector3(at.x, height, at.z)
+		var dx := maxf(box.position.x - local.x, maxf(0, local.x - box.end.x)) * scale.x
+		var dz := maxf(box.position.z - local.z, maxf(0, local.z - box.end.z)) * scale.z
+		if dx * dx + dz * dz < radius * radius:
+			return true
+	return false
+
+# Creatures' ranges ("range") only keep the buddy (card) out; creatures
+# themselves keep apart by their reserved ground (_habitat_space) and boxes.
+func _blocked(at: Vector3, radius: float, bottom: float, top: float, ignore: Node = null, water := false, card := false) -> bool:
+	for x in range(floori((at.x - radius) / OBSTACLE_CELL), floori((at.x + radius) / OBSTACLE_CELL) + 1):
+		for z in range(floori((at.z - radius) / OBSTACLE_CELL), floori((at.z + radius) / OBSTACLE_CELL) + 1):
+			for obstacle in _obstacle_cells.get(Vector2i(x, z), []):
+				if ignore != null and (obstacle.get("owner") == ignore or (obstacle.get("owner") != null and ignore.is_ancestor_of(obstacle.owner))):
+					continue
+				if water and obstacle.kind == "pond":
+					continue
+				if obstacle.kind == "range" and not card:
+					continue
+				if _hits(at, radius, bottom, top, obstacle):
+					return true
+	return false
+
+# Only the buddy's walks use this.
+func _line_clear(a: Vector3, b: Vector3, radius: float, height: float) -> bool:
+	var steps := maxi(1, ceili(a.distance_to(b) / 0.1))
+	for i in range(steps + 1):
+		var at := a.lerp(b, float(i) / steps)
+		var y := ground_height(_points, at)
+		if _blocked(at, radius, y + 0.08, y + height, null, false, true):
+			return false
+	return true
+
+# The nearest spot to `at` where the buddy can stand: clear of everything and
+# of every creature's ground, and one it can walk to from the yard (a place in
+# a thicket, the dark trees' or the tall reeds', is looked at from its edge).
+func _safe_card_point(at: Vector3) -> Vector3:
+	if _route_grid == null or (_reachable(at) and not _blocked(at, 0.3, ground_height(_points, at) + 0.08, ground_height(_points, at) + CARD_CLEAR_TOP, null, false, true)):
+		return at
+	# A few centimetres first, so brushing an edge is a nudge, not a hop.
+	for ring in range(1, 104):
+		var out := ring * 0.03 if ring <= 5 else 0.15 * (ring - 4)
+		for k in range(32):
+			var p := at + Vector3(cos(k * TAU / 32), 0, sin(k * TAU / 32)) * out
+			if not _route_grid.is_point_solid(_grid_cell(p)) and _reachable(p) and _line_clear(p, p, 0.32, CARD_CLEAR_TOP):
+				return p
+	return at
+
+
+# Which cells of the route grid the buddy can walk to from the yard: filled out
+# from it once the grid is built (the grid's diagonals need both sides open, so
+# four neighbours reach the same cells).
+const GRID_HALF := 160
+var _reach_cells := PackedByteArray()
+
+func _flood_reach() -> void:
+	_reach_cells = PackedByteArray()
+	if _route_grid == null:
+		return
+	var width := GRID_HALF * 2 + 1
+	var hub_at: Vector3 = _all_points.get("yard", _all_points.get("home", Vector3.ZERO))
+	var hub := _free_cell(_grid_cell(hub_at))
+	if not _route_grid.is_in_boundsv(hub) or _route_grid.is_point_solid(hub):
+		return
+	_reach_cells.resize(width * width)
+	var queue := PackedInt32Array()
+	var first := (hub.x + GRID_HALF) + (hub.y + GRID_HALF) * width
+	_reach_cells[first] = 1
+	queue.append(first)
+	var steps := [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
+	var head := 0
+	while head < queue.size():
+		var index := queue[head]
+		head += 1
+		var x := index % width
+		var z := index / width
+		for step in steps:
+			var nx: int = x + step.x
+			var nz: int = z + step.y
+			if nx < 0 or nz < 0 or nx >= width or nz >= width:
+				continue
+			var next := nx + nz * width
+			if _reach_cells[next] == 1 or _route_grid.is_point_solid(Vector2i(nx - GRID_HALF, nz - GRID_HALF)):
+				continue
+			_reach_cells[next] = 1
+			queue.append(next)
+
+
+func _reachable(at: Vector3) -> bool:
+	if _reach_cells.is_empty():
+		return true
+	var cell := _grid_cell(at)
+	if not _route_grid.is_in_boundsv(cell):
+		return false
+	if _route_grid.is_point_solid(cell):
+		cell = _free_cell(cell)
+	return _reach_cells[(cell.x + GRID_HALF) + (cell.y + GRID_HALF) * (GRID_HALF * 2 + 1)] == 1
+
+# The route of one stroll, worked out once (the obstacles do not move).
+func _amble_points(a: Vector3, b: Vector3) -> Array:
+	var key := "route|%s|%s" % [a, b]
+	if not _amble_cache.has(key):
+		_amble_cache[key] = _free_walk(a, b)
+	return _amble_cache[key]
+
+# Where a creature lives and moves ("" for everything that keeps still).
+static func _habitat_of(id: String) -> String:
+	if id in ["wren", "deer", "heron", "frog", "hare", "snail", "ant", "green_jumper", "pink_wriggler", "pouring_thing", "tail_basker", "upside_shiny", "two_notes"]:
+		return "ground"
+	if id in ["bee", "moth", "bat", "petal_wings", "clear_wings", "blue_needle", "blue_flash", "wide_wings", "hanging_bird"]:
+		return "air"
+	if id in ["duck", "quick_shadows", "water_walkers"]:
+		return "water"
+	if id in ["squirrel", "woodpecker"]:
+		return "trunk"
+	if id == "spider":
+		return "web"
+	return ""
+
+
+func _prepare_motion(entry: Dictionary) -> void:
+	var node: Node3D = entry.node
+	var id: String = entry.id
+	var habitat := _habitat_of(id)
+	if habitat == "":
+		return
+	node.set_meta("audit_meshes", _mesh_nodes(node))
+	var box := _world_bounds(node)
+	var offset := box.get_center() - node.global_position
+	var radius := Vector2(box.size.x, box.size.z).length() * 0.75 + Vector2(offset.x, offset.z).length() + 0.02
+	var at := node.global_position
+	var state := {"habitat": habitat, "radius": radius, "height": box.size.y, "low": box.position.y - at.y,
+		"rest_min": 4.0, "rest_max": 22.0, "speed": 0.4, "reach": 1.5, "start": _motion_epoch, "duration": 0.0, "index": -1, "yaw": node.rotation.y, "jump": 0.0, "ignore": null}
+	if id in ["snail", "ant", "spider", "upside_shiny"]:
+		state.reach = 0.035
+	if id in ["frog", "green_jumper"]:
+		state.reach = 0.3
+		state.speed = 0.8
+		state.rest_min = 15.0
+		state.rest_max = 50.0
+	elif id in ["snail", "pink_wriggler", "ant", "upside_shiny"]:
+		state.reach = 0.04
+		state.speed = 0.002 if id == "snail" else 0.01
+		state.rest_max = 45.0
+	elif id == "heron":
+		state.speed = 0.12
+		state.rest_min = 25.0
+		state.rest_max = 70.0
+	elif id == "hare":
+		state.speed = 1.7
+	elif id in ["wren", "two_notes"]:
+		state.reach = 0.3
+		state.speed = 0.6
+	elif habitat == "air":
+		state.speed = 1.3 if id == "bat" else 0.4
+	elif habitat == "trunk":
+		state.speed = 0.15
+	# How often each rests, and for how long: a bat hardly ever stops, a moth
+	# and the butterflies settle now and then, a bee or a dragonfly hovers a
+	# moment and darts on, and the ants keep shuffling along their line.
+	if id == "bat":
+		state.rest_chance = 0.1
+		state.rest_min = 0.5
+		state.rest_max = 2.0
+	elif id in ["moth", "petal_wings"]:
+		state.rest_chance = 0.4
+		state.rest_min = 2.0
+		state.rest_max = 9.0
+	elif id in ["bee", "clear_wings", "blue_needle"]:
+		state.rest_chance = 0.5
+		state.rest_min = 1.5
+		state.rest_max = 7.0
+	elif id == "hanging_bird":
+		state.rest_min = 3.0
+		state.rest_max = 10.0
+	elif id == "ant":
+		state.reach = 0.12
+		state.speed = 0.03
+		state.rest_chance = 0.35
+		state.rest_min = 1.0
+		state.rest_max = 5.0
+	if habitat == "water":
+		at = _all_points.get("water", Vector3.ZERO) + _outward(_all_points.get("water", Vector3.ZERO)) * 4.8
+		at.y = 0.06
+		if id == "duck":
+			at.x += 1.7 if entry.place == "water" else -1.7
+			state.reach = 0.35
+		else:
+			at.z += 1.7 if id == "quick_shadows" else -1.7
+			state.reach = 0.4
+	elif habitat == "trunk":
+		var nearest := INF
+		for obstacle in _obstacles:
+			var b: AABB = obstacle.world
+			if obstacle.kind == "prop" and place_node(entry.place).is_ancestor_of(obstacle.owner) and b.size.y > 0.9 and b.size.x < 1.2 and b.size.z < 1.2:
+				var d := at.distance_to(b.get_center())
+				if d < nearest:
+					nearest = d
+					state.ignore = obstacle.owner
+		if state.ignore != null:
+			var b: AABB = state.ignore.global_transform * state.ignore.get_aabb()
+			node.rotation.y = -PI / 2
+			var rotated := _world_bounds(node)
+			at = Vector3(b.end.x + 0.003 - (rotated.position.x - node.global_position.x), ((2.2 if id == "woodpecker" else 0.7) if entry.place == "big_tree" else (0.61 if id == "woodpecker" else 0.05)), b.get_center().z - (rotated.get_center().z - node.global_position.z))
+			state.climb = (0.02 if id == "woodpecker" else 0.08) if entry.place == "dark_trees" else (0.3 if id == "woodpecker" else 0.45)
+			state.trunk_x = at.x
+	elif habitat == "web":
+		# Keep the tiny animal on the interior side of its corner.
+		node.position = Vector3(0.44, 2.25, 1.42)
+		at = node.global_position
+
+	elif habitat == "air":
+		at.y = maxf(at.y, _surface_height(at) + 0.6)
+	if habitat not in ["web", "water", "trunk"]:
+		for attempt in range(300):
+			var candidate := at + Vector3(cos(attempt * 2.4), 0, sin(attempt * 2.4)) * (attempt * 0.03)
+			var bottom := _surface_height(candidate) + 0.005 if habitat == "ground" else candidate.y - radius
+			if _habitat_space(candidate, state) and not _blocked(candidate, radius + 0.03, bottom, bottom + state.height + 0.1, state.ignore):
+				at = candidate
+				break
+	state.origin = at
+	state.from = at
+	state.to = at
+	entry.motion = state
+	node.global_position = at
+
+# With `ranges`, it also keeps out of where the ground creatures go (the
+# kestrel's drop, so it never lands on a deer or a hare).
+func _motion_clear(a: Vector3, b: Vector3, state: Dictionary, ranges := false) -> bool:
+	var steps := maxi(1, ceili(a.distance_to(b) / 0.08))
+	for i in range(steps + 1):
+		var at := a.lerp(b, float(i) / steps)
+		if state.habitat == "web":
+			return true
+		if state.habitat == "water":
+			var pond: Vector3 = _all_points.water + _outward(_all_points.water) * 4.8
+			if Vector2(at.x - pond.x, at.z - pond.z).length() + float(state.radius) > 4.4:
+				return false
+		var bottom := _surface_height(at) + 0.005 if state.habitat == "ground" else (0.06 if state.habitat == "water" else (at.y if state.habitat == "trunk" else at.y + float(state.low) - 0.05))
+		if state.habitat == "air" and bottom < _surface_height(at) + 0.1:
+			return false
+		if _blocked(at, state.radius + 0.025, bottom, maxf(bottom + state.height + 0.15, at.y + state.height), state.ignore, state.habitat == "water", ranges):
+			return false
+	return true
+
+func prototype_audit() -> Array:
+	var problems: Array = []
+	var occupied: Array = []
+	for entry in _item_nodes:
+		if not entry.has("motion"):
+			if entry.node.has_meta("free_standing"):
+				var material_bounds := _world_bounds(entry.node)
+				var material_radius := Vector2(material_bounds.size.x, material_bounds.size.z).length() * 0.5
+				if _blocked(material_bounds.get_center(), material_radius, material_bounds.position.y, material_bounds.end.y, entry.node):
+					problems.append("obstacle: static " + str(entry.node.name))
+			continue
+		var node: Node3D = entry.node
+		var state: Dictionary = entry.motion
+		var box := _world_bounds(node)
+		var at := box.get_center()
+		var radius := Vector2(box.size.x, box.size.z).length() * 0.5
+		var surface := _surface_height(at)
+		var detail := str(node.name)
+		# Two creatures never out at the same hour (the kestrel by day, the bat
+		# at dusk) can never be seen to meet; every other pair must not.
+		for other in occupied:
+			if box.intersects(other.box) and _hours_meet(entry.hours, other.hours):
+				problems.append("obstacle: " + detail + " overlaps " + str(other.name))
+		occupied.append({"box": box, "name": detail, "hours": entry.hours})
+		match str(state.habitat):
+			"ground":
+				if box.position.y < surface - 0.02 or (state.jump < 0.001 and box.position.y > surface + 0.05):
+					problems.append("ground: " + detail + " bottom=%.3f surface=%.3f" % [box.position.y, surface])
+			"water":
+				var pond: Vector3 = _all_points.water + _outward(_all_points.water) * 4.8
+				if Vector2(at.x - pond.x, at.z - pond.z).length() + radius > 4.5 or absf(box.position.y - 0.06) > 0.03:
+					problems.append("water: " + detail)
+			"air":
+				if box.position.y < surface + 0.1:
+					problems.append("air: " + detail)
+			"trunk":
+				if state.ignore == null or absf(box.position.x - _trunk_x(state.ignore, box.get_center())) > 0.02:
+					problems.append("trunk: " + detail)
+		if _blocked(at, radius, box.position.y, box.end.y, state.ignore, state.habitat == "water"):
+			for obstacle in _obstacles:
+				if obstacle.get("owner") == state.ignore or (state.habitat == "water" and obstacle.kind == "pond"):
+					continue
+				if _hits(at, radius, box.position.y, box.end.y, obstacle):
+					problems.append("obstacle: " + detail + " against " + str(obstacle.world))
+		for part_name in ["Head", "WingLeft", "WingRight"]:
+			var part := node.get_node_or_null(part_name) as Node3D
+			if part != null and (absf(part.rotation.x) > 0.17 or absf(part.rotation.z) > 0.31):
+				problems.append("parts: " + detail + "/" + part_name)
+	if _free_on() and _card.visible:
+		var feet := _card.global_position
+		# Lying on the bed, asleep, is meant.
+		var on_bed := _bed_set and _card.position.distance_to(_bed_point + Vector3(0.0, CARD_LIFT, 0.0)) < 0.01
+		if not on_bed and _blocked(feet, 0.3, feet.y + 0.08, feet.y + CARD_HEIGHT):
+			problems.append("card: " + str(feet))
+		# Nor does the buddy walk through a creature, or a creature through it.
+		for entry in _item_nodes:
+			if not entry.has("motion") or not (entry.node as Node3D).is_visible_in_tree():
+				continue
+			var box := _world_bounds(entry.node)
+			if box.position.y >= feet.y + CARD_HEIGHT or box.end.y <= feet.y + 0.08:
+				continue
+			var dx := maxf(box.position.x - feet.x, maxf(0.0, feet.x - box.end.x))
+			var dz := maxf(box.position.z - feet.z, maxf(0.0, feet.z - box.end.z))
+			if dx * dx + dz * dz < 0.09:
+				problems.append("card: through " + str(entry.node.name))
+	return problems
+
+
+# Everything that keeps still on the ground is an obstacle, so the creatures
+# and the buddy keep out of it: every gathered material, and every solid sight
+# (a fallen log, the marrow, the ring of toadstools, a stone). The materials,
+# and the sights that stand free, are first moved clear of the props and of
+# each other (sights first, so the materials keep clear of them too). Sights
+# that belong on or among a prop stay put. Flat traces, things up high, far
+# off or in the house, and the wind's line in the grass are not obstacles.
+const SIGHTS_ON_PROPS := ["bank_holes", "bank_stripes", "reaching_root", "post_coat", "bead_net",
+	"tree_knock", "trunk_hole", "stick_bundle", "red_round", "roll_ups", "deep_breath",
+	"stem_cup", "dotted_wobble", "hanging_colours"]
+const SIGHTS_NOT_SOLID := ["wind_line", "cloud_shadow", "blue_edge", "far_smoke", "first_light", "moon"]
+
+# Whether two items' hours ([from, to), wrapping; none = always) share an hour.
+static func _hours_meet(a: Array, b: Array) -> bool:
+	for hour in range(24):
+		var in_a := a.size() != 2 or ((hour >= int(a[0]) and hour < int(a[1])) if int(a[0]) <= int(a[1]) else (hour >= int(a[0]) or hour < int(a[1])))
+		var in_b := b.size() != 2 or ((hour >= int(b[0]) and hour < int(b[1])) if int(b[0]) <= int(b[1]) else (hour >= int(b[0]) or hour < int(b[1])))
+		if in_a and in_b:
+			return true
+	return false
+
+
+func _place_statics() -> void:
+	for materials in [false, true]:
+		for entry in _item_nodes:
+			var node: Node3D = entry.node
+			if (entry.kind == "material") != materials or _habitat_of(entry.id) != "":
+				continue
+			if node.has_meta("in_house") or entry.id in SIGHTS_NOT_SOLID:
+				continue
+			var box := _world_bounds(node)
+			if not materials and (box.size.y < 0.075 or box.position.y > _surface_height(box.get_center()) + 0.3):
+				continue
+			if materials or entry.id not in SIGHTS_ON_PROPS:
+				node.set_meta("free_standing", true)
+				_clear_spot(node, box)
+			for mesh in _mesh_nodes(node):
+				_add_obstacle({"box": mesh.get_aabb(), "transform": mesh.global_transform,
+					"world": mesh.global_transform * mesh.get_aabb(), "owner": mesh, "kind": "item"})
+
+
+# Moves a still thing to the nearest spot, spiralling out, where it stands on
+# the ground clear of every obstacle so far.
+func _clear_spot(node: Node3D, box: AABB) -> void:
+	var radius := Vector2(box.size.x, box.size.z).length() * 0.5
+	var original := box.get_center()
+	for attempt in range(160):
+		var candidate := original + Vector3(cos(attempt * 2.4), 0, sin(attempt * 2.4)) * attempt * 0.04
+		var floor_y := _surface_height(candidate) + 0.005
+		candidate.y = floor_y + box.size.y * 0.5
+		if _blocked(candidate, radius + 0.04, floor_y, floor_y + box.size.y):
+			continue
+		node.global_position += Vector3(candidate.x - original.x, floor_y - box.position.y, candidate.z - original.z)
+		return
+
+
+# The ground a creature can ever be on (it moves within its reach of its
+# origin), kept for the buddy's walks: the buddy goes round a creature rather
+# than through it. Flyers rise over the buddy instead (_lift_over_card), and
+# the pond and the spider's corner keep the buddy away already.
+func _creature_ranges() -> void:
+	for entry in _item_nodes:
+		if not entry.has("motion"):
+			continue
+		var state: Dictionary = entry.motion
+		if state.habitat != "ground" and state.habitat != "trunk":
+			continue
+		var origin: Vector3 = state.origin
+		var radius: float = float(state.radius) + (float(state.reach) * sqrt(2.0) if state.habitat == "ground" else 0.0)
+		var floor_y := _surface_height(origin)
+		var bottom := floor_y - 1.0
+		var top := floor_y + float(state.height) + 1.0
+		if state.habitat == "trunk":
+			bottom = origin.y + float(state.low) - 0.1
+			top = origin.y + float(state.get("climb", 0.45)) + float(state.low) + float(state.height) + 0.1
+		_add_obstacle({"kind": "range", "at": origin, "radius": radius, "owner": entry.node,
+			"world": AABB(Vector3(origin.x - radius, bottom, origin.z - radius), Vector3(radius * 2.0, top - bottom, radius * 2.0))})
+
+
+# How far a flyer rises to pass over the buddy rather than through it: clear
+# of its head when close to it, easing to nothing 1.2 m further out.
+func _lift_over_card(at: Vector3, state: Dictionary) -> float:
+	if _card == null or not _card.visible or not _free_on():
+		return 0.0
+	var feet := _card.global_position
+	var flat := Vector2(at.x - feet.x, at.z - feet.z).length()
+	var near := 0.3 + float(state.radius) + 0.05
+	var far := near + 1.2
+	if flat >= far:
+		return 0.0
+	var need := feet.y + CARD_HEIGHT + 0.12 - (at.y + float(state.low))
+	if need <= 0.0:
+		return 0.0
+	return need * (1.0 - smoothstep(near, far, flat))
+
+
+func _trunk_x(mesh: MeshInstance3D, at: Vector3) -> float:
+	var faces := mesh.mesh.get_faces()
+	var origin := Vector3(at.x + 10, at.y, at.z)
+	var surface := -INF
+	for i in range(0, faces.size(), 3):
+		var hit = Geometry3D.ray_intersects_triangle(origin, Vector3.LEFT,
+			mesh.global_transform * faces[i], mesh.global_transform * faces[i + 1], mesh.global_transform * faces[i + 2])
+		if hit != null:
+			surface = maxf(surface, hit.x)
+	return surface
+
+
+func _surface_height(at: Vector3) -> float:
+	var height := ground_height(_points, at)
+	if _all_points.has("yard"):
+		var local: Vector3 = at - _all_points.yard
+		if absf(local.x) <= 3 and absf(local.z) <= 2.5:
+			height = maxf(height, 0.04)
+	return height
+
+
+# Reserve the entire possible ground travel envelope, including the model's
+# turning radius. These reservations are fixed at build time, independent of
+# frame order; intersecting routes cannot arise between neighbouring creatures.
+func _habitat_space(at: Vector3, state: Dictionary) -> bool:
+	if state.habitat != "ground":
+		return true
+	for entry in _item_nodes:
+		if not entry.has("motion") or entry.motion.habitat != "ground":
+			continue
+		var other: Dictionary = entry.motion
+		var radius: float = state.radius + other.radius + (state.reach + other.reach) * sqrt(2.0)
+		if Vector2(at.x - other.origin.x, at.z - other.origin.z).length() < radius + 0.05:
+			return false
+	return true
