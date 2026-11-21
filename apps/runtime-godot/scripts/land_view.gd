@@ -13,8 +13,11 @@ extends SubViewportContainer
 # the viewport renders at most RENDER_FPS times a second while it lives.
 
 signal place_clicked(place_id: String)
+# Prototype UI: a thing (an item placement) was clicked.
+signal item_clicked(item_id: String, place_id: String)
 
 const WorldRules = preload("res://scripts/services/world_rules.gd")
+const MapleTheme = preload("res://scripts/ui/maple_theme.gd")
 
 const LAND_SIZE := 64.0
 const WALK_SPEED := 1.6
@@ -486,6 +489,145 @@ static func _hours(value: Variant) -> Array:
 	return []
 
 
+# --- prototype: the UI's world-only words -----------------------------------
+#
+# What the view's own UI (prototype_ui) may show from the buddy's mind, under
+# Plan 14's "public world, private you": its journal lines, its words about each
+# place and thing, and its newest activity. A journal line is kept only when
+# everything about it says the world wrote it: on a place of the land, from one
+# of the land's own activities (or its edge, arrival or waking), with no
+# companion, no letters read, nothing suggested or planned honoured, no
+# purchase, and not at the glowing box (its line to the person). Anything else
+# is left out, with no count. Things are titled by its own name for them (made
+# from the land's data) or by how it describes them, never by a real name, and
+# materials, which it has no words for, are just "something here".
+const UI_JOURNAL_MAX := 40
+const UI_LAND_ACTIVITIES := ["edge", "arrive", "wake"]
+const UI_CONSOLE_ACTIVITY := "glowing_box"
+const UI_PRIVATE_KEYS := ["read_letters", "because", "buy_want", "buy_item", "gift", "note", "letter", "chat"]
+
+# {"journal": [{key, t, text, place_id}] newest first, "place_words": {place_id:
+# {text, t, origin_id}}, "item_words": {"<place>/<id>": {kind, title, text, t,
+# observed}}, "last_label": activity label of the newest decision, if public}.
+static func ui_world_from(profile: Dictionary, land: Dictionary) -> Dictionary:
+	var mind: Dictionary = _dict(profile.get("mind", {}))
+	var place_ids := {}
+	var activity_ids := {}
+	var sight_lines := {}
+	for place_variant in _arr(land.get("places", [])):
+		if typeof(place_variant) != TYPE_DICTIONARY:
+			continue
+		var place: Dictionary = place_variant
+		place_ids[_str(place.get("id", ""))] = true
+		for activity_variant in _arr(place.get("activities", [])):
+			if typeof(activity_variant) == TYPE_DICTIONARY:
+				activity_ids[_str((activity_variant as Dictionary).get("id", ""))] = true
+		for sight_variant in _arr(place.get("sights", [])):
+			if typeof(sight_variant) == TYPE_DICTIONARY:
+				sight_lines[_str((sight_variant as Dictionary).get("id", ""))] = _str((sight_variant as Dictionary).get("line", ""))
+	for id in UI_LAND_ACTIVITIES:
+		activity_ids[id] = true
+	activity_ids.erase(UI_CONSOLE_ACTIVITY)
+	# Approved entries, newest first, whole (for the words below).
+	var approved: Array = []
+	var last_label := ""
+	var newest := true
+	var rows: Array = _arr(mind.get("journal", []))
+	for index in range(rows.size() - 1, -1, -1):
+		if typeof(rows[index]) != TYPE_DICTIONARY:
+			continue
+		var entry: Dictionary = rows[index]
+		var safe := _ui_entry_safe(entry, place_ids, activity_ids)
+		if newest:
+			newest = false
+			if safe:
+				last_label = _str(entry.get("activity_label", ""))
+		if safe:
+			approved.append(entry)
+	var journal: Array = []
+	var ordinals := {}
+	for entry_variant in approved:
+		if journal.size() >= UI_JOURNAL_MAX:
+			break
+		var entry: Dictionary = entry_variant
+		var text := _str(entry.get("text", "")).strip_edges()
+		var base := "%d|%s|%s" % [_to_int(entry.get("t", 0)), _str(entry.get("place_id", "")), text]
+		var ordinal: int = int(ordinals.get(base, 0))
+		ordinals[base] = ordinal + 1
+		journal.append({"key": "%x" % hash("%s|%d" % [base, ordinal]), "t": _to_int(entry.get("t", 0)),
+			"text": text, "place_id": _str(entry.get("place_id", ""))})
+	# Its words about each place it knows: the newest line there, or for a place
+	# it has only a sign of, the line where it saw the sign (from a found place).
+	var known_places: Dictionary = _dict(mind.get("known_places", {}))
+	var place_words := {}
+	for id_variant in known_places.keys():
+		var id := _str(id_variant)
+		var stage := _str(_dict(known_places[id_variant]).get("stage", ""))
+		for entry_variant in approved:
+			var entry: Dictionary = entry_variant
+			if stage == "found" and _str(entry.get("place_id", "")) == id:
+				place_words[id] = {"text": _str(entry.get("text", "")).strip_edges(), "t": _to_int(entry.get("t", 0)), "origin_id": ""}
+				break
+			if stage == "sign" and _str(entry.get("sign_of", "")) == id:
+				var origin := _str(entry.get("place_id", ""))
+				if _str(_dict(known_places.get(origin, {})).get("stage", "")) == "found":
+					place_words[id] = {"text": _str(entry.get("text", "")).strip_edges(), "t": _to_int(entry.get("t", 0)), "origin_id": origin}
+				break
+	# Its words about each thing at a found place.
+	var seen: Dictionary = _dict(mind.get("seen", {}))
+	var things: Dictionary = _dict(mind.get("things", {}))
+	var thing_rows := {}
+	for thing_variant in _arr(land.get("things", [])):
+		if typeof(thing_variant) == TYPE_DICTIONARY:
+			thing_rows[_str((thing_variant as Dictionary).get("id", ""))] = thing_variant
+	var item_words := {}
+	for item_variant in _land_items(land):
+		var item: Dictionary = item_variant
+		var place_id := str(item.get("place", ""))
+		if _str(_dict(known_places.get(place_id, {})).get("stage", "")) != "found":
+			continue
+		var id := str(item.get("id", ""))
+		var row := {"kind": str(item.get("kind", "")), "title": "", "text": "", "t": 0, "observed": false}
+		match row.kind:
+			"sight":
+				if seen.has(id):
+					row.observed = true
+					row.text = _str(item.get("line", ""))
+					row.t = _to_int(seen[id])
+			"thing":
+				var thing: Dictionary = _dict(thing_rows.get(id, {}))
+				var record: Dictionary = _dict(things.get(id, {}))
+				var first_sight := _str(thing.get("sight", ""))
+				row.observed = _to_int(record.get("met", 0)) > 0 or seen.has(first_sight)
+				row.title = _str(record.get("name", "")) if _str(record.get("name", "")) != "" else _str(thing.get("describe", ""))
+				for entry_variant in approved:
+					if _str((entry_variant as Dictionary).get("thing", "")) == id:
+						row.text = _str((entry_variant as Dictionary).get("text", "")).strip_edges()
+						row.t = _to_int((entry_variant as Dictionary).get("t", 0))
+						break
+				if row.text == "" and seen.has(first_sight):
+					row.text = _str(sight_lines.get(first_sight, ""))
+					row.t = _to_int(seen[first_sight])
+		item_words["%s/%s" % [place_id, id]] = row
+	return {"journal": journal, "place_words": place_words, "item_words": item_words, "last_label": last_label}
+
+
+static func _ui_entry_safe(entry: Dictionary, place_ids: Dictionary, activity_ids: Dictionary) -> bool:
+	if _str(entry.get("text", "")).strip_edges() == "":
+		return false
+	if not place_ids.has(_str(entry.get("place_id", ""))):
+		return false
+	var activity := _str(entry.get("activity_id", ""))
+	if activity == UI_CONSOLE_ACTIVITY or not activity_ids.has(activity):
+		return false
+	if _str(entry.get("companion_name", "")) != "":
+		return false
+	for key in UI_PRIVATE_KEYS:
+		if entry.has(key):
+			return false
+	return true
+
+
 static func _dict(value: Variant) -> Dictionary:
 	return value if typeof(value) == TYPE_DICTIONARY else {}
 
@@ -594,6 +736,7 @@ func _ready() -> void:
 	if _have_snapshot:
 		_apply_snapshot()
 	_apply_card_frames()
+	resized.connect(_layout_ui)
 
 
 func _node3d(node_name: String) -> Node3D:
@@ -3374,6 +3517,10 @@ func set_camera_mode(mode: String) -> void:
 			_place_eye_by_card()
 		_restyle_close()
 		_apply_camera()
+	_ui_sync_camera()
+	_layout_ui()
+	if _ui_page == "help":
+		_ui_render_page(false)
 
 
 # Prototype: the harness turns the close-camera fixes off to show the view as
@@ -3550,6 +3697,7 @@ func _apply_snapshot() -> void:
 		_target = _orbit_goal()
 		_apply_camera()
 	_update_sky()
+	_sync_ui()
 
 
 func _place_signature() -> String:
@@ -3675,6 +3823,7 @@ func tick(delta: float) -> void:
 	_update_mist(delta)
 	_update_clouds(delta)
 	_animate_items()
+	_tick_ui(delta)
 	_since_render += delta
 	if _since_render >= 1.0 / RENDER_FPS:
 		_since_render = 0.0
@@ -3774,7 +3923,8 @@ func _update_sprite() -> void:
 
 
 func _update_camera(delta: float) -> void:
-	if has_focus():
+	# While the UI's drawer is open the keys read it, not move the camera.
+	if has_focus() and _ui_page == "":
 		_keys_move_camera(delta)
 	if not _free_look:
 		_target = _target.lerp(_orbit_goal(), 1.0 - exp(-ORBIT_FOLLOW_RATE * delta))
@@ -3996,7 +4146,10 @@ func _gui_input(event: InputEvent) -> void:
 				_drag_travel = 0.0
 			else:
 				if _pressing and _drag_travel < 5.0:
-					_pick(button.position)
+					if _ui != null:
+						_ui_click(button.position)
+					else:
+						_pick(button.position)
 				_pressing = false
 			accept_event()
 		elif button.button_index == MOUSE_BUTTON_RIGHT and _camera_mode == "first_person":
@@ -4004,13 +4157,14 @@ func _gui_input(event: InputEvent) -> void:
 			_set_mouse_look(button.pressed)
 			accept_event()
 		elif button.pressed and button.button_index == MOUSE_BUTTON_WHEEL_UP:
-			_dist = clampf(_dist * 0.9, MIN_DISTANCE, MAX_DISTANCE)
-			_apply_camera()
+			_zoom(-1)
 			accept_event()
 		elif button.pressed and button.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			_dist = clampf(_dist * 1.1, MIN_DISTANCE, MAX_DISTANCE)
-			_apply_camera()
+			_zoom(1)
 			accept_event()
+	elif event is InputEventMouseMotion and not (_pressing or _mouse_look):
+		# Prototype UI: resting the pointer on something names it.
+		_ui_track_hover((event as InputEventMouseMotion).position)
 	elif event is InputEventMouseMotion and (_pressing or _mouse_look):
 		var motion := event as InputEventMouseMotion
 		_drag_travel += motion.relative.length()
@@ -4039,12 +4193,19 @@ func _gui_input(event: InputEvent) -> void:
 			accept_event()
 		elif key.physical_keycode == KEY_SPACE:
 			# Back to the buddy: the orbit follows it again, the follow camera
-			# comes back to its usual distance.
-			_free_look = false
-			_follow_back = FOLLOW_BACK
+			# comes back to its usual distance. With the UI, as its button does:
+			# back to the orbit at its usual distance, whatever the camera.
+			if _ui != null:
+				_back_to_buddy()
+			else:
+				_free_look = false
+				_follow_back = FOLLOW_BACK
 			accept_event()
 		elif key.physical_keycode == KEY_ESCAPE and _mouse_look:
 			_set_mouse_look(false)
+			accept_event()
+		elif key.physical_keycode == KEY_ESCAPE and _ui_page != "":
+			_ui_close()
 			accept_event()
 
 
@@ -4064,7 +4225,874 @@ func _pick(at: Vector2) -> void:
 		emit_signal("place_clicked", best)
 
 
+# --- prototype: the view's own UI ---------------------------------------------
+#
+# With the prototype_ui switch the view draws its own Maple-styled UI over the
+# land (design: .claude/codex-brief/UI_DESIGN.md), so a desktop window and a web
+# page share it. It is for watching, not steering:
+# - top left, where the buddy is and what it is doing;
+# - top right, the time and weather on its land;
+# - bottom left, its latest journal lines;
+# - along the bottom, the camera, back to the buddy, zoom, Read and Help;
+# - on the right, a drawer to read about any place or thing in the buddy's own
+#   words (snapshot["ui_world"], world-only: see ui_world_from), its journal,
+#   or help;
+# - resting the pointer on something names it.
+# Built once when the switch comes on and freed when it goes off. Its text
+# changes on snapshots and when what it shows changes, never every frame.
+
+const UI_WIDE := Vector2(1000.0, 600.0)
+const UI_STANDARD := Vector2(640.0, 400.0)
+const UI_HOVER_SECONDS := 0.35
+const UI_PICK_PIXELS := 12.0
+const UI_BUTTON_HEIGHT := 44.0
+# Nearly opaque: at 0.9 the place labels behind showed through the text.
+const UI_PANEL_ALPHA := 0.95
+const UI_CAMERAS := ["orbit", "first_person", "follow"]
+const UI_CAMERA_NAMES := ["Orbit", "First person", "Follow"]
+
+var _ui: Control = null
+var _ui_parts := {}
+var _ui_mode := ""
+# The drawer's page: "" (closed), "index", "journal", "help", "place:<id>" or
+# "item:<place>/<id>"; and what it showed, so a refresh keeps its scroll.
+var _ui_page := ""
+var _ui_page_key := ""
+var _ui_status_key := ""
+var _ui_minute := -1
+var _ui_preview_key := ""
+var _ui_hover_at := Vector2(-1.0, -1.0)
+var _ui_hover_still := 0.0
+var _ui_hover_done := true
+
+
+func _ui_on() -> bool:
+	return bool(_snapshot.get("prototype_ui", false))
+
+
+func _ui_world() -> Dictionary:
+	return _dict(_snapshot.get("ui_world", {}))
+
+
+# After each snapshot: build or free the UI with its switch, then refresh it.
+func _sync_ui() -> void:
+	if _ui_on() and _ui == null:
+		_build_ui()
+	elif not _ui_on() and _ui != null:
+		_ui_close()
+		_ui.queue_free()
+		_ui = null
+		_ui_parts.clear()
+		_ui_mode = ""
+		return
+	if _ui != null:
+		_refresh_ui()
+
+
+func _build_ui() -> void:
+	_ui = Control.new()
+	_ui.name = "LandUI"
+	_ui.theme = MapleTheme.theme()
+	_ui.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_ui.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	add_child(_ui)
+	var status := _ui_panel("StatusPanel", MapleTheme.BODY, UI_PANEL_ALPHA)
+	var status_lines := VBoxContainer.new()
+	status_lines.add_theme_constant_override("separation", 2)
+	status.add_child(status_lines)
+	_ui_parts.status = status
+	_ui_parts.status_1 = _ui_label(status_lines, "", true, false, 1)
+	_ui_parts.status_2 = _ui_label(status_lines, "", false, false, 1)
+	_ui_parts.status_sky = _ui_label(status_lines, "", false, true, 1)
+	var sky := _ui_panel("SkyPanel", MapleTheme.BODY, UI_PANEL_ALPHA)
+	var sky_lines := VBoxContainer.new()
+	sky_lines.add_theme_constant_override("separation", 2)
+	sky.add_child(sky_lines)
+	_ui_parts.sky = sky
+	_ui_parts.sky_time = _ui_label(sky_lines, "", true, false, 1)
+	_ui_parts.sky_words = _ui_label(sky_lines, "", false, false, 1)
+	var preview := _ui_panel("JournalPreview", MapleTheme.BODY, UI_PANEL_ALPHA)
+	var preview_lines := VBoxContainer.new()
+	preview_lines.add_theme_constant_override("separation", 4)
+	preview.add_child(preview_lines)
+	_ui_parts.preview = preview
+	_ui_parts.preview_title = _ui_label(preview_lines, "", true, false, 1)
+	_ui_parts.preview_box = VBoxContainer.new()
+	_ui_parts.preview_box.add_theme_constant_override("separation", 4)
+	preview_lines.add_child(_ui_parts.preview_box)
+	var read_journal := _ui_button(preview_lines, "Read journal", _ui_open.bind("journal"))
+	read_journal.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	var bar := HBoxContainer.new()
+	bar.name = "CameraBar"
+	bar.add_theme_constant_override("separation", 4)
+	_ui.add_child(bar)
+	_ui_parts.bar = bar
+	var mode := OptionButton.new()
+	mode.name = "CameraMode"
+	for index in range(UI_CAMERA_NAMES.size()):
+		mode.add_item(UI_CAMERA_NAMES[index], index)
+	mode.tooltip_text = "Which camera. C cycles them."
+	mode.item_selected.connect(_ui_on_camera)
+	bar.add_child(mode)
+	_ui_parts.mode = mode
+	_ui_parts.back = _ui_button(bar, "Back to buddy", _ui_back_pressed)
+	_ui_parts.zoom_out = _ui_button(bar, "-", _ui_zoom_pressed.bind(1))
+	_ui_parts.zoom_in = _ui_button(bar, "+", _ui_zoom_pressed.bind(-1))
+	_ui_parts.read = _ui_button(bar, "Read", _ui_toggle.bind("index"))
+	_ui_parts.help = _ui_button(bar, "Help", _ui_toggle.bind("help"))
+	_ui_parts.zoom_out.tooltip_text = "Further out."
+	_ui_parts.zoom_in.tooltip_text = "Closer in."
+	_ui_parts.read.tooltip_text = "Places, things and the journal."
+	var drawer := _ui_panel("ReadingDrawer", MapleTheme.BODY_RAISED, 1.0, true)
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 8)
+	drawer.add_child(column)
+	var header := HBoxContainer.new()
+	column.add_child(header)
+	_ui_parts.drawer_title = _ui_label(header, "", true, false, 1)
+	_ui_parts.drawer_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_ui_button(header, "Close", _ui_close)
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	column.add_child(scroll)
+	var body := VBoxContainer.new()
+	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	body.add_theme_constant_override("separation", 6)
+	scroll.add_child(body)
+	_ui_parts.drawer = drawer
+	_ui_parts.scroll = scroll
+	_ui_parts.body = body
+	drawer.visible = false
+	var caption := _ui_panel("HoverCaption", MapleTheme.BODY, 0.94)
+	caption.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var caption_lines := VBoxContainer.new()
+	caption.add_child(caption_lines)
+	_ui_parts.caption = caption
+	_ui_parts.caption_1 = _ui_label(caption_lines, "", true, false, 1)
+	_ui_parts.caption_2 = _ui_label(caption_lines, "Click to read", false, true, 1)
+	caption.visible = false
+	_ui_mode = ""
+	_ui_status_key = ""
+	_ui_minute = -1
+	_ui_preview_key = ""
+	_ui_sync_camera()
+
+
+func _ui_panel(node_name: String, fill: Color, alpha: float, framed := false) -> PanelContainer:
+	var panel := PanelContainer.new()
+	panel.name = node_name
+	var box := MapleTheme.flat(Color(fill.r, fill.g, fill.b, alpha), MapleTheme.FRAME if framed else MapleTheme.FRAME_DIM, 6, 2 if framed else 1, 12, 8)
+	panel.add_theme_stylebox_override("panel", box)
+	panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	_ui.add_child(panel)
+	return panel
+
+
+# A line of text: a gold heading, plain, or dim; `lines` 0 wraps freely,
+# otherwise it is clipped to that many lines with an ellipsis. Wrapped text is
+# given its width (`width`) up front, so it is measured to its real height.
+func _ui_label(parent: Control, text: String, heading := false, dim := false, lines := 0, width := 0.0) -> Label:
+	var label := Label.new()
+	label.text = text
+	if width > 0.0:
+		label.custom_minimum_size = Vector2(width, 0.0)
+	if heading:
+		label.add_theme_color_override("font_color", MapleTheme.HEADING)
+		label.add_theme_font_size_override("font_size", 15)
+	elif dim:
+		label.add_theme_color_override("font_color", MapleTheme.TEXT_DIM)
+	if lines == 1:
+		label.clip_text = true
+		label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	else:
+		# (Godot measures a wrapped label with trimming as no height at all, so
+		# longer text is shortened by _ui_clip instead.)
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		if lines > 1:
+			label.max_lines_visible = lines
+	parent.add_child(label)
+	return label
+
+
+# Text shortened at a word to about `chars` letters, with an ellipsis.
+static func _ui_clip(text: String, chars: int) -> String:
+	if text.length() <= chars:
+		return text
+	var cut := text.substr(0, chars)
+	var space := cut.rfind(" ")
+	return (cut.substr(0, space) if space > chars / 2 else cut).strip_edges().trim_suffix(",").trim_suffix(".") + "…"
+
+
+func _ui_text_width(label: Label) -> float:
+	return label.get_theme_font("font").get_string_size(label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, label.get_theme_font_size("font_size")).x
+
+
+func _ui_button(parent: Control, text: String, action: Callable) -> Button:
+	var button := Button.new()
+	button.text = text
+	button.custom_minimum_size = Vector2(44.0, UI_BUTTON_HEIGHT)
+	button.pressed.connect(action)
+	parent.add_child(button)
+	return button
+
+
+# Where each part goes, by the view's size: wide, standard or compact.
+func _layout_ui() -> void:
+	if _ui == null:
+		return
+	var w := size.x
+	var h := size.y
+	var mode := "compact"
+	if w >= UI_WIDE.x and h >= UI_WIDE.y:
+		mode = "wide"
+	elif w >= UI_STANDARD.x and h >= UI_STANDARD.y:
+		mode = "standard"
+	if mode != _ui_mode:
+		_ui_mode = mode
+		_ui_preview_key = ""
+		_ui_page_key = ""
+		_refresh_ui()
+		return
+	var inset: float = {"wide": 16.0, "standard": 12.0, "compact": 8.0}[mode]
+	var gap := 8.0
+	var pad: Vector2 = Vector2(12.0, 8.0) if mode != "compact" else Vector2(8.0, 6.0)
+	for part in ["status", "sky", "preview", "drawer", "caption"]:
+		var box := (_ui_parts[part] as PanelContainer).get_theme_stylebox("panel") as StyleBoxFlat
+		box.content_margin_left = pad.x
+		box.content_margin_right = pad.x
+		box.content_margin_top = pad.y
+		box.content_margin_bottom = pad.y
+	var bar: HBoxContainer = _ui_parts.bar
+	var compact := mode == "compact"
+	(_ui_parts.mode as Control).custom_minimum_size = Vector2(88.0 if compact else 120.0, UI_BUTTON_HEIGHT)
+	(_ui_parts.back as Control).custom_minimum_size = Vector2(120.0, UI_BUTTON_HEIGHT)
+	(_ui_parts.read as Control).custom_minimum_size = Vector2(64.0, UI_BUTTON_HEIGHT)
+	(_ui_parts.help as Control).custom_minimum_size = Vector2(56.0, UI_BUTTON_HEIGHT)
+	bar.reset_size()
+	bar.position = Vector2(inset, h - inset - bar.size.y)
+	var bar_top := bar.position.y
+	var sky: PanelContainer = _ui_parts.sky
+	var status: PanelContainer = _ui_parts.status
+	sky.visible = not compact
+	(_ui_parts.status_sky as Control).visible = compact
+	var sky_w := 260.0 if mode == "wide" else 220.0
+	if compact:
+		_place_panel(status, Vector2(inset, inset), w - inset * 2.0)
+	else:
+		# Each as wide as its words, up to its share of the top.
+		var sky_need := maxf(_ui_text_width(_ui_parts.sky_time), _ui_text_width(_ui_parts.sky_words)) + pad.x * 2.0 + 8.0
+		var sky_width := clampf(sky_need, 120.0, sky_w)
+		_place_panel(sky, Vector2(w - inset - sky_width, inset), sky_width)
+		var status_need := 0.0
+		for part in ["status_1", "status_2"]:
+			var label: Label = _ui_parts[part]
+			if label.visible:
+				status_need = maxf(status_need, _ui_text_width(label))
+		var status_max := minf(520.0, w - inset * 3.0 - sky_width) if mode == "wide" else w - inset * 3.0 - sky_width
+		_place_panel(status, Vector2(inset, inset), clampf(status_need + pad.x * 2.0 + 8.0, 160.0, status_max))
+	var drawer: PanelContainer = _ui_parts.drawer
+	var top: float = {"wide": 100.0, "standard": 92.0, "compact": 80.0}[mode]
+	# Never over the status (three lines in compact) or the sky.
+	top = maxf(top, status.position.y + status.size.y + gap)
+	if sky.visible:
+		top = maxf(top, sky.position.y + sky.size.y + gap)
+	if compact:
+		drawer.position = Vector2(inset, top)
+		drawer.size = Vector2(w - inset * 2.0, maxf(120.0, bar_top - gap - top))
+	else:
+		var drawer_w := 340.0 if mode == "wide" else 300.0
+		drawer.position = Vector2(w - inset - drawer_w, top)
+		drawer.size = Vector2(drawer_w, maxf(120.0, bar_top - gap - top))
+	var preview: PanelContainer = _ui_parts.preview
+	# Folded into Read when there is no room, or the drawer is open beside it.
+	preview.visible = not compact and not (mode == "standard" and _ui_page != "") and _camera_mode == "orbit"
+	if preview.visible:
+		var preview_w := 420.0 if mode == "wide" else 320.0
+		preview.custom_minimum_size = Vector2(preview_w, 0.0)
+		preview.reset_size()
+		preview.position = Vector2(inset, bar_top - gap - preview.size.y)
+
+
+func _place_panel(panel: PanelContainer, at: Vector2, width: float) -> void:
+	panel.custom_minimum_size = Vector2(maxf(80.0, width), 0.0)
+	panel.reset_size()
+	panel.position = at
+
+
+# Everything the UI shows, from the snapshot and the view's state now.
+func _refresh_ui() -> void:
+	if _ui == null:
+		return
+	var name_words := _ui_name()
+	_ui_parts.back.text = ("View home" if str(_snapshot.get("where", "")) == "visiting" else "Back to %s" % name_words)
+	if _ui_mode == "compact" and _ui_parts.back.text.length() > 12:
+		_ui_parts.back.tooltip_text = _ui_parts.back.text
+		_ui_parts.back.text = "Back to buddy"
+	_ui_parts.preview_title.text = "%s's journal" % name_words
+	_ui_refresh_status()
+	_ui_refresh_sky()
+	_ui_refresh_preview()
+	_ui_sync_camera()
+	if _ui_page != "":
+		_ui_render_page(false)
+	_layout_ui()
+
+
+func _ui_refresh_status() -> void:
+	var lines := _ui_status_lines()
+	_ui_status_key = _ui_status_state()
+	_ui_parts.status_1.text = lines[0]
+	_ui_parts.status_2.text = lines[1]
+	_ui_parts.status_2.visible = lines[1] != ""
+
+
+func _ui_refresh_sky() -> void:
+	var sky := _ui_sky_words()
+	_ui_parts.sky_time.text = sky[0]
+	_ui_parts.sky_words.text = sky[1]
+	_ui_parts.status_sky.text = "%s  %s" % [sky[0], sky[1]]
+	_ui_parts.sky.tooltip_text = "Time on %s's land." % _ui_name()
+	_ui_minute = _ui_world_minute()
+
+
+func _ui_refresh_preview() -> void:
+	var journal: Array = _arr(_ui_world().get("journal", []))
+	var count := 2 if _ui_mode == "wide" else 1
+	var keys: Array = []
+	for index in range(mini(count, journal.size())):
+		keys.append(str(_dict(journal[index]).get("key", "")))
+	var key := "%s|%s" % [_ui_mode, ",".join(keys)]
+	if key == _ui_preview_key:
+		return
+	_ui_preview_key = key
+	var box: VBoxContainer = _ui_parts.preview_box
+	for child in box.get_children():
+		box.remove_child(child)
+		child.queue_free()
+	var width := (420.0 if _ui_mode == "wide" else 320.0) - 24.0
+	if journal.is_empty():
+		_ui_label(box, "%s has no journal lines to show yet." % _ui_name(), false, true, 0, width)
+		return
+	# About two lines' worth at 14 px.
+	var chars := int(width / 7.4) * 2
+	for index in range(mini(count, journal.size())):
+		var entry: Dictionary = _dict(journal[index])
+		_ui_label(box, _ui_when(_to_int(entry.get("t", 0))), false, true, 1)
+		_ui_label(box, _ui_clip(str(entry.get("text", "")), chars), false, false, 2, width)
+
+
+# The two status lines (the second may be empty), in order of what matters.
+func _ui_status_lines() -> Array:
+	var name_words := _ui_name()
+	if not _have_snapshot:
+		return ["Waiting for the land.", ""]
+	var where := str(_snapshot.get("where", ""))
+	if where == "visiting":
+		return ["%s is visiting." % name_words, "%s is away from the land." % name_words]
+	var home := str(_snapshot.get("home", "home"))
+	var last: Dictionary = _dict(_snapshot.get("last", {}))
+	var edge := str(last.get("edge", ""))
+	var on_route := not _walk_points.is_empty() and _clock >= _walk_start and _clock < _walk_end
+	if on_route and (edge == "sign" or edge == "blocked"):
+		# Towards something only seen as a sign: never name what it is.
+		return ["%s is exploring near %s." % [name_words, _ui_place_words(where)], "%s has noticed something beyond here." % name_words]
+	if on_route:
+		var first := "%s is walking home." % name_words if where == home else "%s is walking to %s." % [name_words, _ui_place_words(where)]
+		var came_from := str(_snapshot.get("came_from", ""))
+		var second := ""
+		if came_from != "" and came_from != where and str(_known.get(came_from, "")) == "found":
+			second = "%s came from %s." % [name_words, "home" if came_from == home else _ui_place_words(came_from)]
+		return [first, second]
+	var at := "%s is at home." % name_words if where == home else "%s is at %s." % [name_words, _ui_place_words(where)]
+	if _card_pose == "sleep":
+		return [at, "%s is asleep." % name_words]
+	if _card_walking:
+		return ["%s is looking around %s." % [name_words, _ui_place_words(where)], ""]
+	if _clock < float(_to_int(_snapshot.get("busy_until", 0))):
+		return [at, "%s is busy there." % name_words]
+	return [at, ""]
+
+
+# ["14:20", "Afternoon, light rain"], on the land's own clock.
+func _ui_sky_words() -> Array:
+	var minute := _ui_world_minute()
+	var hour := minute / 60
+	var time_words := "Night"
+	if hour >= 5 and hour < 8:
+		time_words = "Early morning"
+	elif hour >= 8 and hour < 12:
+		time_words = "Morning"
+	elif hour >= 12 and hour < 17:
+		time_words = "Afternoon"
+	elif hour >= 17 and hour < 21:
+		time_words = "Evening"
+	var weather: Dictionary = _dict(_snapshot.get("weather", {}))
+	var weather_words := "weather unknown"
+	match str(weather.get("kind", "")):
+		"clear":
+			weather_words = "clear"
+		"cloudy":
+			weather_words = "cloudy"
+		"rain":
+			weather_words = "light rain" if float(weather.get("rain", 0.0)) < 0.6 else "rain"
+	return ["%02d:%02d" % [hour, minute % 60], "%s, %s" % [time_words, weather_words]]
+
+
+func _ui_world_minute() -> int:
+	return int(fposmod(_clock + float(_tz_bias) * 60.0, 86400.0) / 60.0)
+
+
+# "Today, 14:20", "Yesterday, 18:05" or "20 Nov, 09:10", on the land's clock.
+func _ui_when(t: int) -> String:
+	var bias := float(_tz_bias) * 60.0
+	var day := floori((float(t) + bias) / 86400.0)
+	var today := floori((_clock + bias) / 86400.0)
+	var minute := int(fposmod(float(t) + bias, 86400.0) / 60.0)
+	var clock_words := "%02d:%02d" % [minute / 60, minute % 60]
+	if day == today:
+		return "Today, %s" % clock_words
+	if day == today - 1:
+		return "Yesterday, %s" % clock_words
+	var date := Time.get_datetime_dict_from_unix_time(int(float(t) + bias))
+	var months := ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+	return "%d %s, %s" % [int(date.day), months[clampi(int(date.month) - 1, 0, 11)], clock_words]
+
+
+func _ui_name() -> String:
+	return str(_snapshot.get("name", "Buddy"))
+
+
+# A place's name as the buddy says it ("the big tree"), for found places only;
+# home is "home".
+func _ui_place_words(id: String) -> String:
+	if id == str(_snapshot.get("home", "home")):
+		return "home"
+	for place_variant in _arr(_snapshot.get("places", [])):
+		var place: Dictionary = _dict(place_variant)
+		if str(place.get("id", "")) == id and str(_known.get(id, "")) == "found":
+			return str(place.get("name", id))
+	return "somewhere"
+
+
+static func _ui_capital(text: String) -> String:
+	return text.substr(0, 1).to_upper() + text.substr(1) if text != "" else text
+
+
+# What the status lines hang on, as one short key: walking a route or not,
+# ambling, asleep, busy, where, and whether it is away.
+func _ui_status_state() -> String:
+	var on_route := not _walk_points.is_empty() and _clock >= _walk_start and _clock < _walk_end
+	var busy := _clock < float(_to_int(_snapshot.get("busy_until", 0)))
+	return "%s|%d|%d|%d|%d|%s" % [str(_snapshot.get("where", "")), int(on_route), int(_card_walking), int(_card_pose == "sleep"), int(busy), str(_snapshot.get("came_from", ""))]
+
+
+# Each frame: only cheap checks for a change worth new text, and the hover.
+func _tick_ui(delta: float) -> void:
+	if _ui == null:
+		return
+	if _ui_status_state() != _ui_status_key:
+		_ui_refresh_status()
+		if _ui_page == "index":
+			_ui_render_page(false)
+		_layout_ui()
+	if _ui_world_minute() != _ui_minute:
+		_ui_refresh_sky()
+	if not _ui_hover_done:
+		_ui_hover_still += delta
+		if _ui_hover_still >= UI_HOVER_SECONDS:
+			_ui_hover_done = true
+			_ui_show_hover()
+
+
+func _ui_track_hover(at: Vector2) -> void:
+	if _ui == null:
+		return
+	_ui_hover_at = at
+	_ui_hover_still = 0.0
+	_ui_hover_done = false
+	(_ui_parts.caption as Control).visible = false
+
+
+func _ui_show_hover() -> void:
+	var caption: PanelContainer = _ui_parts.caption
+	caption.visible = false
+	if _pressing or _mouse_look or _camera_mode == "first_person" and _mouse_look:
+		return
+	for part in ["status", "sky", "preview", "drawer", "bar"]:
+		var control: Control = _ui_parts[part]
+		if control.visible and control.get_rect().has_point(_ui_hover_at):
+			return
+	var picked := _ui_pick(_ui_hover_at)
+	if picked.is_empty():
+		return
+	_ui_parts.caption_1.text = str(picked.title)
+	# One-line labels have no width of their own: as wide as its words.
+	var box := caption.get_theme_stylebox("panel")
+	var need := maxf(_ui_text_width(_ui_parts.caption_1), _ui_text_width(_ui_parts.caption_2)) + box.content_margin_left + box.content_margin_right + 6.0
+	caption.custom_minimum_size = Vector2(minf(need, size.x - 8.0), 0.0)
+	caption.reset_size()
+	var at := _ui_hover_at + Vector2(16.0, 16.0)
+	at.x = minf(at.x, size.x - caption.size.x - 4.0)
+	at.y = minf(at.y, size.y - caption.size.y - 4.0)
+	caption.position = at
+	caption.visible = true
+
+
+# What is under the pointer: the nearest thing the ray from the camera meets
+# (not behind a wall, a roof or a trunk), else a small thing whose middle is
+# within a few pixels, else a found place near its point. {} for nothing.
+# {"kind": "item"|"place", "key": "<place>/<id>" or place id, "title"}.
+func _ui_pick(at: Vector2) -> Dictionary:
+	var origin := _camera.project_ray_origin(at)
+	var direction := _camera.project_ray_normal(at)
+	var words: Dictionary = _dict(_ui_world().get("item_words", {}))
+	var best := {}
+	var best_d := INF
+	var near := {}
+	var near_px := UI_PICK_PIXELS
+	for entry in _item_nodes:
+		var node: Node3D = entry.node
+		var place_id := str(entry.place)
+		var key := "%s/%s" % [place_id, str(entry.id)]
+		if not node.is_visible_in_tree() or str(_known.get(place_id, "")) != "found" or not words.has(key):
+			continue
+		var box := _world_bounds(node).grow(0.03)
+		var hit = box.intersects_ray(origin, direction)
+		if hit != null:
+			var d: float = origin.distance_to(hit)
+			if d < best_d and not _ui_hidden_behind(origin, hit):
+				best_d = d
+				best = {"kind": "item", "key": key}
+		elif not _camera.is_position_behind(box.get_center()):
+			var px := _camera.unproject_position(box.get_center()).distance_to(at)
+			if px < near_px and not _ui_hidden_behind(origin, box.get_center()):
+				near_px = px
+				near = {"kind": "item", "key": key}
+	var picked := best if not best.is_empty() else near
+	if picked.is_empty():
+		var best_place := ""
+		var best_place_px := 48.0
+		for id in _points.keys():
+			var point: Vector3 = (_points[id] as Vector3) + Vector3(0.0, 1.0, 0.0)
+			if _camera.is_position_behind(point):
+				continue
+			var px := _camera.unproject_position(point).distance_to(at)
+			if px < best_place_px:
+				best_place_px = px
+				best_place = str(id)
+		if best_place == "":
+			return {}
+		picked = {"kind": "place", "key": best_place}
+	picked.title = _ui_item_name(str(picked.key)) if picked.kind == "item" else _ui_capital(_ui_place_words(str(picked.key)))
+	return picked
+
+
+# Whether a prop (a wall, the roof, a trunk, a canopy) stands between the
+# camera and a point on a thing.
+func _ui_hidden_behind(origin: Vector3, point: Vector3) -> bool:
+	var toward := point - origin
+	var length := toward.length()
+	if length < 0.01:
+		return false
+	var stop := origin + toward * ((length - 0.15) / length)
+	for obstacle in _obstacles:
+		if obstacle.kind != "prop" or obstacle.get("owner") == null:
+			continue
+		if not (obstacle.owner as Node3D).is_visible_in_tree():
+			continue
+		if (obstacle.world as AABB).intersects_segment(origin, stop):
+			return true
+	return false
+
+
+func _ui_click(at: Vector2) -> void:
+	var picked := _ui_pick(at)
+	if picked.is_empty():
+		return
+	if picked.kind == "item":
+		var parts := str(picked.key).split("/")
+		emit_signal("item_clicked", parts[1], parts[0])
+		_ui_open("item:%s" % picked.key)
+	else:
+		emit_signal("place_clicked", str(picked.key))
+		_ui_open("place:%s" % picked.key)
+
+
+# How a thing is listed and named on hover: as its title, except that a sight
+# it has noticed is the start of its own line ("There is a round red thing…"),
+# so the sights at a place can be told apart.
+func _ui_item_name(key: String) -> String:
+	var row: Dictionary = _dict(_dict(_ui_world().get("item_words", {})).get(key, {}))
+	if str(row.get("kind", "")) == "sight" and bool(row.get("observed", false)) and str(row.get("text", "")) != "":
+		return _ui_clip(str(row.text), 44)
+	return _ui_item_title(key)
+
+
+# A thing's title, never its real name: its own name or how it describes it
+# for a creature, "something it noticed" for a sight, else "something here".
+func _ui_item_title(key: String) -> String:
+	var row: Dictionary = _dict(_dict(_ui_world().get("item_words", {})).get(key, {}))
+	if str(row.get("kind", "")) == "thing" and str(row.get("title", "")) != "":
+		return _ui_capital(str(row.title))
+	if str(row.get("kind", "")) == "sight" and bool(row.get("observed", false)):
+		return "Something %s noticed" % _ui_name()
+	return "Something here"
+
+
+# --- the drawer --------------------------------------------------------------
+
+func _ui_toggle(page: String) -> void:
+	if _ui_page == page:
+		_ui_close()
+	else:
+		_ui_open(page)
+
+
+func _ui_open(page: String) -> void:
+	if _ui == null:
+		return
+	_ui_page = page
+	_ui_page_key = ""
+	(_ui_parts.drawer as Control).visible = true
+	(_ui_parts.caption as Control).visible = false
+	_ui_render_page(true)
+	_layout_ui()
+
+
+func _ui_close() -> void:
+	_ui_page = ""
+	_ui_page_key = ""
+	if _ui == null:
+		return
+	(_ui_parts.drawer as Control).visible = false
+	_layout_ui()
+	grab_focus()
+
+
+# Fills the drawer for its page. A refresh that would show the same keeps the
+# reader's place; `top` starts a page at its top.
+func _ui_render_page(top: bool) -> void:
+	var lines: Array = []   # [kind, text, extra]: "h" heading, "t" text, "d" dim, "b" button, "e" empty
+	var title := ""
+	var page := _ui_page
+	var name_words := _ui_name()
+	var world := _ui_world()
+	if page == "index":
+		title = "%s's land" % name_words
+		var status := _ui_status_lines()
+		lines.append(["t", status[0], ""])
+		if status[1] != "":
+			lines.append(["t", status[1], ""])
+		if str(world.get("last_label", "")) != "":
+			lines.append(["d", "%s last %s." % [name_words, str(world.last_label).trim_suffix(".")], ""])
+		lines.append(["b", "Journal", "journal"])
+		lines.append(["h", "Places", ""])
+		var found := 0
+		for place_variant in _arr(_snapshot.get("places", [])):
+			var id := str(_dict(place_variant).get("id", ""))
+			if str(_known.get(id, "")) == "found":
+				found += 1
+				lines.append(["b", _ui_capital(_ui_place_words(id)) if id != str(_snapshot.get("home", "home")) else "Home", "place:%s" % id])
+		for place_variant in _arr(_snapshot.get("places", [])):
+			var id := str(_dict(place_variant).get("id", ""))
+			if str(_known.get(id, "")) == "sign":
+				var origin := str(_dict(_dict(world.get("place_words", {})).get(id, {})).get("origin_id", ""))
+				var row_words := "Something beyond %s" % _ui_place_words(origin) if origin != "" else "A sign in the mist"
+				lines.append(["b", row_words, "place:%s" % id])
+		if found <= 1:
+			lines.append(["d", "%s knows the house. The rest is still in the mist." % name_words, ""])
+	elif page == "journal":
+		title = "%s's journal" % name_words
+		var journal: Array = _arr(world.get("journal", []))
+		if journal.is_empty():
+			lines.append(["d", "%s has no journal lines to show yet." % name_words, ""])
+		for entry_variant in journal:
+			var entry: Dictionary = _dict(entry_variant)
+			var where := str(entry.get("place_id", ""))
+			lines.append(["d", "%s, at %s" % [_ui_when(_to_int(entry.get("t", 0))), _ui_place_words(where)], ""])
+			lines.append(["t", str(entry.get("text", "")), ""])
+	elif page == "help":
+		title = "Help"
+		lines.append(["t", "Drag to turn. Scroll to zoom. Click a place or thing to read about it.", ""])
+		match _camera_mode:
+			"first_person":
+				lines.append(["t", "First person: W, A, S and D walk, drag to look, Q and E turn. You are moving the camera; %s chooses where to go." % name_words, ""])
+			"follow":
+				lines.append(["t", "Follow: the camera stays low behind %s. Drag or A and D swing round it, W and S come closer or go further." % name_words, ""])
+			_:
+				lines.append(["t", "Orbit: W, A, S and D slide over the land, Q and E turn. Back to %s comes back to it." % name_words, ""])
+		lines.append(["d", "Keys: C changes the camera. Space comes back to %s. Esc closes this. P and L swap the prototype's pack and look." % name_words, ""])
+	elif page.begins_with("place:"):
+		var id := page.trim_prefix("place:")
+		var stage := str(_known.get(id, ""))
+		if stage == "found":
+			title = "Home" if id == str(_snapshot.get("home", "home")) else _ui_capital(_ui_place_words(id))
+		else:
+			var origin := str(_dict(_dict(world.get("place_words", {})).get(id, {})).get("origin_id", ""))
+			title = "Something beyond %s" % _ui_place_words(origin) if origin != "" else "A sign in the mist"
+		if stage == "":
+			lines.append(["d", "This is no longer known.", ""])
+		else:
+			lines.append(["h", "%s's words" % name_words, ""])
+			var words: Dictionary = _dict(_dict(world.get("place_words", {})).get(id, {}))
+			if str(words.get("text", "")) != "":
+				lines.append(["t", str(words.text), ""])
+				if _to_int(words.get("t", 0)) > 0:
+					lines.append(["d", _ui_when(_to_int(words.t)), ""])
+			elif stage == "sign":
+				lines.append(["t", "%s has noticed a sign of something here." % name_words, ""])
+			else:
+				lines.append(["t", "%s has no words about this place yet." % name_words, ""])
+			if stage == "found":
+				var things: Array = []
+				for entry in _item_nodes:
+					if str(entry.place) == id and (entry.node as Node3D).is_visible_in_tree():
+						things.append(["b", _ui_item_name("%s/%s" % [id, str(entry.id)]), "item:%s/%s" % [id, str(entry.id)]])
+				if not things.is_empty():
+					lines.append(["h", "Things here", ""])
+					lines.append_array(things)
+		lines.append(["b", "Back to places", "index"])
+	elif page.begins_with("item:"):
+		var key := page.trim_prefix("item:")
+		var place_id := key.get_slice("/", 0)
+		var row: Dictionary = _dict(_dict(world.get("item_words", {})).get(key, {}))
+		title = _ui_item_title(key)
+		lines.append(["d", "At %s" % _ui_place_words(place_id), ""])
+		lines.append(["h", "%s's words" % name_words, ""])
+		var visible_now := false
+		for entry in _item_nodes:
+			if "%s/%s" % [str(entry.place), str(entry.id)] == key:
+				visible_now = (entry.node as Node3D).is_visible_in_tree()
+		if row.is_empty():
+			lines.append(["t", "This is no longer here.", ""])
+		elif str(row.get("text", "")) != "":
+			lines.append(["t", str(row.text), ""])
+			if _to_int(row.get("t", 0)) > 0:
+				lines.append(["d", _ui_when(_to_int(row.t)), ""])
+		elif not bool(row.get("observed", false)) and str(row.get("kind", "")) == "sight":
+			lines.append(["t", "%s has not described this yet." % name_words, ""])
+		else:
+			lines.append(["t", "%s has no words about this yet." % name_words, ""])
+		if not visible_now and not row.is_empty():
+			lines.append(["d", "%s cannot see this here now." % name_words, ""])
+		lines.append(["b", "Back to places", "index"])
+	var page_key := "%s|%s|%s" % [page, title, str(lines)]
+	if page_key == _ui_page_key:
+		return
+	_ui_page_key = page_key
+	var scroll: ScrollContainer = _ui_parts.scroll
+	var keep := 0 if top else scroll.scroll_vertical
+	_ui_parts.drawer_title.text = title
+	var body: VBoxContainer = _ui_parts.body
+	for child in body.get_children():
+		body.remove_child(child)
+		child.queue_free()
+	# The drawer's width less its padding and room for the scroll bar.
+	var width: float = {"wide": 340.0, "standard": 300.0}.get(_ui_mode, size.x - 16.0) - (16.0 if _ui_mode == "compact" else 24.0) - 14.0
+	for line in lines:
+		match str(line[0]):
+			"h":
+				_ui_label(body, str(line[1]), true, false, 0, width)
+			"t":
+				_ui_label(body, str(line[1]), false, false, 0, width)
+			"d":
+				_ui_label(body, str(line[1]), false, true, 0, width)
+			"b":
+				var button := _ui_button(body, str(line[1]), _ui_open.bind(str(line[2])))
+				button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+				button.clip_text = true
+				button.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+				button.custom_minimum_size = Vector2(0.0, 36.0)
+	scroll.set_deferred("scroll_vertical", keep)
+
+
+# --- the camera bar ---------------------------------------------------------
+
+func _ui_sync_camera() -> void:
+	if _ui == null:
+		return
+	var mode: OptionButton = _ui_parts.mode
+	var index := UI_CAMERAS.find(_camera_mode)
+	if index >= 0 and mode.selected != index:
+		mode.select(index)
+	var first_person := _camera_mode == "first_person"
+	for part in ["zoom_in", "zoom_out"]:
+		var button: Button = _ui_parts[part]
+		button.disabled = first_person
+		button.tooltip_text = "Walk to move closer." if first_person else ("Closer in." if part == "zoom_in" else "Further out.")
+	var visiting := str(_snapshot.get("where", "")) == "visiting"
+	if visiting and _camera_mode == "follow":
+		set_camera_mode("orbit")
+
+
+func _ui_on_camera(index: int) -> void:
+	if index >= 0 and index < UI_CAMERAS.size():
+		if UI_CAMERAS[index] == "follow" and str(_snapshot.get("where", "")) == "visiting":
+			_ui_sync_camera()
+			return
+		set_camera_mode(UI_CAMERAS[index])
+	grab_focus()
+
+
+func _ui_back_pressed() -> void:
+	_back_to_buddy()
+	grab_focus()
+
+
+func _ui_zoom_pressed(step: int) -> void:
+	_zoom(step)
+	grab_focus()
+
+
+# Back to the buddy (or home while it is away): the orbit, following it again,
+# at its usual distance.
+func _back_to_buddy() -> void:
+	if _camera_mode != "orbit":
+		set_camera_mode("orbit")
+	_free_look = false
+	_dist = START_DISTANCE
+	_follow_back = FOLLOW_BACK
+	_apply_camera()
+
+
+# Closer (-1) or further (+1), for whichever camera can: the orbit's distance
+# or the follow camera's; first person walks instead.
+func _zoom(step: int) -> void:
+	match _camera_mode:
+		"follow":
+			_follow_back = clampf(_follow_back + step * 1.0, 2.5, 14.0)
+		"first_person":
+			return
+		_:
+			_dist = clampf(_dist * (1.1 if step > 0 else 0.9), MIN_DISTANCE, MAX_DISTANCE)
+	_apply_camera()
+
+
 # --- for tests and the render harness ---------------------------------------
+
+func ui_root() -> Control:
+	return _ui
+
+
+func ui_text() -> Dictionary:
+	if _ui == null:
+		return {}
+	return {"status": [_ui_parts.status_1.text, _ui_parts.status_2.text], "sky": [_ui_parts.sky_time.text, _ui_parts.sky_words.text],
+		"page": _ui_page, "title": _ui_parts.drawer_title.text, "mode": _ui_mode}
+
+
+func ui_page_lines() -> Array:
+	var out: Array = []
+	if _ui == null:
+		return out
+	for child in (_ui_parts.body as Control).get_children():
+		if child is Label:
+			out.append((child as Label).text)
+		elif child is Button:
+			out.append("[%s]" % (child as Button).text)
+	return out
+
 
 func card_node() -> Node3D:
 	return _card

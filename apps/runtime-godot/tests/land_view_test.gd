@@ -43,6 +43,12 @@ func _run_all() -> void:
 	_case("indoors_the_roof_comes_off", func(): return _test_roof())
 	_case("the_sky_follows_the_clock_and_weather", func(): return _test_sky())
 	_case("a_found_place_clears_its_mist", func(): return _test_mist_clears())
+	# Prototype: the view's own UI (the prototype_ui switch).
+	_case("ui_is_opt_in", func(): return _test_ui_opt_in())
+	_case("ui_status_follows_the_buddy", func(): return _test_ui_status())
+	_case("ui_world_keeps_to_the_world", func(): return _test_ui_world())
+	_case("ui_fits_every_size", func(): return _test_ui_layout())
+	_case("ui_reads_what_is_clicked", func(): return _test_ui_pick())
 
 
 func _case(name: String, body: Callable) -> void:
@@ -458,4 +464,215 @@ func _test_mist_clears() -> Variant:
 		return "after it is found the mist at the water should be gone, got '%s'" % after
 	if not built:
 		return "the water should be built once it is found"
+	return ""
+
+
+# --- prototype: the view's own UI ------------------------------------------
+
+func _ui_snap(profile: Dictionary, now: int = NOW, items := false) -> Dictionary:
+	var snap := _snap(profile, now)
+	snap["prototype_ui"] = true
+	snap["prototype_items"] = items
+	snap["ui_world"] = LandView.ui_world_from(profile, LandData.LAND)
+	return snap
+
+
+func _land_entry(t: int, place_id: String, activity_id: String, text: String, extra: Dictionary = {}) -> Dictionary:
+	var entry := {"t": t, "place_id": place_id, "intent": "explore", "activity_id": activity_id,
+		"activity_label": "sat on the step", "text": text, "companion_name": ""}
+	for key in extra.keys():
+		entry[key] = extra[key]
+	return entry
+
+
+# Off unless switched on; on, it adds no meshes to the land.
+func _test_ui_opt_in() -> Variant:
+	var land_all := {}
+	for place_variant in (LandData.LAND["places"] as Array):
+		land_all[(place_variant as Dictionary)["id"]] = true
+	var profile := _profile(land_all.keys(), [], "home", [], 0)
+	var plain := _view(_snap(profile))
+	var plain_meshes: int = plain.mesh_count()
+	var plain_ui: Control = plain.ui_root()
+	_drop(plain)
+	if plain_ui != null:
+		return "with no prototype_ui the view should make no UI"
+	if plain_meshes != 507:
+		return "the whole land without the switches should be 507 meshes, got %d" % plain_meshes
+	var with_ui := _view(_ui_snap(profile))
+	var ui_meshes: int = with_ui.mesh_count()
+	var ui_made: bool = with_ui.ui_root() != null
+	with_ui.set_snapshot(_snap(profile, NOW + 1))
+	var freed: bool = with_ui.ui_root() == null
+	_drop(with_ui)
+	if not ui_made:
+		return "prototype_ui should make the UI"
+	if ui_meshes != plain_meshes:
+		return "the UI should add no meshes: %d with it, %d without" % [ui_meshes, plain_meshes]
+	if not freed:
+		return "switching prototype_ui off should free the UI"
+	return ""
+
+
+# Walking, arrived and busy, asleep, away; and the land's clock and weather.
+func _test_ui_status() -> Variant:
+	var first := [_entry(NOW - 3600, "yard", "tend_home")]
+	var view := _view(_ui_snap(_profile(DAY3, [], "yard", first, NOW + 600)))
+	view.tick(0.0)
+	var arrived: Array = view.ui_text()["status"]
+	if arrived[0] != "Pip is at the yard." or arrived[1] != "Pip is busy there.":
+		_drop(view)
+		return "standing busy at the yard, got %s" % str(arrived)
+	var sky: Array = view.ui_text()["sky"]
+	if sky[0] != "21:00" or not str(sky[1]).begins_with("Night, "):
+		_drop(view)
+		return "the land's clock should read 21:00 at night, got %s" % str(sky)
+	var second := first.duplicate(true)
+	second.append(_entry(NOW + 4, "big_tree", "explore"))
+	view.set_snapshot(_ui_snap(_profile(DAY3, [], "big_tree", second, NOW + 900), NOW + 5))
+	view.tick(0.5)
+	var walking: Array = view.ui_text()["status"]
+	if walking[0] != "Pip is walking to the big tree." or walking[1] != "Pip came from the yard.":
+		_drop(view)
+		return "on the way to the big tree, got %s" % str(walking)
+	_tick(view, _flat(_point("yard"), _point("big_tree")) / LandView.WALK_SPEED + 2.0)
+	var there: Array = view.ui_text()["status"]
+	_drop(view)
+	if there[0] != "Pip is at the big tree.":
+		return "after the walk it should be at the big tree, got %s" % str(there)
+	var asleep := _view(_ui_snap(_profile(DAY3, [], "home", [_entry(NOW - 3600, "home", "rest")], NOW + 600)))
+	asleep.tick(0.0)
+	var sleeping: Array = asleep.ui_text()["status"]
+	_drop(asleep)
+	if sleeping[0] != "Pip is at home." or sleeping[1] != "Pip is asleep.":
+		return "asleep at home, got %s" % str(sleeping)
+	var away := _view(_ui_snap(_profile(DAY3, [], "visiting", [_entry(NOW - 3600, "yard", "tend_home")], NOW + 600)))
+	away.tick(0.0)
+	var visiting: Array = away.ui_text()["status"]
+	_drop(away)
+	if visiting[0] != "Pip is visiting." or visiting[1] != "Pip is away from the land.":
+		return "while it visits, got %s" % str(visiting)
+	return ""
+
+
+# Only lines the world wrote reach the UI; a place it has only a sign of is
+# never named; things are titled by its own name or its words for them.
+func _test_ui_world() -> Variant:
+	var journal := [
+		_land_entry(NOW - 9000, "yard", "step_sit", "I sat on the step with my feet in the dust."),
+		_land_entry(NOW - 8000, "yard", "step_sit", "SECRET letter line", {"read_letters": ["l1"]}),
+		_land_entry(NOW - 7000, "yard", "step_sit", "SECRET plan line", {"because": "suggestion"}),
+		_land_entry(NOW - 6000, "yard", "step_sit", "SECRET companion line", {"companion_name": "Sam"}),
+		_land_entry(NOW - 5000, "visiting", "step_sit", "SECRET visit line"),
+		_land_entry(NOW - 4000, "home", "glowing_box", "SECRET glowing box line"),
+		_land_entry(NOW - 3000, "yard", "chat_reply", "SECRET unknown line"),
+		_land_entry(NOW - 2000, "yard", "edge", "Not far off, something glints.", {"sign_of": "gate"}),
+		_land_entry(NOW - 1000, "yard", "step_sit", "SECRET newest line", {"read_letters": ["l2"]}),
+	]
+	var profile := _profile(DAY3, ["gate"], "yard", journal, 0)
+	profile["mind"]["seen"] = {"grey_feather": NOW - 8500}
+	profile["mind"]["things"] = {"wren": {"met": 4, "first_t": NOW - 9000, "last_t": NOW - 8000, "name": "the little shouter", "named_t": NOW - 8000}}
+	var world := LandView.ui_world_from(profile, LandData.LAND)
+	var dumped := JSON.stringify(world)
+	if dumped.contains("SECRET"):
+		return "a private line reached the UI: %s" % dumped
+	var lines: Array = world["journal"]
+	if lines.size() != 2 or str((lines[0] as Dictionary)["text"]) != "Not far off, something glints.":
+		return "expected the two world lines, newest first, got %s" % str(lines)
+	if str(world["last_label"]) != "":
+		return "the newest decision is private, so no activity should show, got '%s'" % world["last_label"]
+	var gate: Dictionary = (world["place_words"] as Dictionary).get("gate", {})
+	if str(gate.get("origin_id", "")) != "yard":
+		return "the gate's sign should be from the yard, got %s" % str(gate)
+	var feather: Dictionary = (world["item_words"] as Dictionary).get("yard/grey_feather", {})
+	if not bool(feather.get("observed", false)) or str(feather.get("text", "")) == "":
+		return "the grey feather was seen and should have its line, got %s" % str(feather)
+	var wren: Dictionary = (world["item_words"] as Dictionary).get("yard/wren", {})
+	if str(wren.get("title", "")) != "the little shouter":
+		return "the wren should go by its own name, got %s" % str(wren)
+	for key in (world["item_words"] as Dictionary).keys():
+		if not DAY3.has(str(key).get_slice("/", 0)):
+			return "%s is at a place it has not found" % key
+	var view := _view(_ui_snap(profile))
+	view.tick(0.0)
+	view._ui_open("index")
+	var index: Array = view.ui_page_lines()
+	view._ui_open("place:gate")
+	var sign_title: String = view.ui_text()["title"]
+	var sign_page: Array = view.ui_page_lines()
+	_drop(view)
+	if not index.has("[Something beyond the yard]"):
+		return "the index should list the gate as something beyond the yard, got %s" % str(index)
+	if sign_title != "Something beyond the yard" or str(index + sign_page).contains("the gate"):
+		return "the gate must not be named before it is found: %s / %s" % [sign_title, str(sign_page)]
+	return ""
+
+
+# Wide, standard and compact: every part inside the view, none on another.
+func _test_ui_layout() -> Variant:
+	var profile := _profile(DAY3, ["gate"], "yard", [_land_entry(NOW - 600, "yard", "step_sit", "I sat on the step.")], NOW + 600)
+	for row in [[Vector2(480, 320), "compact"], [Vector2(756, 480), "standard"], [Vector2(1280, 760), "wide"]]:
+		var view = LandView.new()
+		view.live = false
+		view.size = row[0]
+		add_child(view)
+		view.set_snapshot(_ui_snap(profile))
+		view.tick(0.0)
+		view._ui_open("index")
+		var mode: String = view.ui_text()["mode"]
+		var area := Rect2(Vector2.ZERO, row[0])
+		var rects := {}
+		for part in ["status", "sky", "preview", "bar", "drawer"]:
+			var control: Control = view._ui_parts[part]
+			if control.visible:
+				rects[part] = control.get_rect()
+		_drop(view)
+		if mode != str(row[1]):
+			return "%s should be the %s layout, got %s" % [str(row[0]), row[1], mode]
+		for part in rects.keys():
+			var rect: Rect2 = rects[part]
+			if not area.grow(0.5).encloses(rect):
+				return "%s: the %s %s is outside the view" % [mode, part, str(rect)]
+		var names: Array = rects.keys()
+		for i in range(names.size()):
+			for j in range(i + 1, names.size()):
+				var a: Rect2 = rects[names[i]]
+				var b: Rect2 = rects[names[j]]
+				if a.grow(-0.5).intersects(b.grow(-0.5)):
+					return "%s: the %s and the %s overlap (%s, %s)" % [mode, names[i], names[j], str(a), str(b)]
+	return ""
+
+
+# A click on a thing opens its page; one in the empty sky opens nothing.
+func _test_ui_pick() -> Variant:
+	var profile := _profile(DAY3, [], "yard", [_entry(NOW - 3600, "yard", "tend_home")], NOW + 600)
+	profile["mind"]["seen"] = {"grey_feather": NOW - 3000}
+	var view := _view(_ui_snap(profile, NOW, true))
+	view.size = Vector2(1280, 760)
+	view.tick(0.0)
+	var target: Node3D = null
+	for entry in view._item_nodes:
+		if str(entry.place) == "yard" and str(entry.id) == "grey_feather":
+			target = entry.node
+	if target == null:
+		_drop(view)
+		return "the grey feather should be at the yard"
+	var camera: Camera3D = view._camera
+	var centre: Vector3 = view._world_bounds(target).get_center()
+	camera.look_at_from_position(centre + Vector3(0.0, 3.0, 2.5), centre, Vector3.UP)
+	var at := camera.unproject_position(centre)
+	var picked: Dictionary = view._ui_pick(at)
+	camera.look_at_from_position(centre + Vector3(0.0, 2.0, 0.0), centre + Vector3(0.0, 12.0, -6.0), Vector3.UP)
+	var sky: Dictionary = view._ui_pick(Vector2(640, 380))
+	camera.look_at_from_position(centre + Vector3(0.0, 3.0, 2.5), centre, Vector3.UP)
+	view._ui_click(at)
+	var page: String = view.ui_text()["page"]
+	var title: String = view.ui_text()["title"]
+	_drop(view)
+	if str(picked.get("key", "")) != "yard/grey_feather":
+		return "a click on the feather should pick it, got %s" % str(picked)
+	if not sky.is_empty():
+		return "a click in the empty sky should pick nothing, got %s" % str(sky)
+	if page != "item:yard/grey_feather" or title != "Something Pip noticed":
+		return "the click should open the feather's page, got page '%s' title '%s'" % [page, title]
 	return ""

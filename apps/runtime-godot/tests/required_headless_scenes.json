@@ -28,7 +28,7 @@
     {"id": "letters", "scene": "res://tests/LetterTest.tscn", "pass_marker": "letter_test: PASS (15 cases)"},
     {"id": "letter-writer", "scene": "res://tests/LetterWriterTest.tscn", "pass_marker": "letter_writer_test: PASS (12 cases)"},
     {"id": "world-rules", "scene": "res://tests/WorldRulesTest.tscn", "pass_marker": "world_rules_test: PASS (8 cases)"},
-    {"id": "land-view", "scene": "res://tests/LandViewTest.tscn", "pass_marker": "land_view_test: PASS (9 cases)"},
+    {"id": "land-view", "scene": "res://tests/LandViewTest.tscn", "pass_marker": "land_view_test: PASS (14 cases)"},
     {"id": "manual-verification-report", "scene": "res://tests/ManualVerificationReportTest.tscn", "pass_marker": "manual_verification_report_test: PASS (2 cases)"}
   ]
 }
