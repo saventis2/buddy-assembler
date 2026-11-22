@@ -3924,18 +3924,44 @@ func _refresh_land_view_window() -> void:
         _land_view.set_card_frames(_land_view_frames())
         _land_view_frames_key = _assembler_active_key
     _land_view.set_snapshot(snapshot)
+    # Prototype: the view's own UI says where the buddy is, the time and the
+    # weather, and reads a clicked place itself, so the window's heading and
+    # line give way to it.
+    var own_ui := bool(snapshot.get("prototype_ui", false))
+    _land_view_heading.visible = not own_ui
+    _land_view_info.visible = not own_ui
+    if own_ui:
+        return
     if _land_view_selected != "":
         _land_view_info.text = _town_place_details(_land_view_selected)
     else:
         _land_view_info.text = "%s. Drag to turn, scroll to zoom, click a place to read about it." % _land_view_sky_line(snapshot.get("weather", {}))
 
 
+# Prototype (land-view spike): started with --land-prototype after --, the Town
+# window shows the land as the owner chose it in the spike (the textured look,
+# the land's things and creatures, free roaming) with the view's own UI, fed
+# only world-written words (LandView.ui_world_from). Otherwise as shipped.
+const LAND_PROTOTYPE_ARG := "--land-prototype"
+
+
+func _land_prototype_on() -> bool:
+    return OS.get_cmdline_user_args().has(LAND_PROTOTYPE_ARG)
+
+
 func _land_view_snapshot() -> Dictionary:
     var data := AppState.get_land_layout()
-    return LandView.snapshot_from(
+    var snapshot := LandView.snapshot_from(
         AppState.profile, data.get("land", {}), data.get("layout", {}), AppState.small_beginnings(),
         int(Time.get_unix_time_from_system()), int(Time.get_time_zone_from_system().get("bias", 0)), _speaker_name()
     )
+    if _land_prototype_on():
+        snapshot["prototype_style"] = "textured"
+        snapshot["prototype_items"] = true
+        snapshot["prototype_free"] = true
+        snapshot["prototype_ui"] = true
+        snapshot["ui_world"] = LandView.ui_world_from(AppState.profile, data.get("land", {}))
+    return snapshot
 
 
 # The frames the card shows: the assembled character when there is one, else the
