@@ -100,6 +100,22 @@ func ensure_profile(profile: Dictionary) -> Dictionary:
 	return merged
 
 
+# Set by the fast-forward simulator so a replay does not depend on the machine's time zone.
+var _pinned_bias_minutes := 0
+var _bias_is_pinned := false
+
+
+func set_time_zone_bias_minutes(minutes: int) -> void:
+	_pinned_bias_minutes = minutes
+	_bias_is_pinned = true
+
+
+func _time_zone_bias_minutes() -> int:
+	if _bias_is_pinned:
+		return _pinned_bias_minutes
+	return int(Time.get_time_zone_from_system().get("bias", 0))
+
+
 # Runs every decision that has come due since the last one, including the
 # ones that came due while the app was closed (capped, and spread across the
 # time away). Returns {"profile": Dictionary, "events": Array}; each event is
@@ -827,7 +843,7 @@ func _honour_intention(
 
 # Local calendar day number, using the same timezone bias as _local_hour.
 func _local_day(unix_time: int) -> int:
-	var local_unix := unix_time + int(Time.get_time_zone_from_system().get("bias", 0)) * 60
+	var local_unix := unix_time + _time_zone_bias_minutes() * 60
 	return int(local_unix / 86400)
 
 
@@ -1230,7 +1246,7 @@ func _bump_feeling(feelings: Dictionary, key: String, valence: float) -> void:
 
 
 func _local_hour(unix_time: int) -> int:
-	var local_unix := unix_time + int(Time.get_time_zone_from_system().get("bias", 0)) * 60
+	var local_unix := unix_time + _time_zone_bias_minutes() * 60
 	return int(Time.get_datetime_dict_from_unix_time(local_unix).get("hour", 12))
 
 
