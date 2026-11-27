@@ -74,7 +74,63 @@ const MIND_DEFAULTS := {
 	# Today's plan: {"day", "items": [{"kind": "place"|"npc", "id", "name", "window",
 	# "done", "missed", "phrase"}]}.
 	"day_plan": {},
+	# Small beginnings (Plan 14). Places it has a sign of or has found:
+	# {place_id: {"stage": "sign"|"found", "t", "tries"}}. Home is always known.
+	"known_places": {},
+	# Things it has noticed on its land, once each: {sight_id: t}.
+	"seen": {},
+	# How many times it has done each activity: {activity_id: count}.
+	"done": {},
+	# It is in the middle of something until this time; nothing is decided before then.
+	"busy_until": 0,
 }
+
+# --- Small beginnings (Plan 14 step 1b) ---------------------------------
+# With context["small_beginnings"], the town passed to tick() is the whole
+# land (land_data.gd). The buddy only uses the places it has found, finds more
+# by going to the edge of what it knows, notices things once, and what it does
+# takes time. None of this runs in the old town.
+#
+# The numbers below were tuned by reading 30-day runs of the fast-forward tool
+# (tools/simulate_days.py --world land); LandLifeTest pins what they add up to.
+# How often an explore goes to the edge of what it knows, while there is one.
+const LAND_EDGE_CHANCE := 0.55
+# Added to explore's score by day while it has a sign of somewhere unreached.
+const LAND_SIGN_PULL := 0.2
+# Each failed try makes the next one this much more likely. A place is tried
+# at most once a day after a failure.
+const LAND_TRY_BONUS := 0.05
+const LAND_SIGHT_CHANCE := 0.12
+const LAND_WONDER_CHANCE := 0.5
+const LAND_GOOD_TAIL_CHANCE := 0.4
+# An activity's own "bad" line is used when it went this badly (about one time
+# in eight); a milder dislike gets an ordinary line with a short tail.
+const LAND_BAD_LINE_BELOW := -0.15
+# A journal line never grows past this with what it noticed or wondered about.
+const LAND_MAX_LINE_CHARS := 240
+const LAND_DEFAULT_MINUTES := 20
+const LAND_TRAVEL_MINUTES := 5
+# It thinks less and does more here than in the old town.
+const LAND_REFLECT_SCALE := 0.6
+# A slot is one decision interval (10 minutes). A day awake tires it by about
+# 0.7, and a night's sleep mends it.
+const LAND_TIRE_PER_SLOT := 0.0065
+const LAND_EXPLORE_TIRE_PER_SLOT := 0.004
+const LAND_REST_PER_SLOT := 0.035
+const LAND_SLEEP_PER_SLOT := 0.016
+const LAND_RESTED := 0.05
+# By day it only thinks of resting once it is this tired; at night, once it is
+# tired enough to sleep.
+const LAND_NAP_FLOOR := 0.45
+const LAND_NIGHT_REST_FLOOR := 0.25
+const LAND_COMFORT_FADE_PER_SLOT := 0.006
+const LAND_COMFORT_FADE_ASLEEP_PER_SLOT := 0.003
+const LAND_COMFORT_GAIN_PER_SLOT := 0.05
+# How hard its confidence is pulled back toward the middle each decision.
+const LAND_CONFIDENCE_PULL := 0.03
+const LAND_EDGE_ACTIVITY := {"id": "edge", "label": "went to the edge of what I know", "satisfies": "curiosity", "minutes": 30}
+const LAND_ARRIVE_ACTIVITY := {"id": "arrive", "label": "found somewhere new", "satisfies": "curiosity", "minutes": 40}
+const LAND_WAKE_ACTIVITY := {"id": "wake", "label": "woke up", "satisfies": "reflection", "minutes": 20}
 
 
 func ensure_profile(profile: Dictionary) -> Dictionary:
@@ -96,8 +152,27 @@ func ensure_profile(profile: Dictionary) -> Dictionary:
 		mind["wants"] = []
 	if typeof(mind.get("day_plan", null)) != TYPE_DICTIONARY:
 		mind["day_plan"] = {}
+	for key in ["known_places", "seen", "done"]:
+		if typeof(mind.get(key, null)) != TYPE_DICTIONARY:
+			mind[key] = {}
 	merged["mind"] = mind
 	return merged
+
+
+# Set by the fast-forward simulator so a replay does not depend on the machine's time zone.
+var _pinned_bias_minutes := 0
+var _bias_is_pinned := false
+
+
+func set_time_zone_bias_minutes(minutes: int) -> void:
+	_pinned_bias_minutes = minutes
+	_bias_is_pinned = true
+
+
+func _time_zone_bias_minutes() -> int:
+	if _bias_is_pinned:
+		return _pinned_bias_minutes
+	return int(Time.get_time_zone_from_system().get("bias", 0))
 
 
 # Runs every decision that has come due since the last one, including the
@@ -105,6 +180,7 @@ func ensure_profile(profile: Dictionary) -> Dictionary:
 # time away). Returns {"profile": Dictionary, "events": Array}; each event is
 # the journal entry plus the animation "action" that expresses it.
 func tick(profile: Dictionary, npcs: Array, now_unix: int, context: Dictionary, town: Dictionary = {}) -> Dictionary:
+	var small := bool(context.get("small_beginnings", false))
 	var merged := ensure_profile(profile)
 	var mind: Dictionary = merged["mind"]
 	var last := int(mind.get("last_decision_unix", 0))
@@ -125,6 +201,9 @@ func tick(profile: Dictionary, npcs: Array, now_unix: int, context: Dictionary, 
 	var meso_left := int(context.get("meso", 0))
 	for index in range(due_times.size()):
 		var decision_unix := int(due_times[index])
+		# In the middle of something (asleep, out at the water): nothing to decide yet.
+		if small and decision_unix < int((merged["mind"] as Dictionary).get("busy_until", 0)):
+			continue
 		var decision_context := context.duplicate(true)
 		if decision_context.has("meso"):
 			decision_context["meso"] = meso_left
@@ -478,6 +557,7 @@ func _decide(
 ) -> Dictionary:
 	var mind: Dictionary = merged["mind"]
 	var count := int(mind.get("decision_count", 0))
+	var small := bool(context.get("small_beginnings", false))
 	# Wants it has been saving for too long fade quietly.
 	for want_variant in mind["wants"]:
 		if typeof(want_variant) != TYPE_DICTIONARY:
@@ -486,16 +566,25 @@ func _decide(
 		if str(old_want.get("status", "")) == "saving" and int(old_want.get("t", 0)) + WANT_FADE_DAYS * 86400 <= decision_unix:
 			old_want["status"] = "faded"
 	var rng := RandomNumberGenerator.new()
-	rng.seed = hash("%s|%d|%d" % [str(merged.get("personality_seed_tag", "")), decision_unix, count])
+	if small:
+		# The buddy's own seed joins in, so no two buddies live the same life.
+		rng.seed = hash("%s|%d|%d|%d" % [str(merged.get("personality_seed_tag", "")), int(merged.get("personality_seed", 0)), decision_unix, count])
+	else:
+		rng.seed = hash("%s|%d|%d" % [str(merged.get("personality_seed_tag", "")), decision_unix, count])
 
 	var mods := _mood_modifiers(merged)
 	var is_night := bool(context.get("is_night", false))
 	var restlessness := _clamp01(float(mind.get("restlessness", 0.4)))
 	var subjects := _visitable_npcs(npcs)
 	var places := _usable_places(town)
+	var all_places: Array = places
+	var home_id := str(town.get("home_place", "home"))
+	if small:
+		places = _found_places(all_places, mind, home_id)
 	var hour := int(context.get("hour", -1))
 	if hour == -1:
 		hour = _local_hour(decision_unix)
+	var gate_hour := hour if small else -1
 	var open_places: Array = []
 	for place_row in places:
 		if _place_is_open(place_row, hour):
@@ -518,6 +607,20 @@ func _decide(
 		scores["visit"] = 0.0
 	if str(context.get("top_trait", "")) == "curiosity":
 		scores["explore"] = float(scores["explore"]) + 0.2
+	if small:
+		scores["reflect"] = float(scores["reflect"]) * LAND_REFLECT_SCALE
+		var tiredness := float(mods["energy_strain"])
+		if is_night:
+			# Night only pulls it to bed once it is tired enough to sleep.
+			if tiredness < LAND_NIGHT_REST_FLOOR:
+				scores["rest"] = tiredness * 1.4
+		else:
+			# By day it keeps going until it is properly tired, so the
+			# tiredness is still there to send it to bed at night.
+			scores["rest"] = maxf(0.0, tiredness - LAND_NAP_FLOOR) * 2.0 + (WISH_BONUS if wish == "rest" else 0.0)
+			# Somewhere it has a sign of keeps pulling at it.
+			if _has_open_sign(mind):
+				scores["explore"] = float(scores["explore"]) + LAND_SIGN_PULL
 
 	# Something agreed to earlier (see consider / note_talk). Expired ones are
 	# dropped; at night the buddy sleeps on it; otherwise it is honoured if the
@@ -534,7 +637,7 @@ func _decide(
 		# Worn out, it rests first: "later" for tiredness promised to go after
 		# a rest, so nothing it agreed to is done while it is still this tired.
 		elif not is_night and float(mods["energy_strain"]) < TIRED_LIMIT:
-			honoured = _honour_intention(intention, mind["feelings"], open_places, subjects, scores, rng, mind["wants"])
+			honoured = _honour_intention(intention, mind["feelings"], open_places, subjects, scores, rng, mind["wants"], gate_hour)
 			if not honoured.is_empty():
 				mind["intention"] = {}
 
@@ -557,7 +660,7 @@ func _decide(
 				var trip := _make_intention("place", str(shop.get("id", "")), str(shop.get("name", "")), "want", decision_unix)
 				trip["want_id"] = str(wanted.get("id", ""))
 				mind["intention"] = trip
-				honoured = _honour_intention(trip, mind["feelings"], open_places, subjects, scores, rng, mind["wants"])
+				honoured = _honour_intention(trip, mind["feelings"], open_places, subjects, scores, rng, mind["wants"], gate_hour)
 				if not honoured.is_empty():
 					mind["intention"] = {}
 
@@ -577,7 +680,7 @@ func _decide(
 			var plan_intention := _make_intention(
 				str(plan_item.get("kind", "")), str(plan_item.get("id", "")), str(plan_item.get("name", "")), "plan", decision_unix
 			)
-			honoured = _honour_intention(plan_intention, mind["feelings"], open_places, subjects, scores, rng, mind["wants"])
+			honoured = _honour_intention(plan_intention, mind["feelings"], open_places, subjects, scores, rng, mind["wants"], gate_hour)
 			if not honoured.is_empty():
 				plan_item["done"] = true
 			break
@@ -588,6 +691,9 @@ func _decide(
 		intent = str(honoured["intent"])
 	else:
 		for candidate in INTENTS:
+			if small and candidate == "visit":
+				# Nobody else lives on the land.
+				continue
 			var score := float(scores[candidate]) + rng.randf_range(-0.15, 0.15)
 			if candidate == str(mind.get("last_intent", "")):
 				score *= 0.5
@@ -596,10 +702,26 @@ func _decide(
 				intent = candidate
 
 	# Where, and doing what, to meet the need behind the intent.
-	var candidates := _candidates_for_need(open_places, str(INTENT_NEEDS[intent]))
+	var candidates := _candidates_for_need(open_places, str(INTENT_NEEDS[intent]), gate_hour)
 	var place: Dictionary = {}
 	var activity: Dictionary = {}
-	if not honoured.is_empty():
+	var edge := {}
+	# Its very first moment on the land: it wakes up at home.
+	var waking := ""
+	if small and count == 0 and honoured.is_empty():
+		waking = str(town.get("waking", ""))
+	if small and waking == "" and honoured.is_empty() and intent == "explore":
+		edge = _try_the_edge(all_places, mind, home_id, hour, decision_unix, rng)
+	if waking != "":
+		intent = "reflect"
+		for home_variant in places:
+			if str(home_variant.get("id", "")) == home_id:
+				place = home_variant
+		activity = LAND_WAKE_ACTIVITY
+	elif not edge.is_empty():
+		place = edge["place"]
+		activity = edge["activity"]
+	elif not honoured.is_empty():
 		place = honoured["place"]
 		activity = honoured["activity"]
 	elif candidates.is_empty():
@@ -630,6 +752,8 @@ func _decide(
 	# How the experience felt. Confidence tilts it slightly; the rest is the
 	# world being the world.
 	var valence := rng.randf_range(-0.25, 0.6) + (float(mods["confidence"]) - 0.5) * 0.3
+	if not edge.is_empty():
+		valence += float(edge["valence_shift"])
 	valence = clampf(valence, -1.0, 1.0)
 
 	var place_id := str(place.get("id", "home"))
@@ -641,9 +765,15 @@ func _decide(
 	_bump_feeling(feelings, "activity:%s" % activity_id, valence)
 	if not companion.is_empty():
 		_bump_feeling(feelings, str(companion["id"]), valence)
+	var came_from := str(mind.get("location", home_id))
 	mind["location"] = place_id
 
-	_apply_drive_effects(mods, intent)
+	var slots := 1
+	if small:
+		slots = _land_slots(activity, place, came_from, decision_unix, rng)
+		_apply_land_needs(mods, activity, slots, valence, str(edge.get("kind", "")))
+	else:
+		_apply_drive_effects(mods, intent)
 	merged["mood_modifiers"] = mods
 	if intent == "explore":
 		restlessness = 0.0
@@ -651,15 +781,29 @@ func _decide(
 		restlessness = _clamp01(restlessness + 0.2)
 	mind["restlessness"] = restlessness
 
+	var text := ""
+	var times_before := 0
+	if small:
+		var done: Dictionary = mind["done"]
+		times_before = int(done.get(activity_id, 0))
+		if waking != "":
+			text = waking
+		elif not edge.is_empty():
+			text = str(edge["text"])
+		else:
+			text = _land_text(activity, times_before, valence, int(merged.get("personality_seed", 0)), rng)
+		done[activity_id] = times_before + 1
+	if text == "":
+		text = _compose_thought(
+			intent, place, activity, companion_name, valence, get_preferences(merged), mind["feelings"], places
+		)
 	var entry := {
 		"t": decision_unix,
 		"intent": intent,
 		"subject_id": str(companion["id"]) if not companion.is_empty() else "place:%s" % place_id,
 		"subject_name": companion_name if not companion.is_empty() else place_name,
 		"valence": snappedf(valence, 0.01),
-		"text": _compose_thought(
-			intent, place, activity, companion_name, valence, get_preferences(merged), mind["feelings"], places
-		),
+		"text": text,
 		"place_id": place_id,
 		"place_name": place_name,
 		"activity_id": activity_id,
@@ -667,7 +811,11 @@ func _decide(
 		"companion_name": companion_name,
 	}
 	if not honoured.is_empty():
-		entry["text"] = str(honoured["prefix"]) + str(entry["text"])
+		var prefix := str(honoured["prefix"])
+		if small and str(honoured["because"]) == "plan":
+			# Land lines are whole sentences, so the plan gets one of its own.
+			prefix = "I went to %s, as I'd planned. " % place_name
+		entry["text"] = prefix + str(entry["text"])
 		entry["because"] = str(honoured["because"])
 		if honoured.has("want_id"):
 			entry["buy_want"] = str(honoured["want_id"])
@@ -710,6 +858,16 @@ func _decide(
 					entry["text"] = str(entry["text"]) + " I saw a %s there. I'd like one." % seen_name
 					entry["noticed_want"] = str(new_want["id"])
 					entry["noticed_item"] = seen_name
+	if small:
+		if not edge.is_empty():
+			var edge_keys := {"sign": "sign_of", "blocked": "blocked_at", "found": "found_place"}
+			entry[str(edge_keys[str(edge["kind"])])] = str(edge["target"])
+		elif waking == "" and intent != "rest":
+			# Something noticed or wondered about takes the place of the tail.
+			# Going to sleep gets neither: its line is the last thing it knows.
+			if not _land_afterthought(entry, intent, place, hour, mind, all_places, decision_unix, rng):
+				entry["text"] = str(entry["text"]) + _land_tail(activity, times_before, valence, town, rng)
+		mind["busy_until"] = decision_unix + slots * DECISION_INTERVAL_SECONDS
 	var journal: Array = mind["journal"]
 	journal.append(entry)
 	if journal.size() > JOURNAL_LIMIT:
@@ -731,7 +889,7 @@ func _decide(
 # a companion for a visit.
 func _honour_intention(
 	intention: Dictionary, feelings: Dictionary, open_places: Array, subjects: Array,
-	scores: Dictionary, rng: RandomNumberGenerator, wants: Array = []
+	scores: Dictionary, rng: RandomNumberGenerator, wants: Array = [], hour: int = -1
 ) -> Dictionary:
 	var kind := str(intention.get("kind", ""))
 	var target_id := str(intention.get("id", ""))
@@ -796,6 +954,8 @@ func _honour_intention(
 		for activity_variant in target_place["activities"]:
 			if typeof(activity_variant) != TYPE_DICTIONARY:
 				continue
+			if not _hour_fits((activity_variant as Dictionary).get("hours", null), hour):
+				continue
 			var candidate := ""
 			for intent_key in INTENTS:
 				if str(INTENT_NEEDS[intent_key]) == str((activity_variant as Dictionary).get("satisfies", "")):
@@ -827,7 +987,7 @@ func _honour_intention(
 
 # Local calendar day number, using the same timezone bias as _local_hour.
 func _local_day(unix_time: int) -> int:
-	var local_unix := unix_time + int(Time.get_time_zone_from_system().get("bias", 0)) * 60
+	var local_unix := unix_time + _time_zone_bias_minutes() * 60
 	return int(local_unix / 86400)
 
 
@@ -1192,11 +1352,362 @@ func _place_is_open(place: Dictionary, hour: int) -> bool:
 	return int(place.get("opens", 0)) <= hour and hour < int(place.get("closes", 24))
 
 
-func _candidates_for_need(open_places: Array, need: String) -> Array:
+# "hours": [from, to) limits when something can be done or seen; it wraps past
+# midnight when from is later than to. Anything else means any time.
+func _hour_fits(hours_variant: Variant, hour: int) -> bool:
+	if hour < 0 or typeof(hours_variant) != TYPE_ARRAY or (hours_variant as Array).size() != 2:
+		return true
+	var from_hour := int(hours_variant[0])
+	var to_hour := int(hours_variant[1])
+	if from_hour == to_hour:
+		return true
+	if from_hour < to_hour:
+		return from_hour <= hour and hour < to_hour
+	return hour >= from_hour or hour < to_hour
+
+
+func _place_stage(known: Dictionary, place_id: String) -> String:
+	var record = known.get(place_id, null)
+	if typeof(record) != TYPE_DICTIONARY:
+		return ""
+	return str((record as Dictionary).get("stage", ""))
+
+
+# Home plus the places it has found.
+func _found_places(places: Array, mind: Dictionary, home_id: String) -> Array:
+	var known: Dictionary = {}
+	var known_variant = mind.get("known_places", null)
+	if typeof(known_variant) == TYPE_DICTIONARY:
+		known = known_variant
+	var rows: Array = []
+	for place_variant in places:
+		var place: Dictionary = place_variant
+		var place_id := str(place.get("id", ""))
+		if place_id == home_id or _place_stage(known, place_id) == "found":
+			rows.append(place)
+	return rows
+
+
+func _has_open_sign(mind: Dictionary) -> bool:
+	var known_variant = mind.get("known_places", null)
+	if typeof(known_variant) != TYPE_DICTIONARY:
+		return false
+	for place_id in (known_variant as Dictionary).keys():
+		if _place_stage(known_variant as Dictionary, str(place_id)) == "sign":
+			return true
+	return false
+
+
+# The land as the buddy knows it: home, the places it has found, and the paths
+# between them. Everything outside the mind reads the land through this.
+func known_town(profile: Dictionary, land: Dictionary) -> Dictionary:
+	var mind: Dictionary = {}
+	var mind_variant = profile.get("mind", null)
+	if typeof(mind_variant) == TYPE_DICTIONARY:
+		mind = mind_variant
+	var home_id := str(land.get("home_place", "home"))
+	var places: Array = _found_places(_usable_places(land), mind, home_id)
+	var ids := {}
+	for place_variant in places:
+		ids[str((place_variant as Dictionary).get("id", ""))] = true
+	var paths: Array = []
+	var paths_variant = land.get("paths", null)
+	if typeof(paths_variant) == TYPE_ARRAY:
+		for path_variant in paths_variant:
+			if typeof(path_variant) != TYPE_ARRAY or (path_variant as Array).size() != 2:
+				continue
+			if ids.has(str(path_variant[0])) and ids.has(str(path_variant[1])):
+				paths.append(path_variant)
+	var known := land.duplicate(false)
+	known["places"] = places.duplicate(true)
+	known["paths"] = paths.duplicate(true)
+	return known
+
+
+# The first place a try can start from: one it has found, that is open now.
+func _edge_origin(discover: Dictionary, all_places: Array, known: Dictionary, home_id: String, hour: int) -> Dictionary:
+	var from_variant = discover.get("from", null)
+	if typeof(from_variant) != TYPE_ARRAY:
+		return {}
+	for from_id_variant in from_variant:
+		var from_id := str(from_id_variant)
+		if from_id != home_id and _place_stage(known, from_id) != "found":
+			continue
+		for place_variant in all_places:
+			var place: Dictionary = place_variant
+			if str(place.get("id", "")) == from_id and _place_is_open(place, hour):
+				return place
+	return {}
+
+
+# A string, or one string per place the try started from.
+func _edge_text(value: Variant, origin_id: String) -> String:
+	if typeof(value) == TYPE_STRING:
+		return str(value)
+	if typeof(value) == TYPE_DICTIONARY:
+		var by_origin: Dictionary = value
+		if by_origin.has(origin_id):
+			return str(by_origin[origin_id])
+		for key in by_origin.keys():
+			return str(by_origin[key])
+	return ""
+
+
+# Going to the edge of what it knows. Returns {} when nothing new is in reach
+# right now, or when it does something familiar this time; otherwise what
+# happened: {"kind": "sign"|"blocked"|"found", "target", "place", "activity",
+# "text", "valence_shift"}. A sign comes first where the place has one; a
+# failed try makes the next one more likely.
+func _try_the_edge(
+	all_places: Array, mind: Dictionary, home_id: String, hour: int, decision_unix: int, rng: RandomNumberGenerator
+) -> Dictionary:
+	var known: Dictionary = mind["known_places"]
+	var reach: Array = []
+	for place_variant in all_places:
+		var target: Dictionary = place_variant
+		var target_id := str(target.get("id", ""))
+		var stage := _place_stage(known, target_id)
+		if target_id == home_id or stage == "found" or not _place_is_open(target, hour):
+			continue
+		# After a failed try it leaves that place for another day.
+		if stage == "sign":
+			var tried: Dictionary = known[target_id]
+			if int(tried.get("tries", 0)) > 0 and _local_day(int(tried.get("t", 0))) == _local_day(decision_unix):
+				continue
+		var discover_variant = target.get("discover", null)
+		if typeof(discover_variant) != TYPE_DICTIONARY:
+			continue
+		var origin := _edge_origin(discover_variant as Dictionary, all_places, known, home_id, hour)
+		if origin.is_empty():
+			continue
+		reach.append({"place": target, "origin": origin, "stage": stage})
+	# While it has found nothing at all, an explore always goes for the door.
+	var edge_chance := 1.0
+	for known_id in known.keys():
+		if _place_stage(known, str(known_id)) == "found":
+			edge_chance = LAND_EDGE_CHANCE
+			break
+	if reach.is_empty() or rng.randf() >= edge_chance:
+		return {}
+	# Somewhere it already has a sign of pulls twice as hard as somewhere new.
+	var total := 0.0
+	for row in reach:
+		total += 2.0 if str(row["stage"]) == "sign" else 1.0
+	var roll := rng.randf() * total
+	var chosen: Dictionary = reach[reach.size() - 1]
+	var cumulative := 0.0
+	for row in reach:
+		cumulative += 2.0 if str(row["stage"]) == "sign" else 1.0
+		if roll <= cumulative:
+			chosen = row
+			break
+	var target_place: Dictionary = chosen["place"]
+	var origin_place: Dictionary = chosen["origin"]
+	var origin_id := str(origin_place.get("id", ""))
+	var chosen_id := str(target_place.get("id", ""))
+	var discover: Dictionary = target_place["discover"]
+	var record := {"stage": "", "t": decision_unix, "tries": 0}
+	var old_record = known.get(chosen_id, null)
+	if typeof(old_record) == TYPE_DICTIONARY:
+		record["stage"] = str((old_record as Dictionary).get("stage", ""))
+		record["tries"] = int((old_record as Dictionary).get("tries", 0))
+	var sign_text := _edge_text(discover.get("sign", ""), origin_id)
+	if str(record["stage"]) == "" and sign_text != "":
+		record["stage"] = "sign"
+		known[chosen_id] = record
+		return {"kind": "sign", "target": chosen_id, "place": origin_place, "activity": LAND_EDGE_ACTIVITY, "text": sign_text, "valence_shift": 0.2}
+	var chance := clampf(float(discover.get("chance", 1.0)) + LAND_TRY_BONUS * float(int(record["tries"])), 0.0, 1.0)
+	if rng.randf() < chance:
+		record["stage"] = "found"
+		known[chosen_id] = record
+		return {"kind": "found", "target": chosen_id, "place": target_place, "activity": LAND_ARRIVE_ACTIVITY, "text": _edge_text(discover.get("found", ""), origin_id), "valence_shift": 0.35}
+	var blocked_text := "I tried to go further than I have been, and turned back."
+	var blocked_variant = discover.get("blocked", null)
+	if typeof(blocked_variant) == TYPE_ARRAY and not (blocked_variant as Array).is_empty():
+		blocked_text = str((blocked_variant as Array)[int(record["tries"]) % (blocked_variant as Array).size()])
+	record["stage"] = "sign"
+	record["tries"] = int(record["tries"]) + 1
+	known[chosen_id] = record
+	return {"kind": "blocked", "target": chosen_id, "place": origin_place, "activity": LAND_EDGE_ACTIVITY, "text": blocked_text, "valence_shift": -0.25}
+
+
+# How many decision slots this takes: its minutes (a little more or less each
+# time), or until its hour next comes round (it sleeps until morning), plus the
+# walk there.
+func _land_slots(activity: Dictionary, place: Dictionary, came_from: String, decision_unix: int, rng: RandomNumberGenerator) -> int:
+	var minutes := float(activity.get("minutes", LAND_DEFAULT_MINUTES)) * rng.randf_range(0.85, 1.15)
+	if activity.has("until_hour"):
+		# Give or take, and never less than an hour.
+		var local_unix := decision_unix + _time_zone_bias_minutes() * 60
+		var now_minutes := int((local_unix % 86400) / 60)
+		var left := (int(activity["until_hour"]) * 60 - now_minutes + 1440) % 1440
+		minutes = maxf(60.0, float(left) + rng.randf_range(0.0, 40.0))
+	if str(place.get("id", "")) != came_from:
+		minutes += float(LAND_TRAVEL_MINUTES) * float(place.get("distance", 0))
+	return maxi(1, int(round(minutes * 60.0 / float(DECISION_INTERVAL_SECONDS))))
+
+
+# In the land, needs move with time and with what it does: being awake tires
+# it, comfort fades, and how things go moves its confidence. Company is left
+# alone here: nobody else lives on the land, and only talking with the person
+# changes it (note_talk).
+func _apply_land_needs(mods: Dictionary, activity: Dictionary, slots: int, valence: float, edge_kind: String) -> void:
+	var n := float(slots)
+	var need := str(activity.get("satisfies", ""))
+	var strain := float(mods["energy_strain"])
+	var comfort := float(mods["comfort"])
+	var confidence := float(mods["confidence"])
+	if activity.has("until_hour"):
+		# Asleep: it mends for as long as it sleeps.
+		strain = maxf(LAND_RESTED, strain - LAND_SLEEP_PER_SLOT * n)
+		comfort -= LAND_COMFORT_FADE_ASLEEP_PER_SLOT * n
+	else:
+		comfort -= LAND_COMFORT_FADE_PER_SLOT * n
+		if need == "energy":
+			strain -= LAND_REST_PER_SLOT * n
+		else:
+			strain += LAND_TIRE_PER_SLOT * n
+			if need == "curiosity":
+				strain += LAND_EXPLORE_TIRE_PER_SLOT * n
+		if need == "comfort":
+			comfort += LAND_COMFORT_GAIN_PER_SLOT * n
+	if valence >= 0.2:
+		confidence += 0.015
+	elif valence < -0.05:
+		confidence -= 0.03
+		comfort -= 0.02
+	if edge_kind == "found":
+		confidence += 0.08
+	elif edge_kind == "sign":
+		confidence += 0.03
+	elif edge_kind == "blocked":
+		confidence -= 0.05
+	confidence += (0.5 - confidence) * LAND_CONFIDENCE_PULL
+	mods["energy_strain"] = _clamp01(strain)
+	mods["comfort"] = _clamp01(comfort)
+	mods["confidence"] = _clamp01(confidence)
+
+
+# True when this time gets one of the activity's own "bad" lines: only when it
+# went properly wrong, so those lines stay rare.
+func _land_uses_bad_line(activity: Dictionary, valence: float) -> bool:
+	var bad_variant = activity.get("bad", null)
+	return valence < LAND_BAD_LINE_BELOW and typeof(bad_variant) == TYPE_ARRAY and not (bad_variant as Array).is_empty()
+
+
+# The authored line for what it just did: the first-time line once, a "bad"
+# line when it went badly, otherwise its lines in turn (from a starting point
+# that differs per buddy). "" when the activity has no lines of its own.
+func _land_text(activity: Dictionary, times_done: int, valence: float, buddy_seed: int, rng: RandomNumberGenerator) -> String:
+	var first := str(activity.get("first", ""))
+	if times_done == 0 and first != "":
+		return first
+	if _land_uses_bad_line(activity, valence):
+		var bad: Array = activity["bad"]
+		return str(bad[rng.randi_range(0, bad.size() - 1)])
+	var lines_variant = activity.get("lines", null)
+	if typeof(lines_variant) != TYPE_ARRAY or (lines_variant as Array).is_empty():
+		return ""
+	var lines: Array = lines_variant
+	var offset := int(hash("%d|%s" % [buddy_seed, str(activity.get("id", ""))]) % lines.size())
+	return str(lines[(times_done + offset) % lines.size()])
+
+
+# A few words on how it felt, for after an ordinary line: sometimes when it
+# went well, always when it went badly. " " plus the words, or "". The
+# first-time line and the "bad" lines already say how it went.
+func _land_tail(activity: Dictionary, times_done: int, valence: float, land: Dictionary, rng: RandomNumberGenerator) -> String:
+	if times_done == 0 and str(activity.get("first", "")) != "":
+		return ""
+	if _land_uses_bad_line(activity, valence):
+		return ""
+	var lines_variant = activity.get("lines", null)
+	if typeof(lines_variant) != TYPE_ARRAY or (lines_variant as Array).is_empty():
+		return ""
+	var tails: Dictionary = {}
+	var tails_variant = land.get("tails", null)
+	if typeof(tails_variant) == TYPE_DICTIONARY:
+		tails = tails_variant
+	var pool_variant = null
+	if valence >= 0.2 and rng.randf() < LAND_GOOD_TAIL_CHANCE:
+		pool_variant = tails.get("good", null)
+	elif valence < -0.05:
+		pool_variant = tails.get("bad", null)
+	if typeof(pool_variant) != TYPE_ARRAY or (pool_variant as Array).is_empty():
+		return ""
+	return " " + str((pool_variant as Array)[rng.randi_range(0, (pool_variant as Array).size() - 1)])
+
+
+# After the line. While it rests: nothing. While it thinks: somewhere it has a
+# sign of but has not reached may come back to it. Otherwise it may notice
+# something here that it has never seen (once each). Returns true when it
+# added something; a line is never grown past LAND_MAX_LINE_CHARS.
+func _land_afterthought(
+	entry: Dictionary, intent: String, place: Dictionary, hour: int, mind: Dictionary, all_places: Array,
+	decision_unix: int, rng: RandomNumberGenerator
+) -> bool:
+	var room := LAND_MAX_LINE_CHARS - str(entry["text"]).length() - 1
+	if intent == "rest":
+		return false
+	if intent == "reflect":
+		var known: Dictionary = mind["known_places"]
+		var oldest_id := ""
+		var oldest_t := 0
+		var oldest_lines: Array = []
+		for place_variant in all_places:
+			var other: Dictionary = place_variant
+			var other_id := str(other.get("id", ""))
+			if _place_stage(known, other_id) != "sign":
+				continue
+			var discover_variant = other.get("discover", null)
+			if typeof(discover_variant) != TYPE_DICTIONARY:
+				continue
+			var wonder_variant = (discover_variant as Dictionary).get("wonder", null)
+			if typeof(wonder_variant) != TYPE_ARRAY or (wonder_variant as Array).is_empty():
+				continue
+			var since := int((known[other_id] as Dictionary).get("t", 0))
+			if oldest_id == "" or since < oldest_t:
+				oldest_id = other_id
+				oldest_t = since
+				oldest_lines = wonder_variant
+		if oldest_id == "" or rng.randf() >= LAND_WONDER_CHANCE:
+			return false
+		var wonder := str(oldest_lines[rng.randi_range(0, oldest_lines.size() - 1)])
+		if wonder.length() > room:
+			return false
+		entry["text"] = str(entry["text"]) + " " + wonder
+		entry["wonder_about"] = oldest_id
+		return true
+	var seen: Dictionary = mind["seen"]
+	var unseen: Array = []
+	var sights_variant = place.get("sights", null)
+	if typeof(sights_variant) == TYPE_ARRAY:
+		for sight_variant in sights_variant:
+			if typeof(sight_variant) != TYPE_DICTIONARY:
+				continue
+			var sight: Dictionary = sight_variant
+			var sight_id := str(sight.get("id", ""))
+			if sight_id == "" or seen.has(sight_id) or not _hour_fits(sight.get("hours", null), hour):
+				continue
+			if str(sight.get("line", "")).length() > room:
+				continue
+			unseen.append(sight)
+	if unseen.is_empty() or rng.randf() >= LAND_SIGHT_CHANCE:
+		return false
+	var noticed: Dictionary = unseen[rng.randi_range(0, unseen.size() - 1)]
+	entry["text"] = str(entry["text"]) + " " + str(noticed.get("line", ""))
+	entry["sight"] = str(noticed.get("id", ""))
+	seen[str(noticed.get("id", ""))] = decision_unix
+	return true
+
+
+func _candidates_for_need(open_places: Array, need: String, hour: int = -1) -> Array:
 	var rows: Array = []
 	for place in open_places:
 		for activity_variant in place["activities"]:
 			if typeof(activity_variant) != TYPE_DICTIONARY:
+				continue
+			if not _hour_fits((activity_variant as Dictionary).get("hours", null), hour):
 				continue
 			if str((activity_variant as Dictionary).get("satisfies", "")) == need:
 				rows.append({"place": place, "activity": activity_variant})
@@ -1230,7 +1741,7 @@ func _bump_feeling(feelings: Dictionary, key: String, valence: float) -> void:
 
 
 func _local_hour(unix_time: int) -> int:
-	var local_unix := unix_time + int(Time.get_time_zone_from_system().get("bias", 0)) * 60
+	var local_unix := unix_time + _time_zone_bias_minutes() * 60
 	return int(Time.get_datetime_dict_from_unix_time(local_unix).get("hour", 12))
 
 
