@@ -267,6 +267,38 @@ Status: `in_progress` (see `PLAN13_TOWN_AND_CONVERSATION.md`)
 - [ ] Part C, C1+C2 part 2: asking you for things, a Wants window, projects
 - [ ] Part C: nightly reflection, making things, tastes and relationships
 
+The unchecked items above are reshaped by Plan 14: the buddy now starts with
+only a house and land and builds its own town, with no townspeople for now.
+
+### Plan 14: Small beginnings
+
+Status: `in_progress` (see `PLAN14_SMALL_BEGINNINGS.md`)
+
+- [x] 1a Fast-forward tool (`tools/simulate_days.py`, `LifeSimTest`)
+- [x] 1b House and land with discovery, behind a setting; known filter (`land_data.gd`, `LandLifeTest`)
+- [x] 1c Fresh start with backup; the new world on by default (`fresh_start_if_due`, `FreshStartTest`, D-007)
+- [x] Chat on the land: its own wording, measured on gemma3:4b and gemma3:12b (`LAND_CHAT_SYSTEM_PROMPT`, `mind_chat_test`)
+- [x] 2a-1 World host and the visit, behind a setting that is off by default (`world_host.gd`, `visit_controller.gd`, `buddy_whereabouts.gd`, `WorldHostTest`)
+- [x] 2a-2 The world host on by default (D-010), a journal line after the host was down, the host choosing the name (`_is_real_launch_args`, `note_still_world`, `note_name`, `WorldHostTest`)
+- [x] 2b-1 Memory: short-term (`memory.today`) and long-term memory, the nightly pass, fading, the alone belief (`memory_service.gd`, `MemoryNightTest`, D-012)
+- [x] 2b-2 Memory: recall into chat, the check on what it says, the land wording goes (`recall_land`, `check_reply`, `ChatCheckTest`, `ChatEval.tscn`, D-012)
+- [x] 2c-1 Letters arrive: the mailbox, working out the console, the pull and reading, delivery through the host's inbox, the Letters window (`letter_service.gd`, `LetterTest`, 2026-11-19)
+- [ ] 2c-2 Writing back with the model: its first letter when it works out the console, answers from recalled memories checked before they go, letters into its memory
+- [ ] 3 The world's rules and the things on the land
+- [ ] 4 2.5D view on the desktop
+- [ ] 5 Public world on Hardlight, nothing about you published
+- [ ] 6 Learning by trying, study time by difficulty
+- [ ] 7 Tools and making things
+- [ ] 8 Designing and building, assembled in 3D from a modular kit
+- [ ] 9 The console, part two: asking for and sending materials
+- [ ] 10 Self-sheet nightly rules, things on its mind, interests
+- [ ] 11 Library and encyclopedia research
+- [ ] 12 Labelled model library for objects
+- [ ] 13 Commerce and the market it runs
+- [ ] 14 Mind view and library shelves
+- [ ] 15 Things you leave appear on the land
+- [ ] Later: watchdog that keeps the host running, with the move to Nexus (expected after a delivery due around 2026-12-05, no guarantee)
+
 ### Plan 12C: Things left for the buddy, visible places
 
 Status: `not started`

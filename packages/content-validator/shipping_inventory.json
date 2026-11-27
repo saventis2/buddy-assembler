@@ -10,6 +10,7 @@
     "res://scripts/encounters/encounter_scheduler.gd",
     "res://scripts/interaction/chat_command_router.gd",
     "res://scripts/launch_router.gd",
+    "res://scripts/persistence/buddy_whereabouts.gd",
     "res://scripts/persistence/save_store.gd",
     "res://scripts/persistence/schema_migrations.gd",
     "res://scripts/progression/unlock_table.gd",
@@ -17,6 +18,8 @@
     "res://scripts/services/economy_service.gd",
     "res://scripts/services/growth_service.gd",
     "res://scripts/services/identity_service.gd",
+    "res://scripts/services/land_data.gd",
+    "res://scripts/services/letter_service.gd",
     "res://scripts/services/memory_service.gd",
     "res://scripts/services/mind_service.gd",
     "res://scripts/services/mind_thinker.gd",
@@ -27,7 +30,9 @@
     "res://scripts/utility/manual_verification_report.gd",
     "res://scripts/utility/productivity_tracker.gd",
     "res://scripts/utility/prompt_cadence.gd",
+    "res://scripts/visit_controller.gd",
     "res://scripts/visual/portable_buddy_fallback.gd",
+    "res://scripts/world_host.gd",
     "res://content/core_pack/character/idle.png",
     "res://content/core_pack/character/wander.png",
     "res://content/core_pack/character/sit.png",
@@ -119,6 +124,7 @@
     "res://scripts/encounters/encounter_scheduler.gd",
     "res://scripts/interaction/chat_command_router.gd",
     "res://scripts/launch_router.gd",
+    "res://scripts/persistence/buddy_whereabouts.gd",
     "res://scripts/persistence/save_store.gd",
     "res://scripts/persistence/schema_migrations.gd",
     "res://scripts/progression/unlock_table.gd",
@@ -126,6 +132,8 @@
     "res://scripts/services/economy_service.gd",
     "res://scripts/services/growth_service.gd",
     "res://scripts/services/identity_service.gd",
+    "res://scripts/services/land_data.gd",
+    "res://scripts/services/letter_service.gd",
     "res://scripts/services/memory_service.gd",
     "res://scripts/services/mind_service.gd",
     "res://scripts/services/mind_thinker.gd",
@@ -136,6 +144,8 @@
     "res://scripts/utility/manual_verification_report.gd",
     "res://scripts/utility/productivity_tracker.gd",
     "res://scripts/utility/prompt_cadence.gd",
-    "res://scripts/visual/portable_buddy_fallback.gd"
+    "res://scripts/visit_controller.gd",
+    "res://scripts/visual/portable_buddy_fallback.gd",
+    "res://scripts/world_host.gd"
   ]
 }
