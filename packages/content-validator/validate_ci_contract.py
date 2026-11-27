@@ -14,15 +14,39 @@ from headless_suite import load_contract, load_toolchain
 
 _AUTHORITY_WORKFLOW_SHA256 = {
     ".github/workflows/runtime-smoke.yml": (
-        "9f16f5a4b2909c781710ef8b9cd04607ff936320c7b88d9ed360f988580dda2a"
+        "844828acdf85f2fb366203180d9542ca31870ce0dbba3eda569872632967e2dc"
     ),
     ".github/workflows/python-lint.yml": (
-        "46ecd044cb13fc5f55272bd08ef5a0c844fc37e8293fadb2375c430e5b966356"
+        "d06292a88695e2950b262fe3bc07b433fc43e32d2ddc2ff80c3f36cc727b2afa"
     ),
     ".github/workflows/content-validator.yml": (
-        "d32bef8a238b764b062be6a37628b0cf6e5062c026a49b399498e713d0c9df74"
+        "6516f75087ba0087539b16ebc10621679ef201ebae75d96263152317f608f1f8"
     ),
 }
+
+
+# Every gate workflow shares this block (council Q2, 2026-11-27): a newer push
+# to a pull request cancels that pull request's older run, and every other
+# run, each push to main above all, has a group of its own (its run id), so it
+# is never cancelled nor dropped while it waits behind another.
+_PULL_REQUEST_ONLY_CONCURRENCY = (
+    "concurrency:",
+    "  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}",
+    "  cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
+)
+
+
+def _workflow_cancels_only_superseded_pull_request_runs(workflow: str) -> bool:
+    """Require the shared concurrency block, exactly, once, with nothing added."""
+    lines = [line.rstrip() for line in workflow.splitlines()]
+    head = _PULL_REQUEST_ONLY_CONCURRENCY[0]
+    if lines.count(head) != 1:
+        return False
+    start = lines.index(head)
+    end = start + len(_PULL_REQUEST_ONLY_CONCURRENCY)
+    if tuple(lines[start:end]) != _PULL_REQUEST_ONLY_CONCURRENCY:
+        return False
+    return end >= len(lines) or not lines[end].startswith(" ")
 
 
 def _normalized_text_sha256(text: str) -> str:
@@ -485,17 +509,26 @@ def validate(repo: Path) -> list[str]:
     if _workflow_has_run_shell_default(content_workflow):
         errors.append("content workflow must not set defaults.run.shell")
     if not _workflow_has_only_canonical_top_level_lines(
-        workflow, ("name: Runtime smoke", "on:", "env:", "jobs:")
+        workflow, ("name: Runtime smoke", "on:", "concurrency:", "env:", "jobs:")
     ):
         errors.append("runtime workflow has non-canonical top-level contract metadata")
     if not _workflow_has_only_canonical_top_level_lines(
-        python_workflow, ("name: Python lint", "on:", "jobs:")
+        python_workflow, ("name: Python lint", "on:", "concurrency:", "jobs:")
     ):
         errors.append("python workflow has non-canonical top-level contract metadata")
     if not _workflow_has_only_canonical_top_level_lines(
-        content_workflow, ("name: Content Validator", "on:", "jobs:")
+        content_workflow, ("name: Content Validator", "on:", "concurrency:", "jobs:")
     ):
         errors.append("content workflow has non-canonical top-level contract metadata")
+    for label, text in (
+        ("runtime", workflow),
+        ("python", python_workflow),
+        ("content", content_workflow),
+    ):
+        if not _workflow_cancels_only_superseded_pull_request_runs(text):
+            errors.append(
+                f"{label} workflow must cancel only superseded pull request runs, never main"
+            )
 
     version_match = re.search(r'^\s*GODOT_VERSION:\s*"([^"]+)"\s*$', workflow, re.MULTILINE)
     release_match = re.search(r'^\s*GODOT_RELEASE:\s*"([^"]+)"\s*$', workflow, re.MULTILINE)

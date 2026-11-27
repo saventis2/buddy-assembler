@@ -155,6 +155,58 @@ class CiContractDriftTests(unittest.TestCase):
                     validate_ci_contract._normalized_text_sha256(text), expected
                 )
 
+    _CANCEL_RULE = "must cancel only superseded pull request runs, never main"
+    _GROUP = (
+        "  group: ${{ github.workflow }}-"
+        "${{ github.event.pull_request.number || github.run_id }}"
+    )
+    _CANCEL = "  cancel-in-progress: ${{ github.event_name == 'pull_request' }}"
+
+    def test_concurrency_can_never_cancel_a_run_on_main(self) -> None:
+        def mutate(root: Path) -> None:
+            self._replace(
+                root / ".github/workflows/runtime-smoke.yml",
+                self._CANCEL,
+                "  cancel-in-progress: true",
+            )
+
+        errors = self._errors_after(mutate)
+        self.assertIn(f"runtime workflow {self._CANCEL_RULE}", errors)
+
+    def test_concurrency_group_keeps_each_main_run_apart(self) -> None:
+        def mutate(root: Path) -> None:
+            self._replace(
+                root / ".github/workflows/python-lint.yml",
+                self._GROUP,
+                "  group: ${{ github.workflow }}-${{ github.ref }}",
+            )
+
+        errors = self._errors_after(mutate)
+        self.assertIn(f"python workflow {self._CANCEL_RULE}", errors)
+
+    def test_every_gate_workflow_needs_the_concurrency_block(self) -> None:
+        def mutate(root: Path) -> None:
+            self._replace(
+                root / ".github/workflows/content-validator.yml",
+                f"concurrency:\n{self._GROUP}\n{self._CANCEL}\n",
+                "",
+            )
+
+        errors = self._errors_after(mutate)
+        self.assertIn(f"content workflow {self._CANCEL_RULE}", errors)
+        self.assertIn("content workflow has non-canonical top-level contract metadata", errors)
+
+    def test_concurrency_block_cannot_gain_keys(self) -> None:
+        def mutate(root: Path) -> None:
+            self._replace(
+                root / ".github/workflows/runtime-smoke.yml",
+                f"{self._CANCEL}\n",
+                f"{self._CANCEL}\n  queue: max\n",
+            )
+
+        errors = self._errors_after(mutate)
+        self.assertIn(f"runtime workflow {self._CANCEL_RULE}", errors)
+
     def test_content_validator_step_condition_cannot_bypass_contract_validation(self) -> None:
         def mutate(root: Path) -> None:
             self._insert_direct_key(

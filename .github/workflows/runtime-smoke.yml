@@ -6,6 +6,13 @@ on:
     branches:
       - main
 
+# A newer push to a pull request cancels that pull request's older run. Every
+# other run (each push to main above all) has a group of its own, so it is
+# never cancelled, nor dropped while it waits. (Council Q2, 2026-11-27.)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 # Two jobs:
 #  - parse-and-smoke (ubuntu): fast gate. Headless Godot import, parse check,
 #    the shared required-scene contract, exact PASS markers, and a controlled
@@ -39,6 +46,21 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Council Q2 tripwire (repository visibility)
+        env:
+          REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
+        run: |
+          set -euo pipefail
+          # Standard-runner minutes are unbilled only while the repository is
+          # public. If that changes, CI must move to the gated policy (the
+          # Linux pack and verify-pck on every PR, the Windows export gated),
+          # which only the owner can land, so every run fails until it does.
+          if [ "${REPOSITORY_PRIVATE}" != "false" ]; then
+            echo "::error title=Council Q2 tripwire::The repository is not public, so Actions minutes now bill. Move CI to the gated policy before more rows merge."
+            exit 1
+          fi
+          echo "Repository is public: standard-runner Actions minutes are unbilled (council Q2)."
 
       - name: Setup Python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0

@@ -79,3 +79,45 @@ known-bad schema documents (`fixtures/schema/`) to guard validator behavior.
 Schema fixtures live in their own `fixtures/schema/` subdirectory, separate
 from manifest fixtures in `fixtures/`, so the two kinds are never accidentally
 cross-checked.
+
+## Headless suite: limits, timings and the machine lock
+
+`headless_suite.py` runs the required Godot suite (`required_headless_scenes.json`)
+for both the local gate and CI.
+
+- **Timings.** Every case prints `headless_suite[<id>]: took <seconds> s (limit <n> s)`,
+  so limits come from measurements.
+- **Per-case limits.** A case may carry `"timeout_seconds"`, an integer from 1 to 600.
+  Set it to about 1.5x the case's p95 time over at least five local runs. Every other
+  case uses the runner's `--timeout` (90 in CI and locally). There is no global raise
+  and no local-only override.
+- **The machine lock.** One required suite or capture runs at a time on a machine. A
+  second Godot run shares the CPU, pushes slow cases past their limits and spoils
+  timings, so it is refused, not warned. It exits 2, naming the lock file:
+  `buddy-runtime-godot.lock` in the system temp folder. The lock is an OS file lock,
+  so it is released when its holder exits, even on a crash. Capture tools take the
+  same lock.
+
+## CI tripwires (council Q2)
+
+CI runs every check on every PR. A newer push to a pull request cancels that pull
+request's older run. Runs on main are never cancelled.
+
+That policy holds only while the repository is public, which keeps standard-runner
+minutes unbilled, and while runs stay quick. Two tripwires watch it:
+
+- **Visibility.** The Runtime smoke workflow fails on every run if the repository is
+  not public.
+- **Speed.** Before pushing a row, run the local check:
+
+  ```powershell
+  python packages/content-validator/ci_tripwires.py
+  ```
+
+  It reads the repository's visibility and the last three completed Runtime smoke runs
+  on main through `gh`, read-only. It fails when the median queue wait is over 5
+  minutes or the median run is over 6.
+
+Either trip means CI moves to the gated policy: the Linux pack and `verify-pck` on every
+PR, with the Windows export gated. The workflows are protected by gate authority, so
+only the owner can land that change.
