@@ -8,6 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import Callable
+from unittest import mock
 
 
 MODULE_PATH = Path(__file__).with_name("validate_ci_contract.py")
@@ -154,6 +155,145 @@ class CiContractDriftTests(unittest.TestCase):
                 self.assertEqual(
                     validate_ci_contract._normalized_text_sha256(text), expected
                 )
+
+    _CANCEL_RULE = "must cancel only superseded pull request runs, never main"
+    _GROUP = (
+        "  group: ${{ github.workflow }}-"
+        "${{ github.event.pull_request.number || github.run_id }}"
+    )
+    _CANCEL = "  cancel-in-progress: ${{ github.event_name == 'pull_request' }}"
+
+    def _set_case_timeout(self, root: Path, case_id: str, seconds: int) -> None:
+        path = root / "apps/runtime-godot/tests/required_headless_scenes.json"
+        data = json.loads(path.read_text(encoding="utf-8"))
+        matches = [row for row in data["tests"] if row["id"] == case_id]
+        self.assertEqual(len(matches), 1)
+        matches[0]["timeout_seconds"] = seconds
+        path.write_text(json.dumps(data), encoding="utf-8")
+
+    def test_case_limit_must_be_on_the_protected_allow_list(self) -> None:
+        errors = self._errors_after(lambda root: self._set_case_timeout(root, "save-store", 120))
+        self.assertTrue(
+            any("beyond the protected per-case allow-list" in error for error in errors), errors
+        )
+
+    _SAVE_STORE_LIMIT = {"save-store": ("res://tests/SaveStoreTest.tscn", (), 120)}
+
+    def test_allow_listed_case_limit_passes_but_not_a_larger_one(self) -> None:
+        with mock.patch.dict(
+            validate_ci_contract._CASE_TIMEOUT_SECONDS_ALLOWED, self._SAVE_STORE_LIMIT
+        ):
+            allowed = self._errors_after(lambda root: self._set_case_timeout(root, "save-store", 120))
+            larger = self._errors_after(lambda root: self._set_case_timeout(root, "save-store", 121))
+        self.assertEqual(allowed, [])
+        self.assertTrue(
+            any("beyond the protected per-case allow-list" in error for error in larger), larger
+        )
+
+    def test_allow_listed_limit_cannot_move_to_another_scene(self) -> None:
+        # Swapping scenes between ids would hand save-store's limit to the
+        # mind-service scene while every scene stays in the contract.
+        def mutate(root: Path) -> None:
+            self._set_case_timeout(root, "save-store", 120)
+            path = root / "apps/runtime-godot/tests/required_headless_scenes.json"
+            data = json.loads(path.read_text(encoding="utf-8"))
+            rows = {row["id"]: row for row in data["tests"]}
+            rows["save-store"]["scene"], rows["mind-service"]["scene"] = (
+                rows["mind-service"]["scene"],
+                rows["save-store"]["scene"],
+            )
+            path.write_text(json.dumps(data), encoding="utf-8")
+
+        with mock.patch.dict(
+            validate_ci_contract._CASE_TIMEOUT_SECONDS_ALLOWED, self._SAVE_STORE_LIMIT
+        ):
+            errors = self._errors_after(mutate)
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("beyond the protected per-case allow-list", errors[0])
+
+    def test_local_runner_cannot_raise_or_add_a_timeout(self) -> None:
+        path = "apps/runtime-godot/tests/run_headless_checks.ps1"
+        for raised in ("--timeout 300", "--timeout 90 `\n    --timeout 600"):
+            with self.subTest(raised=raised):
+
+                def mutate(root: Path, raised: str = raised) -> None:
+                    self._replace(root / path, "--timeout 90", raised)
+
+                errors = self._errors_after(mutate)
+                self.assertIn(
+                    "local headless script does not actively execute the shared headless contract",
+                    errors,
+                )
+
+    def test_local_runner_command_cannot_be_continued_into(self) -> None:
+        def mutate(root: Path) -> None:
+            path = root / "apps/runtime-godot/tests/run_headless_checks.ps1"
+            self._replace(path, "& $Python $runner `", 'Write-Host "skip" `\n& $Python $runner `')
+
+        errors = self._errors_after(mutate)
+        self.assertIn(
+            "local headless script does not actively execute the shared headless contract", errors
+        )
+
+    def test_concurrency_can_never_cancel_a_run_on_main(self) -> None:
+        def mutate(root: Path) -> None:
+            self._replace(
+                root / ".github/workflows/runtime-smoke.yml",
+                self._CANCEL,
+                "  cancel-in-progress: true",
+            )
+
+        errors = self._errors_after(mutate)
+        self.assertIn(f"runtime workflow {self._CANCEL_RULE}", errors)
+
+    def test_concurrency_group_keeps_each_main_run_apart(self) -> None:
+        def mutate(root: Path) -> None:
+            self._replace(
+                root / ".github/workflows/python-lint.yml",
+                self._GROUP,
+                "  group: ${{ github.workflow }}-${{ github.ref }}",
+            )
+
+        errors = self._errors_after(mutate)
+        self.assertIn(f"python workflow {self._CANCEL_RULE}", errors)
+
+    def test_every_gate_workflow_needs_the_concurrency_block(self) -> None:
+        def mutate(root: Path) -> None:
+            self._replace(
+                root / ".github/workflows/content-validator.yml",
+                f"concurrency:\n{self._GROUP}\n{self._CANCEL}\n",
+                "",
+            )
+
+        errors = self._errors_after(mutate)
+        self.assertIn(f"content workflow {self._CANCEL_RULE}", errors)
+        self.assertIn("content workflow has non-canonical top-level contract metadata", errors)
+
+    def test_concurrency_block_cannot_gain_keys(self) -> None:
+        def mutate(root: Path) -> None:
+            self._replace(
+                root / ".github/workflows/runtime-smoke.yml",
+                f"{self._CANCEL}\n",
+                f"{self._CANCEL}\n  queue: max\n",
+            )
+
+        errors = self._errors_after(mutate)
+        self.assertIn(f"runtime workflow {self._CANCEL_RULE}", errors)
+
+    def test_concurrency_block_cannot_gain_keys_past_a_gap(self) -> None:
+        # YAML keeps the mapping open across blank and comment lines.
+        for gap in ("\n", "\n# a note\n", "\n    # an indented note\n\n"):
+            with self.subTest(gap=gap):
+
+                def mutate(root: Path, gap: str = gap) -> None:
+                    self._replace(
+                        root / ".github/workflows/runtime-smoke.yml",
+                        f"{self._CANCEL}\n",
+                        f"{self._CANCEL}\n{gap}  cancel-in-progress: true\n",
+                    )
+
+                errors = self._errors_after(mutate)
+                self.assertIn(f"runtime workflow {self._CANCEL_RULE}", errors)
 
     def test_content_validator_step_condition_cannot_bypass_contract_validation(self) -> None:
         def mutate(root: Path) -> None:

@@ -6,6 +6,13 @@ on:
     branches:
       - main
 
+# A newer push to a pull request cancels that pull request's older run. Every
+# other run (each push to main above all) has a group of its own, so it is
+# never cancelled, nor dropped while it waits. (Council Q2, 2026-11-27.)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   validate-content:
     runs-on: ubuntu-latest

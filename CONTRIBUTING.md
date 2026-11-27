@@ -41,6 +41,11 @@ support for V1) are explicitly out of scope and won't be accepted.
   This starts the real default project path and runs every scene in the
   shared required-suite contract with exact PASS markers and timeouts. Add
   `-Profile` to also run the non-blocking frame-time profiling scene.
+  - Each case prints its time.
+  - Only one suite or capture runs at a time on a machine: a second is refused,
+    with exit 75.
+  - Per-case limits and the CI tripwires are in
+    `packages/content-validator/README.md`.
 
 ## How to propose a change
 

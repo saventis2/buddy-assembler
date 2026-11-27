@@ -6,6 +6,13 @@ on:
     branches:
       - main
 
+# A newer push to a pull request cancels that pull request's older run. Every
+# other run (each push to main above all) has a group of its own, so it is
+# never cancelled, nor dropped while it waits. (Council Q2, 2026-11-27.)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 # Scope: tools/importers/ importer/analysis scripts, packages/content-validator/,
 # and apps/runtime-godot/tools/. Tool and test dependencies come from the
 # repository's pinned requirements files.
@@ -34,12 +41,14 @@ on:
 jobs:
   python-lint:
     runs-on: ubuntu-latest
+    # About 20 s when healthy: a hung test fails in minutes, not in six hours.
+    timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.11"
 
