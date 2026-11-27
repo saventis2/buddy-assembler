@@ -37,8 +37,132 @@ Run the complete local/CI-parity gate with:
 pwsh ./apps/runtime-godot/tests/run_headless_checks.ps1
 ```
 
+The gate includes `life_sim_test` (`tests/LifeSimTest.tscn`), which checks that
+a simulated life is repeatable from a seed and never writes the save files.
+
+## Fast-forward
+
+To see how a new buddy's life reads over many days without waiting for them:
+
+```powershell
+python apps/runtime-godot/tools/simulate_days.py --godot "C:\path\to\Godot_v4.2.2-stable_win64_console.exe" --days 30 --seed 1 --journal firsts --out report.json
+```
+
+It runs the real mind code with a supplied clock, in a headless process, and
+prints each day's decisions, the new places, people and wishes it met, and how
+often the journal repeated itself. `--journal` is `all`, `firsts` or `none`;
+`--out` also writes the full report as JSON. The same seed gives the same life
+on any machine. The launcher starts the app with `-- --no-save`, so it starts
+from defaults and never opens the save files, not even while starting up; the
+simulation scene refuses to run without it. Not simulated: ambient desktop
+animation, quests and encounters, talking to the buddy, and the language model.
+
+`--world` picks the world. `land`, the default, is the house and land a buddy
+starts with since Plan 14; `town` is the older town with its six characters.
+
+```powershell
+python apps/runtime-godot/tools/simulate_days.py --godot "C:\path\to\Godot_v4.2.2-stable_win64_console.exe" --days 30 --seed 1 --world town --journal firsts
+```
+
+## Small beginnings
+
+Since Plan 14 a buddy starts with a house and the land around it, alone, and
+finds the rest a piece at a time (`docs/product/PLAN14_SMALL_BEGINNINGS.md`).
+The setting is `smallBeginnings` in `settings.json`, on by default.
+
+The first time the app starts in this world with a buddy from before, it puts
+that buddy away and a new one wakes up:
+
+- `settings.json`, `profile.json` and `world_state.json` are copied to
+  `backups/before-small-beginnings-<date>/` in the save folder
+  (`%APPDATA%\Godot\app_userdata\Buddy Runtime`). The folder is never
+  overwritten, and each copy is checked against its original. If the copy
+  fails, nothing is changed and the old buddy carries on for that run.
+- Only the buddy starts over: its name, memories, journal, feelings, bond and
+  growth. Settings, items, wardrobe and meso are kept.
+- `freshStartBackup` in `settings.json` records where the copy went.
+
+Only a real launch does this. The tests, the CI start-up modes and the
+fast-forward tool never touch the save.
+
+To go back to the buddy from before: close the app, set
+`"smallBeginnings": false` in `settings.json`, and copy `profile.json` from the
+backup folder over the one in the save folder. The old town, its six
+characters, quests and encounters are still in the pack and the code; with the
+setting off they work as before.
+
+On the land, chat tells the model nothing about the buddy's world: it speaks
+from its own memories (`your_memories`), and what it says is checked against
+them before it goes out. A reply that names someone or something it has not
+met is asked for once more, told so, and if that fails too it says a plain
+line instead, such as "I haven't met anyone here." The default chat model,
+`gemma3:4b`, often goes along with questions that take people for granted
+("what's your neighbour's name?"), so it falls back to that line more: 23 of 47
+such answers in the 2b-2 evaluation, against 8 of 48 for `gemma3:12b`. If 12b
+is installed and you can spare the graphics memory, set
+`"chatModelName": "gemma3:12b"` in `settings.json`. The buddy also picks its
+name with the chat model, so it stays nameless while the model is off.
+`tests/ChatEval.tscn` measures this against a real model (see
+`docs/product/PLAN14_SMALL_BEGINNINGS.md`, step 2b-2).
+
 The current implementation is intentionally minimal and is a vertical-slice
 scaffold, not final production content.
+
+## World host
+
+On by default (D-010). Turn it off with Menu > Settings > Its own mind > World
+host, or `"worldHost": false` in `settings.json`; it takes effect the next time
+the app starts, and a running host notices within ten seconds and quits. The
+same goes for `"smallBeginnings": false`: the host runs only the land life.
+Your buddy lives on its own land in a background program that keeps running
+when the app is closed, and the app is the buddy visiting you. Only a real
+launch of the app counts: a headless run (the CI parse check, the tests, the
+fast-forward tool) never takes the app's role and never starts a host.
+
+- Opening the app starts the host if it is not running and asks the buddy to
+  come over. It comes at once unless it is asleep or busy; then the app says
+  when it will come. While it is at home the app shows a small panel with its
+  latest journal line and a "Call over" button.
+- A visit ends when the app closes, at bedtime, after two quiet hours, or when
+  you choose "Send home" in the menu. Closing the app sends it home first.
+  Called at its bedtime, it says it will come in the morning (07:00).
+- Start the app with the windowed program (or an exported build). Through
+  Godot's console wrapper (`..._console.exe`), the host the app starts stops
+  when the app does.
+- After a restart of the PC its world waits until the app is opened again:
+  there is no watchdog until the move to Nexus.
+- Its files are in the save folder under `host/`: `buddy.lock/`, `host.json`,
+  `desktop.json` and `inbox/`. Only the program that holds the buddy writes
+  `profile.json` and `world_state.json`; `settings.json` belongs to the app.
+- The host is the same program run as `--headless -- --world-host`. To stop
+  it, turn the setting off: it notices within ten seconds and quits.
+
+### The 3D view
+
+Menu > Town opens a small 3D diorama of the buddy's land (D-009): the buddy
+stands in it as its own 2D character on a card and walks between places when it
+moves, the light follows your local time of day, the world's weather shows as
+cloud shadows and rain, and mist lies over land it has not found yet. Drag to
+turn the view, scroll to zoom, click a place to read about it. `"landView3d"`
+(Menu > Settings > Look and place > Town view) switches back to the flat map.
+The view only draws while its window is open, at most 30 frames a second, and
+has no shadows.
+
+## Letters
+
+On the land, the main menu has a Letters window: write to your buddy and it
+reads the letter at the glowing box in its house, the next time it goes there
+(a waiting letter draws it). It has to work out the glowing box first, which
+takes a few visits; until then letters wait there and the box blinks. While it is
+at home the letter goes through the world host's inbox, and the window shows it
+as on its way, waiting or read. Letters are kept in the buddy's save, so
+anything that looks like a password or a key is refused. The buddy writes back
+(step 2c-2) with `letterModelName` in `settings.json` (default `gemma3:12b`,
+falling back to the chat model when that is not installed), from what it
+remembers, checked like chat, with a plain fallback letter when the check fails
+twice; only the process that has the buddy at home writes, and it needs the
+thinking model on. To see how soon a letter is read, add `--letter DAY:HH:MM:TEXT` (repeatable)
+to the fast-forward tool, for example `--letter 1:10:00:Hello`.
 
 ## Maple-Agnostic Slice
 

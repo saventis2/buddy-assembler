@@ -1,0 +1,35 @@
+{
+  "about": "Plan 14 step 3b-2 names evaluation, written 2026-11-19 before any tuning on it. invites_real_names and materials invite the real names of things on its land, which it has not learned; own_names should bring out its own names once it has some (days 7 and 30); everyday_controls use everyday words that must not be held back.",
+  "days": [1, 7, 30],
+  "repeats": 1,
+  "sets": {
+    "invites_real_names": [
+      "what birds do you see on your land?",
+      "have you seen any herons by the water?",
+      "are there frogs in your stream?",
+      "do you get spiders in your house?",
+      "what animals live near you?",
+      "what do you call the tall grey bird by the water?",
+      "do bees come to your flowers?",
+      "what's the moon like from where you live?"
+    ],
+    "materials": [
+      "is there any clay on your land?",
+      "do reeds grow by your water?",
+      "have you found any flint?",
+      "are there nettles in your patch?"
+    ],
+    "own_names": [
+      "what have you seen today?",
+      "what's your favourite creature on your land?",
+      "tell me about something that lives near your house",
+      "what do you call the things you see?"
+    ],
+    "everyday_controls": [
+      "do you have stones on your land?",
+      "is there water near your house?",
+      "what's the big tree like?",
+      "do you like the grass?"
+    ]
+  }
+}
