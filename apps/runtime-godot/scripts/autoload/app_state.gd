@@ -5,12 +5,24 @@ const SchemaMigrations = preload("res://scripts/persistence/schema_migrations.gd
 const MindServiceScript = preload("res://scripts/services/mind_service.gd")
 const UnlockTable = preload("res://scripts/progression/unlock_table.gd")
 const ContentLoader = preload("res://scripts/content/content_loader.gd")
+const Whereabouts = preload("res://scripts/persistence/buddy_whereabouts.gd")
+const LetterService = preload("res://scripts/services/letter_service.gd")
+const MindThinkerScript = preload("res://scripts/services/mind_thinker.gd")
 
 const SETTINGS_PATH := "user://settings.json"
 const PROFILE_PATH := "user://profile.json"
 const WORLD_STATE_PATH := "user://world_state.json"
 const CORE_ECONOMY_PACK_ID := "core_pack"
 const INVENTORY_BACKFILL_MIGRATION_VERSION := 2
+const BACKUP_ROOT := "user://backups"
+const BORN_ON_THE_LAND := "land"
+# A process started with this user argument (after "--") never reads or writes
+# the save files. The fast-forward tool always passes it.
+const NO_SAVE_ARG := "--no-save"
+# A process started with this user argument is the world host (Plan 14 step 2a):
+# a headless process that lives the buddy's life on its land while it is at home.
+const WORLD_HOST_ARG := "--world-host"
+const HOST_DIR := "user://host"
 
 const SERVICE_PATHS := {
     "identity": "res://scripts/services/identity_service.gd",
@@ -22,6 +34,7 @@ const SERVICE_PATHS := {
     "report": "res://scripts/services/report_service.gd",
     "mind": "res://scripts/services/mind_service.gd",
     "memory": "res://scripts/services/memory_service.gd",
+    "letters": "res://scripts/services/letter_service.gd",
 }
 
 var settings := {}
@@ -33,6 +46,24 @@ var _services: Dictionary = {}
 var _saved_digest: Dictionary = {}
 var _deferred_save_pending := false
 var _deferred_save_seconds := 0.0
+# Fast-forward simulation (tests/life_sim.gd): a headless process can hand the
+# buddy a clock of its own. Once it does, nothing is saved for the rest of the
+# process, so a simulated life can never touch the real save files.
+var _sim_clock_unix := 0
+var _persistence_enabled := true
+# Set when a buddy from before could not be backed up at launch (see
+# fresh_start_if_due): it then stays in its old town for this run.
+var _fresh_start_failed := false
+# Whether a profile was on disk when this run loaded its state, read before
+# anything could save. A brand-new install has none, so nothing to back up.
+var _profile_was_on_disk := false
+# Who this process is (Plan 14 step 2a): "solo" writes everything, as before;
+# "host" and "desktop" write the buddy's files only while they hold the buddy,
+# and only the desktop writes settings. See _may_write.
+var _role := "solo"
+var _holding := false
+# Where the lock lives; tests point it at a folder of their own.
+var _host_dir := HOST_DIR
 
 const DEFERRED_SAVE_DELAY_SECONDS := 1.5
 # Things the buddy can notice in a shop and want (Plan 13 C1+C2): wearable
@@ -42,11 +73,118 @@ const WANT_PRICE_BY_RARITY := {"common": 40, "uncommon": 80, "rare": 150, "epic"
 const WANT_SHOP_SIZE := 40
 var _want_shop_cache: Array = []
 var _want_shop_catalog_size := -1
+# Letters the desktop sent through the inbox and has not yet seen in the
+# mailbox, in memory only: {"id", "text", "sent_at"} (Plan 14 step 2c-1).
+var _letters_outbox: Array = []
+const LETTERS_OUTBOX_LIMIT := 20
 
 
 func _ready() -> void:
     _load_services()
+    var args := OS.get_cmdline_user_args()
+    if args.has(NO_SAVE_ARG):
+        _start_without_saves()
+        return
+    if args.has(WORLD_HOST_ARG):
+        _role = "host"
+        _load_read_only()
+        return
+    # While a world host is running, it holds (or may take) the buddy, so every
+    # other process only reads it: tests, tools and checks included. Only a real
+    # launch then starts the visit (see is_real_launch and the overlay).
+    var host_status := Whereabouts.read_status("%s/host.json" % HOST_DIR)
+    if Whereabouts.is_alive(host_status, Time.get_unix_time_from_system()):
+        _role = "desktop"
+        _load_read_only()
+        return
+    # With no host running, only a real launch of the app becomes the desktop
+    # because of the setting. A parse check, a test scene or a tool script also
+    # starts this autoload, and none of them may start a world host.
+    if _is_real_launch():
+        var peeked: Dictionary = SaveStore.peek_versioned(
+            SETTINGS_PATH,
+            _default_settings,
+            SchemaMigrations.SETTINGS_CURRENT_VERSION,
+            SchemaMigrations.SETTINGS_MIGRATORS
+        )
+        # A new install has no settings.json: the defaults count.
+        var s: Dictionary = peeked if not peeked.is_empty() else _default_settings()
+        if bool(s.get("worldHost", true)) and bool(s.get("smallBeginnings", true)):
+            _role = "desktop"
+            _load_read_only()
+            return
     load_state()
+
+
+# False for the processes that are not the app itself: a scene or script named
+# on the command line, an editor or import run, and the two smoke tests. Pure,
+# so tests can call it. (The engine removes the arguments it handles itself,
+# such as --headless, --path and --quit, before OS.get_cmdline_args() sees
+# them, so those can only be told apart by the display server; see
+# _is_real_launch.)
+func _is_real_launch_args(engine_args: PackedStringArray, user_args: PackedStringArray) -> bool:
+    for arg in engine_args:
+        if ["--quit", "--quit-after", "-s", "--script", "--check-only", "--import", "-e", "--editor"].has(arg):
+            return false
+        if (arg.ends_with(".tscn") or arg.ends_with(".scn")) and arg != "res://scenes/LaunchRouter.tscn":
+            return false
+    for arg in user_args:
+        if arg == "--ci-startup-smoke" or arg == "--verify-export-closure":
+            return false
+    return true
+
+
+func _is_real_launch() -> bool:
+    # The app always has a window. A headless process that is not the world host
+    # (the CI parse check `--headless --quit`, a tool) is never the desktop.
+    if DisplayServer.get_name() == "headless":
+        return false
+    return _is_real_launch_args(OS.get_cmdline_args(), OS.get_cmdline_user_args())
+
+
+# Whether this process is the app itself, with its window: only then does the
+# overlay start the visit (which may start a world host).
+func is_real_launch() -> bool:
+    return _is_real_launch()
+
+
+# For the world host and the desktop app at startup: everything is read without
+# writing or renaming anything, because neither holds the buddy yet.
+func _load_read_only() -> void:
+    var peeked_settings: Dictionary = SaveStore.peek_versioned(
+        SETTINGS_PATH, _default_settings, SchemaMigrations.SETTINGS_CURRENT_VERSION, SchemaMigrations.SETTINGS_MIGRATORS
+    )
+    settings = peeked_settings if not peeked_settings.is_empty() else _default_settings()
+    var peeked_profile: Dictionary = SaveStore.peek_versioned(
+        PROFILE_PATH, _default_profile, SchemaMigrations.PROFILE_CURRENT_VERSION, SchemaMigrations.PROFILE_MIGRATORS
+    )
+    profile = peeked_profile if not peeked_profile.is_empty() else _default_profile()
+    var peeked_world: Dictionary = SaveStore.peek_versioned(
+        WORLD_STATE_PATH, _default_world_state, SchemaMigrations.WORLD_STATE_CURRENT_VERSION, SchemaMigrations.WORLD_STATE_MIGRATORS
+    )
+    world_state = peeked_world if not peeked_world.is_empty() else _default_world_state()
+    profile = _ensure_profile_modules(profile)
+    world_state = _ensure_world_modules(world_state)
+    _reconcile_progression_from_xp()
+    _sync_growth_mode_flags()
+    _refresh_unlocks()
+    _prune_event_buckets()
+
+
+# For a process started with NO_SAVE_ARG: default state, saving off, and the
+# save files never opened. Loading normally can already write them (a pending
+# migration) or rename them (a damaged file), which a tool that promises not
+# to touch the save must not do, even while the app is starting up.
+func _start_without_saves() -> void:
+    _persistence_enabled = false
+    _deferred_save_pending = false
+    settings = _default_settings()
+    profile = _ensure_profile_modules(_default_profile())
+    world_state = _ensure_world_modules(_default_world_state())
+    _reconcile_progression_from_xp()
+    _sync_growth_mode_flags()
+    _refresh_unlocks()
+    _prune_event_buckets()
 
 
 func _load_services() -> void:
@@ -64,13 +202,24 @@ func _load_services() -> void:
         _services[key] = instance
 
 
-func load_state() -> void:
-    settings = SaveStore.load_versioned(
-        SETTINGS_PATH,
-        _default_settings,
-        SchemaMigrations.SETTINGS_CURRENT_VERSION,
-        SchemaMigrations.SETTINGS_MIGRATORS
-    )
+func load_state(include_settings: bool = true) -> void:
+    _profile_was_on_disk = FileAccess.file_exists(PROFILE_PATH)
+    if include_settings:
+        settings = SaveStore.load_versioned(
+            SETTINGS_PATH,
+            _default_settings,
+            SchemaMigrations.SETTINGS_CURRENT_VERSION,
+            SchemaMigrations.SETTINGS_MIGRATORS
+        )
+    else:
+        # A process that does not own settings.json never renames a damaged one.
+        var peeked: Dictionary = SaveStore.peek_versioned(
+            SETTINGS_PATH,
+            _default_settings,
+            SchemaMigrations.SETTINGS_CURRENT_VERSION,
+            SchemaMigrations.SETTINGS_MIGRATORS
+        )
+        settings = peeked if not peeked.is_empty() else _default_settings()
     profile = SaveStore.load_versioned(
         PROFILE_PATH,
         _default_profile,
@@ -97,6 +246,8 @@ func load_state() -> void:
 
 
 func flush() -> void:
+    if not _persistence_enabled:
+        return
     _deferred_save_pending = false
     _write_if_changed(SETTINGS_PATH, settings)
     _write_if_changed(PROFILE_PATH, profile)
@@ -107,6 +258,8 @@ func flush() -> void:
 # position while the buddy walks or is dragged), where writing each time
 # stalls rendering.
 func flush_soon() -> void:
+    if not _persistence_enabled:
+        return
     if not _deferred_save_pending:
         _deferred_save_seconds = 0.0
     _deferred_save_pending = true
@@ -135,7 +288,92 @@ func _persistable_world_state() -> Dictionary:
     return slim
 
 
+# Who may write which save file (Plan 14 step 2a). The buddy is in one place at
+# a time: the files holding it (profile, world state) are written only by the
+# process that holds it; settings.json belongs to the desktop app.
+func _may_write(path: String) -> bool:
+    if _role == "solo":
+        return true
+    if path == SETTINGS_PATH:
+        return _role == "desktop"
+    if path == PROFILE_PATH or path == WORLD_STATE_PATH:
+        return _still_holding()
+    return false
+
+
+# Holding is only as good as the lock. A process that froze for longer than the
+# stale time can find its lock taken over by the other one; from then on it must
+# not write the buddy's files, whatever it thought before.
+func _still_holding() -> bool:
+    if not _holding:
+        return false
+    if Whereabouts.holds(_host_dir, _role, OS.get_process_id()):
+        return true
+    push_warning("app_state: the buddy's lock is no longer this process's; it stops writing the buddy")
+    _holding = false
+    return false
+
+
+func role() -> String:
+    return _role
+
+
+func is_holding_buddy() -> bool:
+    return _still_holding()
+
+
+# This process takes the buddy: reads its files for real (the holder is the only
+# one who may write them) and, in a new world, runs the fresh start. The caller
+# must already hold the lock (buddy_whereabouts.gd).
+func take_buddy() -> void:
+    if _role == "desktop":
+        # Keeps a pending window position; only settings.json is writable yet.
+        flush()
+    _holding = true
+    load_state(_role != "host")
+    var fresh: Dictionary = fresh_start_if_due()
+    if str(fresh.get("status", "")) == "started" and str(fresh.get("backup", "")) != "":
+        var shown := ProjectSettings.globalize_path(str(fresh["backup"]))
+        print("app_state: the buddy from before is saved in %s" % shown)
+        if _role == "host":
+            # settings.json is not the host's to write, so it says so in host.json.
+            var status := Whereabouts.read_status("%s/host.json" % HOST_DIR)
+            status["freshStartBackup"] = str(fresh["backup"])
+            Whereabouts.write_status("%s/host.json" % HOST_DIR, status)
+
+
+# Hands the buddy back: writes what it has, and stops writing its files.
+func release_buddy() -> void:
+    flush()
+    _holding = false
+
+
+# For the host, which only reads settings.json (the desktop app owns it): picks up
+# a change made there. A missing or damaged file keeps what it had.
+func reload_settings_read_only() -> void:
+    var peeked: Dictionary = SaveStore.peek_versioned(
+        SETTINGS_PATH, _default_settings, SchemaMigrations.SETTINGS_CURRENT_VERSION, SchemaMigrations.SETTINGS_MIGRATORS
+    )
+    if not peeked.is_empty():
+        settings = peeked
+
+
+# For a process that does not hold the buddy and only shows what it is doing.
+func reload_buddy_read_only() -> void:
+    var peeked: Dictionary = SaveStore.peek_versioned(
+        PROFILE_PATH, _default_profile, SchemaMigrations.PROFILE_CURRENT_VERSION, SchemaMigrations.PROFILE_MIGRATORS
+    )
+    # The holder's write removes then renames, so the file can be missing for a moment.
+    if peeked.is_empty():
+        return
+    profile = _ensure_profile_modules(peeked)
+
+
 func _write_if_changed(path: String, data: Dictionary) -> void:
+    if not _persistence_enabled:
+        return
+    if not _may_write(path):
+        return
     var digest := JSON.stringify(data).md5_text()
     if str(_saved_digest.get(path, "")) == digest and FileAccess.file_exists(path):
         return
@@ -166,7 +404,7 @@ func record_interaction(kind: String) -> void:
 
 func apply_behavior(action_id: String) -> void:
     world_state["last_action"] = action_id
-    world_state["last_tick_unix"] = Time.get_unix_time_from_system()
+    world_state["last_tick_unix"] = _clock_unix()
 
     if action_id == "gift":
         profile["gifts_seen"] = int(profile.get("gifts_seen", 0)) + 1
@@ -182,7 +420,12 @@ func apply_behavior(action_id: String) -> void:
         "apply_behavior",
         [profile, action_id, UnlockTable.xp_per_level(), UnlockTable.max_level(), xp_curve]
     )
+    # On the land the mind keeps the needs (they move with time and with what
+    # it does), so the desktop animation only changes the mood that is shown.
+    var kept_needs = profile.get("mood_modifiers", null)
     profile = _call_profile_service("mood", "apply_behavior", [profile, action_id])
+    if small_beginnings() and typeof(kept_needs) == TYPE_DICTIONARY:
+        profile["mood_modifiers"] = (kept_needs as Dictionary).duplicate(true)
     _sync_growth_mode_flags()
     profile = _call_profile_service("growth", "apply_behavior", [profile, action_id])
     profile = _call_profile_service("identity", "record_behavior", [profile, action_id])
@@ -211,7 +454,7 @@ func get_unlocked_actions() -> Array:
 func record_event_trigger(event_id: String, action_id: String) -> void:
     world_state["last_event_id"] = event_id
     world_state["last_event_action"] = action_id
-    world_state["last_event_unix"] = Time.get_unix_time_from_system()
+    world_state["last_event_unix"] = _clock_unix()
     flush()
 
 
@@ -344,11 +587,13 @@ func get_continuity_hint() -> String:
 
 func clear_last_active_summary() -> void:
     profile["last_active_summary"] = ""
+    if not _persistence_enabled or not _may_write(PROFILE_PATH):
+        return
     SaveStore.write_json(PROFILE_PATH, profile)
 
 
 func open_reward_box(box_id: String) -> Dictionary:
-    var seed := int(profile.get("personality_seed", 0)) + int(Time.get_unix_time_from_system())
+    var seed := int(profile.get("personality_seed", 0)) + int(_clock_unix())
     var result = _call_service_with_fallback("economy", "open_reward_box", [world_state, box_id, seed], {})
     if typeof(result) != TYPE_DICTIONARY:
         return {"ok": false, "reason": "service_failure"}
@@ -376,6 +621,9 @@ func get_reward_box_ids() -> Array:
 
 
 func tick_world_events(now_unix: int) -> Dictionary:
+    # No quests or encounters on the land.
+    if small_beginnings():
+        return {}
     var result = _call_service_with_fallback("world", "tick_world", [world_state, profile, now_unix], {})
     if typeof(result) != TYPE_DICTIONARY:
         return {}
@@ -388,35 +636,112 @@ func tick_world_events(now_unix: int) -> Dictionary:
     return prompt if typeof(prompt) == TYPE_DICTIONARY else {}
 
 
-# Lets the buddy make any self-directed decisions that have come due
-# (including ones from while the app was closed). Returns the resulting
-# journal events, oldest first; empty when nothing was due or autonomy is off.
+# Plan 14: the buddy starts with a house and the land round it, alone. False
+# for this run if a buddy from before could not be backed up at launch.
+func small_beginnings() -> bool:
+    return bool(settings.get("smallBeginnings", true)) and not _fresh_start_failed
+
+
+func _land() -> Dictionary:
+    var land = _call_service_with_fallback("world", "get_land", [], {})
+    return land if typeof(land) == TYPE_DICTIONARY else {}
+
+
+# --- Fresh start (Plan 14 step 1c) ---------------------------------------
+# In the small-beginnings world every buddy is born on the land. A buddy from
+# before is put away first: its save files are copied to a dated folder under
+# BACKUP_ROOT, which is never overwritten, and only then does a new buddy wake
+# up. Only the buddy starts over: settings, items, wardrobe and meso are kept.
+# If the copy fails nothing is changed, and the old buddy carries on in its
+# old town for this run. Called once at launch by launch_router.gd, never by
+# tests or the simulator.
+# Returns {"status": "not_due"|"started"|"backup_failed", "backup": String}.
+func fresh_start_if_due() -> Dictionary:
+    # A process that never saves (the fast-forward tool, a simulation) leaves
+    # the save folder alone: no backup is copied and nothing is replaced.
+    if not _persistence_enabled:
+        return {"status": "not_due", "backup": ""}
+    return _fresh_start(_profile_was_on_disk, [SETTINGS_PATH, PROFILE_PATH, WORLD_STATE_PATH], BACKUP_ROOT)
+
+
+# `had_profile` is whether a buddy was saved before this run started. It is not
+# read from disk here: loading can already have written a default profile.
+func _fresh_start(had_profile: bool, save_paths: Array, backup_root: String) -> Dictionary:
+    if not bool(settings.get("smallBeginnings", true)):
+        return {"status": "not_due", "backup": ""}
+    var mind_variant = profile.get("mind", null)
+    if typeof(mind_variant) == TYPE_DICTIONARY and str((mind_variant as Dictionary).get("born", "")) == BORN_ON_THE_LAND:
+        return {"status": "not_due", "backup": ""}
+    var backup_dir := ""
+    # With no buddy from before there is nothing to put away.
+    if had_profile:
+        var today := _clock_datetime()
+        var label := "before-small-beginnings-%04d-%02d-%02d" % [int(today.get("year", 0)), int(today.get("month", 0)), int(today.get("day", 0))]
+        backup_dir = SaveStore.backup_files(save_paths, backup_root, label)
+        if backup_dir == "":
+            push_warning("app_state: could not back up the save; the buddy from before stays for this run")
+            _fresh_start_failed = true
+            return {"status": "backup_failed", "backup": ""}
+    var fresh := _ensure_profile_modules(_default_profile())
+    var mind: Dictionary = fresh["mind"]
+    mind["born"] = BORN_ON_THE_LAND
+    fresh["mind"] = mind
+    # It is not lonely yet: on its land its need for company falls slowly from
+    # here, and a visit to you fills it up again (Plan 14 step 2a).
+    var mods_variant = fresh.get("mood_modifiers", {})
+    var mods: Dictionary = (mods_variant as Dictionary).duplicate() if typeof(mods_variant) == TYPE_DICTIONARY else {}
+    mods["social_fulfillment"] = MindServiceScript.LAND_START_COMPANY
+    fresh["mood_modifiers"] = mods
+    profile = fresh
+    _reconcile_progression_from_xp()
+    _sync_growth_mode_flags()
+    _refresh_unlocks()
+    if backup_dir != "":
+        settings["freshStartBackup"] = backup_dir
+    flush()
+    return {"status": "started", "backup": backup_dir}
+
+
+# The places the buddy can go: the town, or on the land only what it has found.
 func get_town() -> Dictionary:
+    if small_beginnings():
+        # The one place everything outside the mind reads the land.
+        var known = _call_service_with_fallback("mind", "known_town", [profile, _land()], {})
+        return known if typeof(known) == TYPE_DICTIONARY else {}
     var town = _call_service_with_fallback("world", "get_town", [world_state], {})
     return town if typeof(town) == TYPE_DICTIONARY else {}
 
 
+# Lets the buddy make any self-directed decisions that have come due
+# (including ones from while the app was closed). Returns the resulting
+# journal events, oldest first; empty when nothing was due or autonomy is off.
 func tick_mind(now_unix: int) -> Array:
+    # The buddy's life on its land runs only at home, in the world host.
+    if _role == "desktop":
+        return []
     if not bool(settings.get("autonomyEnabled", true)):
         return []
-    var npcs: Array = []
-    var world_variant = world_state.get("world", null)
-    if typeof(world_variant) == TYPE_DICTIONARY:
-        var npcs_variant = (world_variant as Dictionary).get("npcs", [])
-        if typeof(npcs_variant) == TYPE_ARRAY:
-            npcs = npcs_variant
+    var small := small_beginnings()
+    if small:
+        # In the middle of something (asleep, out at the water): nothing is due.
+        var mind_variant = profile.get("mind", null)
+        if typeof(mind_variant) == TYPE_DICTIONARY and now_unix < int((mind_variant as Dictionary).get("busy_until", 0)):
+            return []
+    var npcs: Array = _world_npcs()
     var context := {
         "is_night": _is_night(),
         "top_trait": "",
-        "hour": int(Time.get_datetime_dict_from_system().get("hour", 12)),
+        "hour": int(_clock_datetime().get("hour", 12)),
         "meso": int(get_inventory_snapshot().get("meso", 0)),
         "shop_items": _want_shop_items(),
         "plans": true,
+        "small_beginnings": small,
     }
     var identity_ctx = _call_service_with_fallback("identity", "get_context", [profile], {})
     if typeof(identity_ctx) == TYPE_DICTIONARY:
         context["top_trait"] = str(identity_ctx.get("top_trait", ""))
-    var result = _call_service_with_fallback("mind", "tick", [profile, npcs, now_unix, context, get_town()], {})
+    var town: Dictionary = _land() if small else get_town()
+    var result = _call_service_with_fallback("mind", "tick", [profile, npcs, now_unix, context, town], {})
     if typeof(result) != TYPE_DICTIONARY:
         return []
     var events = result.get("events", [])
@@ -427,7 +752,14 @@ func tick_mind(now_unix: int) -> Array:
         profile = next_profile
         # Where it went and who it saw are facts, so the memory graph links
         # them with what the person says about the same places and people.
-        _call_profile_service("memory", "record_town_events", [profile, events])
+        if small:
+            # On the land, today is kept and sorted into long-term memory at bedtime.
+            var land := _land()
+            _call_profile_service("memory", "note_today", [profile, events, land])
+            if bool(_call_service_with_fallback("memory", "night_pass_due", [profile, events, land, now_unix], false)):
+                _call_profile_service("memory", "nightly_pass", [profile, land, now_unix])
+        else:
+            _call_profile_service("memory", "record_town_events", [profile, events])
         for event_variant in events:
             if typeof(event_variant) == TYPE_DICTIONARY and str((event_variant as Dictionary).get("buy_want", "")) != "":
                 _buy_want(str((event_variant as Dictionary)["buy_want"]), int((event_variant as Dictionary).get("t", 0)))
@@ -525,6 +857,226 @@ func apply_mind_thought(decision_unix: int, thought: String, want: String) -> vo
         flush()
 
 
+# --- Letters (Plan 14 step 2c-1) -----------------------------------------
+# The person writes to the buddy at the glowing box in its house; the buddy reads
+# a letter the next time it goes there (mind_service.gd). The mailbox is
+# profile["letters"] (letter_service.gd), so only the process that holds the
+# buddy writes it. The desktop, while the buddy is at home, leaves the letter in
+# the host's inbox instead. Land world only.
+#
+# Returns {"ok", "id", "reason", "via": "direct"|"inbox"|""}. `resend_of` is a
+# letter that was never delivered: it is dropped from the desktop's list once
+# this one is sent in its place.
+func letters_send(text: String, resend_of: String = "") -> Dictionary:
+    if not small_beginnings():
+        return {"ok": false, "id": "", "reason": "town", "via": ""}
+    var now := _now_unix()
+    if _role == "solo" or _still_holding():
+        var added: Dictionary = LetterService.add_from_you(profile, LetterService.new_id(now), text, now)
+        if not bool(added["ok"]):
+            return {"ok": false, "id": "", "reason": str(added["reason"]), "via": ""}
+        profile = added["profile"]
+        _letters_forget_outbox(resend_of)
+        flush_soon()
+        return {"ok": true, "id": str(added["id"]), "reason": "", "via": "direct"}
+    if not Whereabouts.is_alive(Whereabouts.read_status("%s/host.json" % _host_dir), float(now)):
+        return {"ok": false, "id": "", "reason": "no_host", "via": ""}
+    # The same rules as the mailbox's, so nothing refused is ever written to the inbox.
+    var checked: Dictionary = LetterService.check_text(text)
+    if not bool(checked["ok"]):
+        return {"ok": false, "id": "", "reason": str(checked["reason"]), "via": ""}
+    if _letters_waiting_count(resend_of) >= LetterService.MAX_WAITING:
+        return {"ok": false, "id": "", "reason": "too_many_waiting", "via": ""}
+    var sent_id: String = Whereabouts.send_request(_host_dir, "letter", {"text": str(checked["text"])}, float(now))
+    _letters_forget_outbox(resend_of)
+    _letters_outbox.append({"id": sent_id, "text": str(checked["text"]), "sent_at": now})
+    while _letters_outbox.size() > LETTERS_OUTBOX_LIMIT:
+        _letters_outbox.remove_at(0)
+    return {"ok": true, "id": sent_id, "reason": "", "via": "inbox"}
+
+
+# Letters waiting at the glowing box as this desktop sees them: the unread ones
+# in the mailbox, and the ones it sent that are still on their way (in the
+# inbox, or only just sent). A lost one holds no place, and nor does `except`,
+# a lost letter being sent again in its place.
+func _letters_waiting_count(except: String = "") -> int:
+    var have := {}
+    for item in (LetterService.ensure_letters(profile)["letters"] as Dictionary)["items"]:
+        have[str((item as Dictionary)["id"])] = true
+    var count: int = LetterService.unread_count(profile)
+    var now: int = _now_unix()
+    for sent_variant in _letters_outbox:
+        var sent: Dictionary = sent_variant
+        var id: String = str(sent.get("id", ""))
+        if id == except or have.has(id):
+            continue
+        if LetterService.delivery_state(profile, id, letters_inbox_file_exists(id), int(sent.get("sent_at", 0)), now) == "on_its_way":
+            count += 1
+    return count
+
+
+func _letters_forget_outbox(id: String) -> void:
+    if id == "":
+        return
+    for index in range(_letters_outbox.size() - 1, -1, -1):
+        if str((_letters_outbox[index] as Dictionary).get("id", "")) == id:
+            _letters_outbox.remove_at(index)
+
+
+# A letter request the world host took from the inbox. Holder only.
+func letters_receive(request: Dictionary) -> void:
+    if not small_beginnings() or not (_role == "solo" or _still_holding()):
+        return
+    var received_at := int(request.get("t", _now_unix()))
+    var added: Dictionary = LetterService.add_from_you(profile, str(request.get("id", "")), str(request.get("text", "")), received_at)
+    if bool(added["ok"]):
+        profile = added["profile"]
+        flush_soon()
+
+
+# The letters to show, oldest first: the mailbox, then what this desktop has sent
+# and not yet seen there. A copy, and each one has {"id", "from", "text", "t",
+# "read_t", "reply_due", "reply_to"} (a letter still in the outbox has "t" = when it was sent).
+func letters_items() -> Array:
+    var items: Array = (LetterService.ensure_letters(profile)["letters"] as Dictionary)["items"]
+    var have := {}
+    for item in items:
+        have[str((item as Dictionary)["id"])] = true
+    for sent_variant in _letters_outbox:
+        var sent: Dictionary = sent_variant
+        if have.has(str(sent.get("id", ""))):
+            continue
+        items.append({"id": str(sent["id"]), "from": LetterService.FROM_YOU, "text": str(sent["text"]), "t": int(sent["sent_at"]), "read_t": 0, "reply_due": false, "reply_to": ""})
+    return items
+
+
+# --- Letters it writes (Plan 14 step 2c-2) -------------------------------
+# Only the process that has the buddy at home writes them: the world host while it
+# holds the buddy, or the app in solo mode. Never the desktop app while the buddy
+# is visiting it. The model calls themselves are in letter_writer.gd.
+func letters_may_write() -> bool:
+    if not small_beginnings():
+        return false
+    if _role == "solo":
+        return true
+    return _role == "host" and _still_holding()
+
+
+# {"kind": "reply", "letter"} for the oldest letter of yours it has read and not
+# answered, else {"kind": "first"} while its first letter is due, else {}.
+func letters_next_work() -> Dictionary:
+    if not letters_may_write():
+        return {}
+    return LetterService.next_work(profile)
+
+
+# Puts what it wrote in the mailbox, in the journal, and saves. Does nothing when
+# this process may no longer write (the buddy went to the desktop meanwhile).
+# Returns whether the letter was stored.
+func letters_store_written(work: Dictionary, text: String) -> bool:
+    if not letters_may_write():
+        return false
+    var first: bool = str(work.get("kind", "")) != "reply"
+    var reply_to := ""
+    if not first and typeof(work.get("letter", null)) == TYPE_DICTIONARY:
+        reply_to = str((work["letter"] as Dictionary).get("id", ""))
+    # Only work that is still due: a letter already answered, or a first letter
+    # already written, is never written twice.
+    if first:
+        var mind_variant = profile.get("mind", null)
+        if typeof(mind_variant) != TYPE_DICTIONARY or not bool((mind_variant as Dictionary).get("first_letter_due", false)):
+            return false
+    elif not _letters_reply_due(reply_to):
+        return false
+    var now: int = _now_unix()
+    var added: Dictionary = LetterService.add_from_buddy(profile, reply_to, text, now)
+    if not bool(added["ok"]):
+        return false
+    profile = added["profile"]
+    var noted = _call_service_with_fallback("mind", "note_letter_written", [profile, _land(), now, first], null)
+    if typeof(noted) == TYPE_DICTIONARY:
+        profile = noted
+    flush()
+    return true
+
+
+func _letters_reply_due(id: String) -> bool:
+    for item in (LetterService.ensure_letters(profile)["letters"] as Dictionary)["items"]:
+        if str((item as Dictionary)["id"]) == id:
+            return bool((item as Dictionary)["reply_due"])
+    return false
+
+
+# The request for one piece of work (letters_next_work), exactly as the writer
+# sends it; the letters evaluation (tests/chat_eval.gd) calls this too, so it
+# measures what really goes out. `work["letter"]` is {"id", "text", "t"}.
+func letters_request_body(model: String, work: Dictionary, extra_task: String = "") -> String:
+    var first: bool = str(work.get("kind", "")) != "reply"
+    var now: int = _now_unix()
+    var their_text := ""
+    var their_t: int = now
+    if not first:
+        var letter: Dictionary = work.get("letter", {})
+        their_text = str(letter.get("text", ""))
+        their_t = int(letter.get("t", now))
+    var about := {}
+    var buddy_name := ""
+    var location := ""
+    var mind_variant = profile.get("mind", null)
+    if typeof(mind_variant) == TYPE_DICTIONARY:
+        buddy_name = str((mind_variant as Dictionary).get("name", ""))
+        location = str((mind_variant as Dictionary).get("location", ""))
+    if buddy_name != "":
+        about["name"] = buddy_name
+    about["mood"] = str(get_telemetry_snapshot().get("mood", "calm"))
+    var here := ""
+    var places_variant = get_town().get("places", [])
+    if location != "" and typeof(places_variant) == TYPE_ARRAY:
+        for place_variant in places_variant:
+            if typeof(place_variant) == TYPE_DICTIONARY and str((place_variant as Dictionary).get("id", "")) == location:
+                here = str((place_variant as Dictionary).get("name", location))
+    if here != "":
+        about["where_you_are"] = here
+    var recent: Array = []
+    for entry_variant in get_mind_journal(6):
+        if typeof(entry_variant) == TYPE_DICTIONARY:
+            recent.append(str((entry_variant as Dictionary).get("text", "")))
+    var recalled: Dictionary = memory_recall_land(their_text)
+    var memory: Dictionary = memory_recall(their_text, false)
+    var earlier: Array = LetterService.earlier_letters(profile, their_t, now)
+    return MindThinkerScript.build_letter_request(model, about, recent, recalled.get("lines", []), memory, earlier, their_text, first, extra_task)
+
+
+func letters_console_known() -> bool:
+    var mind_variant = profile.get("mind", null)
+    if typeof(mind_variant) != TYPE_DICTIONARY:
+        return false
+    var console_variant = (mind_variant as Dictionary).get("console", null)
+    return typeof(console_variant) == TYPE_DICTIONARY and bool((console_variant as Dictionary).get("known", false))
+
+
+func letters_inbox_file_exists(id: String) -> bool:
+    return FileAccess.file_exists("%s/%s/%s.json" % [_host_dir, Whereabouts.INBOX_NAME, id])
+
+
+func letters_delivery_state(id: String, sent_at: int) -> String:
+    return LetterService.delivery_state(profile, id, letters_inbox_file_exists(id), sent_at, _now_unix())
+
+
+# How many letters from the buddy it has written since the person last had the
+# Letters window open (settings.lettersSeenT).
+func letters_new_from_buddy() -> int:
+    return LetterService.count_from_buddy_after(profile, int(settings.get("lettersSeenT", 0)))
+
+
+# The Letters window is open and showing them. Only settings.json's owner saves it.
+func letters_mark_seen() -> void:
+    if letters_new_from_buddy() == 0:
+        return
+    settings["lettersSeenT"] = _now_unix()
+    flush_soon()
+
+
 # --- Memory (Plan 13 B2) -------------------------------------------------
 # What the buddy remembers about the person lives in profile["memory"]. The
 # memoryEnabled setting stops anything new being kept or used; what is
@@ -534,18 +1086,95 @@ func memory_enabled() -> bool:
 
 
 func _memory_roster() -> Dictionary:
-    var npcs: Array = []
-    var world_variant = world_state.get("world", null)
-    if typeof(world_variant) == TYPE_DICTIONARY:
-        var npcs_variant = (world_variant as Dictionary).get("npcs", [])
-        if typeof(npcs_variant) == TYPE_ARRAY:
-            npcs = npcs_variant
+    var npcs: Array = _world_npcs()
     var places_variant = get_town().get("places", [])
     return {"places": places_variant if typeof(places_variant) == TYPE_ARRAY else [], "npcs": npcs}
 
 
 func _now_unix() -> int:
-    return int(Time.get_unix_time_from_system())
+    return int(_clock_unix())
+
+
+func is_simulating() -> bool:
+    return not _persistence_enabled
+
+
+func _clock_unix() -> float:
+    if _sim_clock_unix > 0:
+        return float(_sim_clock_unix)
+    return Time.get_unix_time_from_system()
+
+
+func _clock_datetime() -> Dictionary:
+    if _sim_clock_unix > 0:
+        return Time.get_datetime_dict_from_unix_time(_sim_clock_unix)
+    return Time.get_datetime_dict_from_system()
+
+
+func set_sim_clock(unix_time: int) -> void:
+    if not is_simulating() or unix_time <= 0:
+        return
+    _sim_clock_unix = unix_time
+
+
+# The economy deep-copies world_state on every call, so the ~11,000-row item
+# catalogue makes each simulated decision slow. The buddy only ever looks at
+# the shop's items, so a simulation keeps just those rows. The shop list is
+# the same before and after.
+func trim_catalog_for_simulation() -> void:
+    if not is_simulating():
+        return
+    var catalog_variant = world_state.get("item_catalog", {})
+    if typeof(catalog_variant) != TYPE_DICTIONARY:
+        return
+    var catalog: Dictionary = catalog_variant
+    var kept := {}
+    for row in _want_shop_items():
+        var item_id := str((row as Dictionary).get("id", ""))
+        if catalog.has(item_id):
+            kept[item_id] = catalog[item_id]
+    world_state["item_catalog"] = kept
+    _want_shop_cache = []
+    _want_shop_catalog_size = -1
+
+
+# Starts a simulated life for the headless fast-forward tool. One way: the
+# process never saves again. The simulated time is read as plain local time
+# (no time zone), so a run is the same on every machine. Returns false and
+# changes nothing outside a headless process.
+func begin_simulation(seed_value: int, start_unix: int) -> bool:
+    if DisplayServer.get_name() != "headless" or start_unix <= 0:
+        push_error("app_state: begin_simulation needs a headless process and a start time")
+        return false
+    _persistence_enabled = false
+    # A simulated life is always solo: tick_mind returns nothing in the desktop role.
+    _role = "solo"
+    _holding = false
+    _fresh_start_failed = false
+    _deferred_save_pending = false
+    _sim_clock_unix = start_unix
+    _load_services()
+    var mind_service = _services.get("mind", null)
+    if mind_service != null:
+        mind_service.set_time_zone_bias_minutes(0)
+    _want_shop_cache = []
+    _want_shop_catalog_size = -1
+    settings = _default_settings()
+    settings["mindModelEnabled"] = false
+    settings["chatModelEnabled"] = false
+    profile = _default_profile()
+    profile["personality_seed"] = seed_value
+    # The mind seeds its decisions from this tag (not from personality_seed), so
+    # it is what makes one simulated seed live a different life from another.
+    profile["personality_seed_tag"] = "sim-%d" % seed_value
+    world_state = _default_world_state()
+    profile = _ensure_profile_modules(profile)
+    world_state = _ensure_world_modules(world_state)
+    _reconcile_progression_from_xp()
+    _sync_growth_mode_flags()
+    _refresh_unlocks()
+    _prune_event_buckets()
+    return true
 
 
 func memory_note_turn(who: String, text: String) -> void:
@@ -585,11 +1214,36 @@ func memory_discard_turns(upto: int) -> void:
     flush()
 
 
-func memory_recall(text: String) -> Dictionary:
+# `include_land` false: on the land its own memories go to chat apart
+# (memory_recall_land), so this is only what it knows about the person.
+func memory_recall(text: String, include_land: bool = true) -> Dictionary:
     if not memory_enabled():
         return {}
-    var recalled = _call_service_with_fallback("memory", "recall", [profile, text, _now_unix()], {})
+    var recalled = _call_service_with_fallback("memory", "recall", [profile, text, _now_unix(), include_land], {})
     return recalled if typeof(recalled) == TYPE_DICTIONARY else {}
+
+
+# Plan 14 step 2b-2: on the land, chat speaks from the buddy's own memories.
+# That is its life, not what it remembers of the person, so it does not depend
+# on memoryEnabled. Returns {"lines": [String], "ids": [int]}.
+func memory_recall_land(text: String) -> Dictionary:
+    var recalled = _call_service_with_fallback("memory", "recall_land", [profile, text, _now_unix()], {})
+    return recalled if typeof(recalled) == TYPE_DICTIONARY else {"lines": [], "ids": []}
+
+
+# Telling a memory makes it stronger. Saved soon, and only by the process that
+# holds the buddy (flush checks _may_write).
+func memory_strengthen_recalled(ids: Array) -> void:
+    if ids.is_empty():
+        return
+    _call_profile_service("memory", "strengthen_recalled", [profile, ids, _now_unix()])
+    flush_soon()
+
+
+# What the buddy may talk about as real in its own world (check_reply).
+func memory_known_words() -> Dictionary:
+    var known = _call_service_with_fallback("memory", "known_words", [profile, _land()], {})
+    return known if typeof(known) == TYPE_DICTIONARY else {}
 
 
 # Returns {"ok": bool, "id": int, "reason": String}.
@@ -606,7 +1260,7 @@ func memory_add_note(text: String) -> Dictionary:
 
 
 func memory_forget(memory_id: int) -> bool:
-    var result = _call_service_with_fallback("memory", "forget", [profile, memory_id], {})
+    var result = _call_service_with_fallback("memory", "forget", [profile, memory_id, _now_unix()], {})
     if typeof(result) != TYPE_DICTIONARY or not bool(result.get("ok", false)):
         return false
     if typeof(result.get("profile", null)) == TYPE_DICTIONARY:
@@ -616,7 +1270,7 @@ func memory_forget(memory_id: int) -> bool:
 
 
 func memory_forget_all() -> void:
-    _call_profile_service("memory", "forget_all", [profile])
+    _call_profile_service("memory", "forget_all", [profile, _now_unix()])
     flush()
 
 
@@ -627,6 +1281,9 @@ func memory_list() -> Array:
 
 # --- Talk changes the buddy (Plan 13 B3) --------------------------------
 func _world_npcs() -> Array:
+    # Nobody else lives on the land.
+    if small_beginnings():
+        return []
     var world_variant = world_state.get("world", null)
     if typeof(world_variant) == TYPE_DICTIONARY:
         var npcs_variant = (world_variant as Dictionary).get("npcs", [])
@@ -636,7 +1293,7 @@ func _world_npcs() -> Array:
 
 
 func _local_hour_now() -> int:
-    return int(Time.get_datetime_dict_from_system().get("hour", 12))
+    return int(_clock_datetime().get("hour", 12))
 
 
 # The town place or character the person is suggesting it go to, if any.
@@ -661,6 +1318,63 @@ func mind_consider(target: Dictionary) -> Dictionary:
         profile = result["profile"]
         flush()
     return {"answer": str(result.get("answer", "")), "reason": str(result.get("reason", ""))}
+
+
+# --- Visits (Plan 14 step 2a) --------------------------------------------
+# Whether it can come over now ({"come": "now"|"later"|"asleep", "at", "why"}).
+func mind_consider_call(now: int) -> Dictionary:
+    var answer = _call_service_with_fallback("mind", "consider_call", [profile, _land(), now], {})
+    return answer if typeof(answer) == TYPE_DICTIONARY else {"come": "now", "at": now, "why": ""}
+
+
+# These three are for the process that holds the buddy only.
+func mind_leave_for_visit(now: int, reason: String) -> void:
+    var result = _call_service_with_fallback("mind", "leave_for_visit", [profile, _land(), now, reason], null)
+    if typeof(result) == TYPE_DICTIONARY:
+        profile = result
+        flush()
+
+
+func mind_return_from_visit(now: int, reason: String) -> void:
+    var result = _call_service_with_fallback("mind", "return_from_visit", [profile, _land(), now, reason], null)
+    if typeof(result) == TYPE_DICTIONARY:
+        profile = result
+        flush()
+
+
+# For the world host, when it takes the buddy after a long gap.
+func mind_note_still_world(now: int) -> void:
+    var before := _mind_journal_size()
+    var result = _call_service_with_fallback("mind", "note_still_world", [profile, _land(), now], null)
+    if typeof(result) == TYPE_DICTIONARY:
+        profile = result
+        if _mind_journal_size() > before:
+            flush()
+
+
+# For the world host: the buddy has chosen its name.
+func mind_note_name(now: int, chosen: String) -> void:
+    var result = _call_service_with_fallback("mind", "note_name", [profile, now, chosen, _land()], null)
+    if typeof(result) == TYPE_DICTIONARY:
+        profile = result
+        (profile["mind"] as Dictionary)["name"] = chosen
+        flush()
+
+
+func _mind_journal_size() -> int:
+    var mind_variant = profile.get("mind", null)
+    if typeof(mind_variant) != TYPE_DICTIONARY:
+        return 0
+    var journal_variant = (mind_variant as Dictionary).get("journal", [])
+    return (journal_variant as Array).size() if typeof(journal_variant) == TYPE_ARRAY else 0
+
+
+func mind_wants_company(now: int) -> bool:
+    return bool(_call_service_with_fallback("mind", "wants_company", [profile, _land(), now], false))
+
+
+func mind_is_bedtime(now: int) -> bool:
+    return bool(_call_service_with_fallback("mind", "is_bedtime", [profile, now], false))
 
 
 # A finished talk is an event in its day (social need, journal, maybe a wish).
@@ -756,7 +1470,7 @@ func resolve_pending_encounter(engage: bool) -> Dictionary:
                 "job_primary_stat": str(profile.get("job_primary_stat", "charisma")),
                 "job_drop_bias": profile.get("job_drop_bias", []),
             }
-            var drop_seed := int(profile.get("personality_seed", 0)) + int(Time.get_unix_time_from_system())
+            var drop_seed := int(profile.get("personality_seed", 0)) + int(_clock_unix())
             var drop_result = _call_service_with_fallback(
                 "economy",
                 "roll_drop_table",
@@ -1141,7 +1855,7 @@ func is_quiet_hours_now() -> bool:
         return false
     var start_hour := int(settings.get("quietHoursStart", 22))
     var end_hour := int(settings.get("quietHoursEnd", 7))
-    var now := Time.get_datetime_dict_from_system()
+    var now := _clock_datetime()
     var hour := int(now.get("hour", 12))
     if start_hour == end_hour:
         return true
@@ -1168,6 +1882,8 @@ func is_first_run() -> bool:
 
 func mark_first_run_seen() -> void:
     settings["firstRunSeen"] = true
+    if not _persistence_enabled or not _may_write(SETTINGS_PATH):
+        return
     SaveStore.write_json(SETTINGS_PATH, settings)
 
 
@@ -1349,7 +2065,7 @@ func _resolve_reward_item_name(item_id: String) -> String:
 
 
 func _refresh_while_away_report() -> void:
-    var now_unix := Time.get_unix_time_from_system()
+    var now_unix := _clock_unix()
     var report: Dictionary = _call_service_with_fallback(
         "report",
         "generate_while_away_report",
@@ -1370,7 +2086,7 @@ func _append_continuity_line(summary: String, elapsed_minutes: int) -> void:
         {
             "line": summary,
             "elapsed_minutes": elapsed_minutes,
-            "timestamp": Time.get_unix_time_from_system(),
+            "timestamp": _clock_unix(),
         }
     )
     if digest.size() > 10:
@@ -1436,6 +2152,8 @@ func _default_settings() -> Dictionary:
         "chatTextSize": "m",
         "continuityDigestEnabled": true,
         "autonomyEnabled": true,
+        "smallBeginnings": true,
+        "worldHost": true,
         "inventoryCompact": false,
         "mindModelEnabled": true,
         "mindModelUrl": "http://127.0.0.1:11434",
@@ -1443,6 +2161,7 @@ func _default_settings() -> Dictionary:
         "chatModelEnabled": true,
         "chatBackend": "ollama",
         "chatModelName": "gemma3:4b",
+        "letterModelName": "gemma3:12b",
         "memoryEnabled": true,
         "supportHintsEnabled": true,
         "productivityOptIn": false,
@@ -1456,6 +2175,7 @@ func _default_settings() -> Dictionary:
         "lastWindowPosition": [120, 120],
         "firstRunSeen": false,
         "inventoryBackfillMigrationVersion": 0,
+        "lettersSeenT": 0,
     }
 
 
@@ -1464,7 +2184,7 @@ func _default_profile() -> Dictionary:
         "schemaVersion": 2,
         "name": "Buddy",
         "base_type": "sprout",
-        "personality_seed": Time.get_unix_time_from_system(),
+        "personality_seed": _clock_unix(),
         "personality_seed_tag": "curious",
         "current_personality_profile": {
             "curiosity": 0.55,
@@ -1558,7 +2278,7 @@ func _merge_defaults(target: Dictionary, defaults: Dictionary) -> Dictionary:
 
 
 func _current_day_key() -> String:
-    var now := Time.get_datetime_dict_from_system()
+    var now := _clock_datetime()
     return "%04d-%02d-%02d" % [
         int(now.get("year", 1970)),
         int(now.get("month", 1)),
@@ -1567,7 +2287,7 @@ func _current_day_key() -> String:
 
 
 func _current_hour_key() -> String:
-    var now := Time.get_datetime_dict_from_system()
+    var now := _clock_datetime()
     return "%04d-%02d-%02dT%02d" % [
         int(now.get("year", 1970)),
         int(now.get("month", 1)),
@@ -1594,7 +2314,7 @@ func _prune_event_buckets() -> void:
 
 
 func _is_night() -> bool:
-    var now := Time.get_datetime_dict_from_system()
+    var now := _clock_datetime()
     var hour := int(now.get("hour", 12))
     return hour < 7 or hour >= 22
 
