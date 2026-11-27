@@ -5,12 +5,12 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import io
 import json
 import os
 import re
 import subprocess
 import sys
-import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,9 +28,13 @@ MAX_CASE_TIMEOUT_SECONDS = 600
 
 # One required suite or capture at a time on a machine: a second Godot run
 # shares the CPU, pushes slow cases past their limits and spoils timings, so
-# it is refused, not warned. Capture tools take the same lock.
+# it is refused, not warned. Capture tools must take the same lock through
+# machine_lock(). Only this runner takes it so far: the -Profile run, the
+# burn-in and the plan 5 gate's launches start Godot without it.
 MACHINE_LOCK_NAME = "buddy-runtime-godot.lock"
-LOCK_BLOCKED_EXIT = 2
+# EX_TEMPFAIL, "try again later": apart from 1, a failed suite, and from 2,
+# which argparse uses for a usage error.
+LOCK_BLOCKED_EXIT = 75
 
 
 @dataclass(frozen=True)
@@ -129,11 +133,18 @@ else:
 
 
 def default_machine_lock_path() -> Path:
+    """The user's own lock file, which does not follow the temp folder.
+
+    A shell or a sandboxed session often points TEMP or TMPDIR at a folder of
+    its own, and two runs that saw different temp folders would not exclude
+    each other. %LOCALAPPDATA% on Windows and ~/.cache elsewhere belong to the
+    user alone and are rarely moved.
+    """
     if sys.platform == "win32":
-        # The temp folder is the user's own on Windows.
-        return Path(tempfile.gettempdir()) / MACHINE_LOCK_NAME
-    # /tmp is shared between users elsewhere: a lock file of this user's own.
-    return Path(tempfile.gettempdir()) / f"buddy-runtime-godot-{os.getuid()}.lock"
+        base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
+    else:
+        base = Path.home() / ".cache"
+    return base / "buddy-runtime" / MACHINE_LOCK_NAME
 
 
 @contextlib.contextmanager
@@ -297,6 +308,11 @@ def _run_suite_locked(
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Line-buffer output, so each timing line reaches a piped log (CI tees it)
+    # at once, and is not lost with the buffer if the job is killed mid-suite.
+    for stream in (sys.stdout, sys.stderr):
+        if isinstance(stream, io.TextIOWrapper):
+            stream.reconfigure(line_buffering=True)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--godot", default="godot")
     parser.add_argument("--project", type=Path, required=True)

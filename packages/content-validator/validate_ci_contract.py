@@ -14,10 +14,10 @@ from headless_suite import load_contract, load_toolchain
 
 _AUTHORITY_WORKFLOW_SHA256 = {
     ".github/workflows/runtime-smoke.yml": (
-        "844828acdf85f2fb366203180d9542ca31870ce0dbba3eda569872632967e2dc"
+        "0252f5a080ebca81e7e78a8624b3ea70d0577fb84beb8ca90422422952762a09"
     ),
     ".github/workflows/python-lint.yml": (
-        "d06292a88695e2950b262fe3bc07b433fc43e32d2ddc2ff80c3f36cc727b2afa"
+        "6b44b48e07848c6e2fc4b97fdfff6ad616a925279c11600c80edca7d624a93a8"
     ),
     ".github/workflows/content-validator.yml": (
         "6516f75087ba0087539b16ebc10621679ef201ebae75d96263152317f608f1f8"
@@ -26,11 +26,14 @@ _AUTHORITY_WORKFLOW_SHA256 = {
 
 
 # Per-case limits (headless_suite timeout_seconds) are gate authority too: the
-# contract file is not protected, so a case may only carry a limit listed here,
-# and no larger, and raising one needs the same owner-reviewed change as the
-# workflows. Each entry is about 1.5x the case's measured p95 over at least
-# five local runs, with the measurements in the change that adds it.
-_CASE_TIMEOUT_SECONDS_ALLOWED: dict[str, int] = {}
+# contract file is not protected, so a case may carry a limit only when an
+# entry here names its id, scene and arguments, and no larger than the entry,
+# so a limit cannot be moved onto another case by swapping scenes. Raising one
+# needs the same owner-reviewed change as the workflows. Each entry is about
+# 1.5x the case's measured p95 over at least five local runs, with the
+# measurements in the change that adds it:
+#     "case-id": ("res://tests/SomeTest.tscn" or None, (args, ...), seconds),
+_CASE_TIMEOUT_SECONDS_ALLOWED: dict[str, tuple[str | None, tuple[str, ...], int]] = {}
 
 
 # Every gate workflow shares this block (council Q2, 2026-11-27): a newer push
@@ -45,7 +48,11 @@ _PULL_REQUEST_ONLY_CONCURRENCY = (
 
 
 def _workflow_cancels_only_superseded_pull_request_runs(workflow: str) -> bool:
-    """Require the shared concurrency block, exactly, once, with nothing added."""
+    """Require the shared concurrency block, exactly, once, with nothing added.
+
+    YAML keeps a mapping open across blank and comment lines, so the block
+    ends only at the next line of content that starts in the first column.
+    """
     lines = [line.rstrip() for line in workflow.splitlines()]
     head = _PULL_REQUEST_ONLY_CONCURRENCY[0]
     if lines.count(head) != 1:
@@ -54,7 +61,26 @@ def _workflow_cancels_only_superseded_pull_request_runs(workflow: str) -> bool:
     end = start + len(_PULL_REQUEST_ONLY_CONCURRENCY)
     if tuple(lines[start:end]) != _PULL_REQUEST_ONLY_CONCURRENCY:
         return False
-    return end >= len(lines) or not lines[end].startswith(" ")
+    following = [
+        line for line in lines[end:] if line.strip() and not line.lstrip().startswith("#")
+    ]
+    return not following or not following[0][0].isspace()
+
+
+def _script_runs_exact_command(lines: list[str], command: tuple[str, ...]) -> bool:
+    """Whether active script lines hold this whole command, once, unchanged.
+
+    The command must start a statement (the line before does not continue into
+    it) and its last line must end it (no continuation), so nothing can be
+    added to it, such as a second --timeout.
+    """
+    starts = [index for index, line in enumerate(lines) if line == command[0]]
+    if len(starts) != 1:
+        return False
+    start = starts[0]
+    if start > 0 and lines[start - 1].endswith("`"):
+        return False
+    return tuple(lines[start : start + len(command)]) == command
 
 
 def _normalized_text_sha256(text: str) -> str:
@@ -434,7 +460,11 @@ def _required_step_enforces(
             "    timeout-minutes: 30",
             "    steps:",
         ),
-        "python-lint": ("    runs-on: ubuntu-latest", "    steps:"),
+        "python-lint": (
+            "    runs-on: ubuntu-latest",
+            "    timeout-minutes: 10",
+            "    steps:",
+        ),
         "validate-content": ("    runs-on: ubuntu-latest", "    steps:"),
     }
     if job is None or not _mapping_has_only_canonical_direct_lines(
@@ -570,12 +600,17 @@ def validate(repo: Path) -> list[str]:
     ):
         errors.append("runtime workflow does not actively execute the shared headless contract")
 
+    # The local gate runs the same contract at the same --timeout as CI, so a
+    # local-only raise is not possible.
     required_local_suite_command = (
         "& $Python $runner `",
+        "--godot $Godot `",
+        "--project $projectPath `",
         "--contract $contract `",
         "--toolchain $toolchain `",
+        "--timeout 90",
     )
-    if not all(line in local_runner_lines for line in required_local_suite_command):
+    if not _script_runs_exact_command(local_runner_lines, required_local_suite_command):
         errors.append("local headless script does not actively execute the shared headless contract")
     if '$toolchain = Join-Path $projectPath "toolchain.json"' not in local_runner_lines:
         errors.append("local headless script does not actively consume the Godot toolchain contract")
@@ -586,7 +621,11 @@ def validate(repo: Path) -> list[str]:
         if case.timeout_seconds is None:
             continue
         allowed = _CASE_TIMEOUT_SECONDS_ALLOWED.get(case.case_id)
-        if allowed is None or case.timeout_seconds > allowed:
+        if (
+            allowed is None
+            or allowed[:2] != (case.scene, case.args)
+            or case.timeout_seconds > allowed[2]
+        ):
             errors.append(
                 f"headless case {case.case_id!r} sets timeout_seconds "
                 f"{case.timeout_seconds}, beyond the protected per-case allow-list"

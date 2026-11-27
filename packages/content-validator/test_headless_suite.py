@@ -5,9 +5,12 @@ import importlib.util
 import io
 import json
 import os
+import queue
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -19,6 +22,37 @@ assert SPEC is not None and SPEC.loader is not None
 headless_suite = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = headless_suite
 SPEC.loader.exec_module(headless_suite)
+
+# A second process that takes the machine lock, says whether it got it, and
+# holds it until its stdin closes.
+_HOLDER_CODE = (
+    "import importlib.util, sys\n"
+    "from pathlib import Path\n"
+    "spec = importlib.util.spec_from_file_location('headless_suite', sys.argv[1])\n"
+    "module = importlib.util.module_from_spec(spec)\n"
+    "sys.modules['headless_suite'] = module\n"
+    "spec.loader.exec_module(module)\n"
+    "with module.machine_lock(Path(sys.argv[2])) as held:\n"
+    "    print('held' if held else 'busy', flush=True)\n"
+    "    sys.stdin.read()\n"
+)
+
+
+def _first_line(process: subprocess.Popen[str], seconds: float) -> str:
+    """The process's first line of output, waiting no longer than ``seconds``.
+
+    A holder that hangs before it prints must not hang the suite, and the CI
+    job with it, so on a timeout the process is killed and "" returned.
+    """
+    stdout = process.stdout
+    assert stdout is not None
+    lines: queue.Queue[str] = queue.Queue()
+    threading.Thread(target=lambda: lines.put(stdout.readline()), daemon=True).start()
+    try:
+        return lines.get(timeout=seconds).strip()
+    except queue.Empty:
+        process.kill()
+        return ""
 
 
 class ContractTests(unittest.TestCase):
@@ -196,11 +230,39 @@ class RunnerTests(unittest.TestCase):
                     self.assertEqual(result, 0)
 
     def test_default_lock_is_the_users_own(self) -> None:
-        path = headless_suite.default_machine_lock_path()
         if sys.platform == "win32":
-            self.assertEqual(path.name, headless_suite.MACHINE_LOCK_NAME)
+            base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
         else:
-            self.assertEqual(path.name, f"buddy-runtime-godot-{os.getuid()}.lock")
+            base = Path.home() / ".cache"
+        self.assertEqual(
+            headless_suite.default_machine_lock_path(),
+            base / "buddy-runtime" / headless_suite.MACHINE_LOCK_NAME,
+        )
+
+    def test_default_lock_ignores_the_temp_folder(self) -> None:
+        # Two sessions with temp folders of their own must still share one lock.
+        before = headless_suite.default_machine_lock_path()
+        with tempfile.TemporaryDirectory() as elsewhere, mock.patch.dict(
+            os.environ, {"TMPDIR": elsewhere, "TEMP": elsewhere, "TMP": elsewhere}
+        ), mock.patch.object(tempfile, "tempdir", None):
+            after = headless_suite.default_machine_lock_path()
+        self.assertEqual(after, before)
+
+    def test_lock_blocked_exit_is_its_own_code(self) -> None:
+        # 1 is a failed suite, and 2 is argparse's usage error.
+        self.assertNotIn(headless_suite.LOCK_BLOCKED_EXIT, (0, 1, 2))
+
+    def test_machine_lock_unlocks_before_it_closes_the_file(self) -> None:
+        # Windows asks for an explicit unlock: its release on close can lag.
+        with tempfile.TemporaryDirectory() as tmp:
+            lock = Path(tmp) / "machine.lock"
+            with mock.patch.object(
+                headless_suite, "_unlock_byte", wraps=headless_suite._unlock_byte
+            ) as unlock:
+                with headless_suite.machine_lock(lock) as held:
+                    self.assertTrue(held)
+                    unlock.assert_not_called()
+                unlock.assert_called_once()
 
     @unittest.skipIf(sys.platform == "win32", "symlinks need privileges on Windows")
     def test_machine_lock_refuses_a_planted_symlink(self) -> None:
@@ -214,45 +276,83 @@ class RunnerTests(unittest.TestCase):
                     pass
             self.assertFalse(victim.exists())
 
-    def test_machine_lock_blocks_another_process(self) -> None:
-        holder_code = (
-            "import importlib.util, sys\n"
-            "from pathlib import Path\n"
-            "spec = importlib.util.spec_from_file_location('headless_suite', sys.argv[1])\n"
-            "module = importlib.util.module_from_spec(spec)\n"
-            "sys.modules['headless_suite'] = module\n"
-            "spec.loader.exec_module(module)\n"
-            "with module.machine_lock(Path(sys.argv[2])) as held:\n"
-            "    print('held' if held else 'busy', flush=True)\n"
-            "    sys.stdin.read()\n"
+    def _start_holder(self, lock: Path) -> subprocess.Popen[str]:
+        return subprocess.Popen(
+            [sys.executable, "-I", "-c", _HOLDER_CODE, str(MODULE_PATH), str(lock)],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            text=True,
         )
+
+    def _stop_holder(self, holder: subprocess.Popen[str]) -> None:
+        if holder.stdin is not None:
+            with contextlib.suppress(OSError):
+                holder.stdin.close()
+        try:
+            holder.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            holder.kill()
+            holder.wait(timeout=30)
+        if holder.stdout is not None:
+            holder.stdout.close()
+
+    def test_machine_lock_blocks_another_process(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             lock = root / "machine.lock"
-            holder = subprocess.Popen(
-                [sys.executable, "-I", "-c", holder_code, str(MODULE_PATH), str(lock)],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                text=True,
-            )
+            holder = self._start_holder(lock)
             try:
-                assert holder.stdout is not None and holder.stdin is not None
-                self.assertEqual(holder.stdout.readline().strip(), "held")
+                self.assertEqual(_first_line(holder, 30), "held")
                 runner = self._runner(
                     subprocess.CompletedProcess(["godot"], 0, "startup: PASS\n", "")
                 )
                 blocked, _, _ = self._run_capturing(root, runner, None, lock)
                 runner.assert_not_called()
             finally:
-                if holder.stdin is not None:
-                    holder.stdin.close()
-                holder.wait(timeout=30)
-                if holder.stdout is not None:
-                    holder.stdout.close()
+                self._stop_holder(holder)
             runner = self._runner(subprocess.CompletedProcess(["godot"], 0, "startup: PASS\n", ""))
             after, _, _ = self._run_capturing(root, runner, None, lock)
         self.assertEqual(blocked, headless_suite.LOCK_BLOCKED_EXIT)
         self.assertEqual(after, 0)
+
+    def test_machine_lock_is_released_when_its_holder_is_killed(self) -> None:
+        # A hard kill runs no cleanup and no unlock: only the OS can free the
+        # lock, which a stale lock file could never do.
+        with tempfile.TemporaryDirectory() as tmp:
+            lock = Path(tmp) / "machine.lock"
+            holder = self._start_holder(lock)
+            try:
+                self.assertEqual(_first_line(holder, 30), "held")
+                holder.kill()
+                holder.wait(timeout=30)
+            finally:
+                self._stop_holder(holder)
+            # Windows may take a moment to release a dead process's lock.
+            deadline = time.monotonic() + 10
+            while True:
+                with headless_suite.machine_lock(lock) as held:
+                    pass
+                if held or time.monotonic() > deadline:
+                    break
+                time.sleep(0.1)
+        self.assertTrue(held)
+
+    def test_main_line_buffers_its_output(self) -> None:
+        # CI pipes the runner through tee: block buffering would hold timing
+        # lines back, and lose them if the job were killed mid-suite.
+        out = io.TextIOWrapper(io.BytesIO(), encoding="utf-8")
+        err = io.TextIOWrapper(io.BytesIO(), encoding="utf-8")
+        self.assertFalse(out.line_buffering)
+        with mock.patch.object(sys, "stdout", out), mock.patch.object(
+            sys, "stderr", err
+        ), mock.patch.object(headless_suite, "run_suite", return_value=0) as run:
+            result = headless_suite.main(
+                ["--project", "p", "--contract", "c.json", "--toolchain", "t.json"]
+            )
+        self.assertEqual(result, 0)
+        run.assert_called_once()
+        self.assertTrue(out.line_buffering)
+        self.assertTrue(err.line_buffering)
 
     def test_child_failure_is_not_false_green(self) -> None:
         result = self._run_with(subprocess.CompletedProcess(["godot"], 9, "startup: PASS\n", ""))

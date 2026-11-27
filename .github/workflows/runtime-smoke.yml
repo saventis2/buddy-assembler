@@ -153,6 +153,19 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
+      - name: Council Q2 tripwire (repository visibility)
+        shell: pwsh
+        env:
+          REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
+        run: |
+          # The same check as the Linux job's: Windows minutes bill at twice
+          # the Linux rate on a private repository, so this job stops too.
+          if ($env:REPOSITORY_PRIVATE -ne "false") {
+            Write-Output "::error title=Council Q2 tripwire::The repository is not public, so Actions minutes now bill. Move CI to the gated policy before more rows merge."
+            exit 1
+          }
+          Write-Output "Repository is public: standard-runner Actions minutes are unbilled (council Q2)."
+
       - name: Setup Python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:

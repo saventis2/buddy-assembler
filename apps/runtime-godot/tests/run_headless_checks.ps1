@@ -22,7 +22,9 @@ Write-Host "Runtime project path: $projectPath"
     --timeout 90
 $suiteExit = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
 if ($suiteExit -ne 0) {
-    Write-Error "Required headless suite failed with exit $suiteExit"
+    # Not Write-Error: under "Stop" it ends the script with exit 1, hiding the
+    # runner's own code (75: another suite holds the machine lock).
+    [Console]::Error.WriteLine("Required headless suite failed with exit $suiteExit")
     exit $suiteExit
 }
 

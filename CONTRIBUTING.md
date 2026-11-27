@@ -43,7 +43,7 @@ support for V1) are explicitly out of scope and won't be accepted.
   `-Profile` to also run the non-blocking frame-time profiling scene.
   - Each case prints its time.
   - Only one suite or capture runs at a time on a machine: a second is refused,
-    with exit 2.
+    with exit 75.
   - Per-case limits and the CI tripwires are in
     `packages/content-validator/README.md`.
 
