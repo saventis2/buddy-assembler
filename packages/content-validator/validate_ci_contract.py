@@ -25,6 +25,14 @@ _AUTHORITY_WORKFLOW_SHA256 = {
 }
 
 
+# Per-case limits (headless_suite timeout_seconds) are gate authority too: the
+# contract file is not protected, so a case may only carry a limit listed here,
+# and no larger, and raising one needs the same owner-reviewed change as the
+# workflows. Each entry is about 1.5x the case's measured p95 over at least
+# five local runs, with the measurements in the change that adds it.
+_CASE_TIMEOUT_SECONDS_ALLOWED: dict[str, int] = {}
+
+
 # Every gate workflow shares this block (council Q2, 2026-11-27): a newer push
 # to a pull request cancels that pull request's older run, and every other
 # run, each push to main above all, has a group of its own (its run id), so it
@@ -573,6 +581,16 @@ def validate(repo: Path) -> list[str]:
         errors.append("local headless script does not actively consume the Godot toolchain contract")
     if '$toolchainPath = Join-Path $runtime "toolchain.json"' not in burn_in_lines:
         errors.append("burn-in script does not actively consume the Godot toolchain contract")
+
+    for case in cases:
+        if case.timeout_seconds is None:
+            continue
+        allowed = _CASE_TIMEOUT_SECONDS_ALLOWED.get(case.case_id)
+        if allowed is None or case.timeout_seconds > allowed:
+            errors.append(
+                f"headless case {case.case_id!r} sets timeout_seconds "
+                f"{case.timeout_seconds}, beyond the protected per-case allow-list"
+            )
 
     startup_cases = [case for case in cases if case.case_id == "project-startup"]
     if len(startup_cases) != 1:

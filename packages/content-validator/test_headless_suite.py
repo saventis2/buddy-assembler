@@ -4,6 +4,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -193,6 +194,25 @@ class RunnerTests(unittest.TestCase):
                     )
                     result, _, _ = self._run_capturing(root, runner, None, lock)
                     self.assertEqual(result, 0)
+
+    def test_default_lock_is_the_users_own(self) -> None:
+        path = headless_suite.default_machine_lock_path()
+        if sys.platform == "win32":
+            self.assertEqual(path.name, headless_suite.MACHINE_LOCK_NAME)
+        else:
+            self.assertEqual(path.name, f"buddy-runtime-godot-{os.getuid()}.lock")
+
+    @unittest.skipIf(sys.platform == "win32", "symlinks need privileges on Windows")
+    def test_machine_lock_refuses_a_planted_symlink(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            victim = root / "victim.txt"
+            lock = root / "machine.lock"
+            lock.symlink_to(victim)
+            with self.assertRaises(OSError):
+                with headless_suite.machine_lock(lock):
+                    pass
+            self.assertFalse(victim.exists())
 
     def test_machine_lock_blocks_another_process(self) -> None:
         holder_code = (

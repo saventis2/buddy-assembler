@@ -91,12 +91,21 @@ for both the local gate and CI.
   Set it to about 1.5x the case's p95 time over at least five local runs. Every other
   case uses the runner's `--timeout` (90 in CI and locally). There is no global raise
   and no local-only override.
+- **Limits are gate authority.** The contract file is not protected, so
+  `validate_ci_contract.py` accepts a case's limit only if it is on its protected
+  allow-list (`_CASE_TIMEOUT_SECONDS_ALLOWED`), and no larger. Raising one needs the
+  same owner-merged change as the workflows, with the measurements in it.
 - **The machine lock.** One required suite or capture runs at a time on a machine. A
   second Godot run shares the CPU, pushes slow cases past their limits and spoils
   timings, so it is refused, not warned. It exits 2, naming the lock file:
-  `buddy-runtime-godot.lock` in the system temp folder. The lock is an OS file lock,
-  so it is released when its holder exits, even on a crash. Capture tools take the
-  same lock.
+  `buddy-runtime-godot.lock` in the user's temp folder on Windows, or
+  `buddy-runtime-godot-<uid>.lock` in the shared temp folder elsewhere.
+  - The lock is an OS file lock, so it is released when its holder exits, even on a
+    crash.
+  - The file is opened without following symlinks where the system allows it.
+  - Capture tools take the same lock.
+  - A Godot child left running after its runner was killed outlives the lock, so stop
+    it before starting another run.
 
 ## CI tripwires (council Q2)
 

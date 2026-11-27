@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import json
+import os
 import re
 import subprocess
 import sys
@@ -128,7 +129,11 @@ else:
 
 
 def default_machine_lock_path() -> Path:
-    return Path(tempfile.gettempdir()) / MACHINE_LOCK_NAME
+    if sys.platform == "win32":
+        # The temp folder is the user's own on Windows.
+        return Path(tempfile.gettempdir()) / MACHINE_LOCK_NAME
+    # /tmp is shared between users elsewhere: a lock file of this user's own.
+    return Path(tempfile.gettempdir()) / f"buddy-runtime-godot-{os.getuid()}.lock"
 
 
 @contextlib.contextmanager
@@ -136,10 +141,13 @@ def machine_lock(path: Path) -> Iterator[bool]:
     """Hold the machine-wide Godot lock while the block runs, if it is free.
 
     Yields True while it holds the lock, or False, holding nothing, when
-    another process (or another handle in this one) already has it.
+    another process (or another handle in this one) already has it. The file
+    is opened without following a symlink where the system allows it, and
+    only its owner may write it.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "a+b") as handle:
+    flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
+    with os.fdopen(os.open(path, flags, 0o600), "r+b") as handle:
         handle.seek(0)
         try:
             _lock_byte(handle.fileno())

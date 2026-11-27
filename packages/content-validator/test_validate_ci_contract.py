@@ -8,6 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import Callable
+from unittest import mock
 
 
 MODULE_PATH = Path(__file__).with_name("validate_ci_contract.py")
@@ -161,6 +162,31 @@ class CiContractDriftTests(unittest.TestCase):
         "${{ github.event.pull_request.number || github.run_id }}"
     )
     _CANCEL = "  cancel-in-progress: ${{ github.event_name == 'pull_request' }}"
+
+    def _set_case_timeout(self, root: Path, case_id: str, seconds: int) -> None:
+        path = root / "apps/runtime-godot/tests/required_headless_scenes.json"
+        data = json.loads(path.read_text(encoding="utf-8"))
+        matches = [row for row in data["tests"] if row["id"] == case_id]
+        self.assertEqual(len(matches), 1)
+        matches[0]["timeout_seconds"] = seconds
+        path.write_text(json.dumps(data), encoding="utf-8")
+
+    def test_case_limit_must_be_on_the_protected_allow_list(self) -> None:
+        errors = self._errors_after(lambda root: self._set_case_timeout(root, "save-store", 120))
+        self.assertTrue(
+            any("beyond the protected per-case allow-list" in error for error in errors), errors
+        )
+
+    def test_allow_listed_case_limit_passes_but_not_a_larger_one(self) -> None:
+        with mock.patch.dict(
+            validate_ci_contract._CASE_TIMEOUT_SECONDS_ALLOWED, {"save-store": 120}
+        ):
+            allowed = self._errors_after(lambda root: self._set_case_timeout(root, "save-store", 120))
+            larger = self._errors_after(lambda root: self._set_case_timeout(root, "save-store", 121))
+        self.assertEqual(allowed, [])
+        self.assertTrue(
+            any("beyond the protected per-case allow-list" in error for error in larger), larger
+        )
 
     def test_concurrency_can_never_cancel_a_run_on_main(self) -> None:
         def mutate(root: Path) -> None:
