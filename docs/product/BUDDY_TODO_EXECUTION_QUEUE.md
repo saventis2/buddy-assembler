@@ -267,6 +267,31 @@ Status: `in_progress` (see `PLAN13_TOWN_AND_CONVERSATION.md`)
 - [ ] Part C, C1+C2 part 2: asking you for things, a Wants window, projects
 - [ ] Part C: nightly reflection, making things, tastes and relationships
 
+The unchecked items above are reshaped by Plan 14: the buddy now starts with
+only a house and land and builds its own town, with no townspeople for now.
+
+### Plan 14: Small beginnings
+
+Status: `in_progress` (see `PLAN14_SMALL_BEGINNINGS.md`)
+
+- [x] 1a Fast-forward tool (`tools/simulate_days.py`, `LifeSimTest`)
+- [x] 1b House and land with discovery, behind a setting; known filter (`land_data.gd`, `LandLifeTest`)
+- [x] 1c Fresh start with backup; the new world on by default (`fresh_start_if_due`, `FreshStartTest`, D-007)
+- [ ] 2 Always-on world host (GGPC now, Nexus later); the desktop app is a visit
+- [ ] 3 The world's rules and the things on the land
+- [ ] 4 2.5D view on the desktop
+- [ ] 5 Public world on Hardlight, nothing about you published
+- [ ] 6 Learning by trying, study time by difficulty
+- [ ] 7 Tools and making things
+- [ ] 8 Designing and building, assembled in 3D from a modular kit
+- [ ] 9 The console: messages, asking for and sending materials
+- [ ] 10 Self-sheet nightly rules, things on its mind, interests
+- [ ] 11 Library and encyclopedia research
+- [ ] 12 Labelled model library for objects
+- [ ] 13 Commerce and the market it runs
+- [ ] 14 Mind view and library shelves
+- [ ] 15 Things you leave appear on the land
+
 ### Plan 12C: Things left for the buddy, visible places
 
 Status: `not started`

@@ -37,6 +37,60 @@ Run the complete local/CI-parity gate with:
 pwsh ./apps/runtime-godot/tests/run_headless_checks.ps1
 ```
 
+The gate includes `life_sim_test` (`tests/LifeSimTest.tscn`), which checks that
+a simulated life is repeatable from a seed and never writes the save files.
+
+## Fast-forward
+
+To see how a new buddy's life reads over many days without waiting for them:
+
+```powershell
+python apps/runtime-godot/tools/simulate_days.py --godot "C:\path\to\Godot_v4.2.2-stable_win64_console.exe" --days 30 --seed 1 --journal firsts --out report.json
+```
+
+It runs the real mind code with a supplied clock, in a headless process, and
+prints each day's decisions, the new places, people and wishes it met, and how
+often the journal repeated itself. `--journal` is `all`, `firsts` or `none`;
+`--out` also writes the full report as JSON. The same seed gives the same life
+on any machine. The launcher starts the app with `-- --no-save`, so it starts
+from defaults and never opens the save files, not even while starting up; the
+simulation scene refuses to run without it. Not simulated: ambient desktop
+animation, quests and encounters, talking to the buddy, and the language model.
+
+`--world` picks the world. `land`, the default, is the house and land a buddy
+starts with since Plan 14; `town` is the older town with its six characters.
+
+```powershell
+python apps/runtime-godot/tools/simulate_days.py --godot "C:\path\to\Godot_v4.2.2-stable_win64_console.exe" --days 30 --seed 1 --world town --journal firsts
+```
+
+## Small beginnings
+
+Since Plan 14 a buddy starts with a house and the land around it, alone, and
+finds the rest a piece at a time (`docs/product/PLAN14_SMALL_BEGINNINGS.md`).
+The setting is `smallBeginnings` in `settings.json`, on by default.
+
+The first time the app starts in this world with a buddy from before, it puts
+that buddy away and a new one wakes up:
+
+- `settings.json`, `profile.json` and `world_state.json` are copied to
+  `backups/before-small-beginnings-<date>/` in the save folder
+  (`%APPDATA%\Godot\app_userdata\Buddy Runtime`). The folder is never
+  overwritten, and each copy is checked against its original. If the copy
+  fails, nothing is changed and the old buddy carries on for that run.
+- Only the buddy starts over: its name, memories, journal, feelings, bond and
+  growth. Settings, items, wardrobe and meso are kept.
+- `freshStartBackup` in `settings.json` records where the copy went.
+
+Only a real launch does this. The tests, the CI start-up modes and the
+fast-forward tool never touch the save.
+
+To go back to the buddy from before: close the app, set
+`"smallBeginnings": false` in `settings.json`, and copy `profile.json` from the
+backup folder over the one in the save folder. The old town, its six
+characters, quests and encounters are still in the pack and the code; with the
+setting off they work as before.
+
 The current implementation is intentionally minimal and is a vertical-slice
 scaffold, not final production content.
 
