@@ -7,6 +7,14 @@ Recorded on: 2026-04-15
 Deliver a lovable desktop buddy that can live on screen for months without
 becoming noisy or distracting.
 
+Since 2026-11-17 (D-007, `PLAN14_SMALL_BEGINNINGS.md`) the buddy also has a
+small world of its own: it starts with a house and the land around it, alone,
+and finds and later builds the rest as it learns. Since 2026-11-18 (D-010) that
+world runs in a background world host, on by default; the desktop app is the
+buddy visiting you. Since 2026-11-18 (D-012) it is told nothing about its
+world: it knows what is in its own memory, and what it says is checked against
+that memory before it goes out.
+
 ## Target User
 
 Desktop users who work or study for long sessions and want ambient
@@ -29,7 +37,8 @@ companionship.
   `PLAN13_TOWN_AND_CONVERSATION.md`)
 - cross-platform parity
 - marketplace/plugin scripting runtime
-- large multi-character world simulation
+- large multi-character world simulation (unchanged by D-007: the buddy's own
+  world has no other characters at all for now)
 
 ## Performance and Quality Targets
 
